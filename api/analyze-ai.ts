@@ -99,58 +99,146 @@ function buildPrompt(cvText: string, targetRole: string, jobDesc: string): strin
 }
 
 function asString(value: unknown): string {
-  return typeof value === 'string' ? value : ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return ''
+}
+
+// Field array yang dikirim model tidak selalu rapi: string tunggal dibungkus
+// menjadi array satu elemen, elemen non-string primitif diubah ke string,
+// elemen objek/kosong dilewati.
+function asStringList(value: unknown, max: number): string[] {
+  if (value === null || value === undefined) return []
+  const items = Array.isArray(value) ? value : [value]
+  const out: string[] = []
+  for (const item of items) {
+    const s = asString(item).trim()
+    if (s) out.push(s)
+    if (out.length >= max) break
+  }
+  return out
+}
+
+function normalizeRewrite(item: unknown): RewriteItem | null {
+  if (typeof item === 'string') {
+    const s = item.trim()
+    return s ? { asli: '', saran: s, alasan: '' } : null
+  }
+  if (item && typeof item === 'object') {
+    const it = item as Record<string, unknown>
+    return {
+      asli: asString(it.asli),
+      saran: asString(it.saran),
+      alasan: asString(it.alasan),
+    }
+  }
+  return null
 }
 
 function normalizeResult(raw: unknown): AiResult | null {
-  if (!raw || typeof raw !== 'object') return null
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const obj = raw as Record<string, unknown>
+  // Objek JSON yang sama sekali tidak memuat field skema dianggap bukan
+  // jawaban analisis (mis. JSON lain yang kebetulan valid) → gagal parse.
+  const hasKnownField = ['ringkasan', 'saranPenulisanUlang', 'kekurangan', 'saranRingkasan'].some(
+    (key) => obj[key] !== undefined && obj[key] !== null,
+  )
+  if (!hasKnownField) return null
+
+  const rewriteSource =
+    obj.saranPenulisanUlang === null || obj.saranPenulisanUlang === undefined
+      ? []
+      : Array.isArray(obj.saranPenulisanUlang)
+        ? obj.saranPenulisanUlang
+        : [obj.saranPenulisanUlang]
   const rewrites: RewriteItem[] = []
-  if (Array.isArray(obj.saranPenulisanUlang)) {
-    for (const item of obj.saranPenulisanUlang.slice(0, 5)) {
-      if (item && typeof item === 'object') {
-        const it = item as Record<string, unknown>
-        rewrites.push({
-          asli: asString(it.asli),
-          saran: asString(it.saran),
-          alasan: asString(it.alasan),
-        })
-      }
-    }
+  for (const item of rewriteSource) {
+    const normalized = normalizeRewrite(item)
+    if (normalized) rewrites.push(normalized)
+    if (rewrites.length >= 5) break
   }
-  const kekurangan: string[] = []
-  if (Array.isArray(obj.kekurangan)) {
-    for (const k of obj.kekurangan.slice(0, 6)) {
-      if (typeof k === 'string' && k.trim()) kekurangan.push(k)
-    }
-  }
+
   return {
     ringkasan: asString(obj.ringkasan),
     saranPenulisanUlang: rewrites,
-    kekurangan,
+    kekurangan: asStringList(obj.kekurangan, 6),
     saranRingkasan: asString(obj.saranRingkasan),
   }
 }
 
-function parseAiJson(text: string): AiResult | null {
-  // Respons model kadang dibungkus pagar markdown (```json ... ```) atau
-  // teks tambahan; buang pagar kode, coba parse langsung, lalu fallback ke
-  // potongan { ... } terluar.
-  const cleaned = text.replace(/```(?:json)?/gi, '').trim()
+// Model reasoning sering membungkus proses berpikirnya dalam tag <think>
+// atau <thinking>; blok itu dibuang sebelum parsing JSON.
+function stripThinkBlocks(text: string): string {
+  return text
+    .replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, ' ')
+    .replace(/<\/?think(?:ing)?>/gi, ' ')
+}
+
+function tryParseJson(text: string): AiResult | null {
   try {
-    return normalizeResult(JSON.parse(cleaned))
+    return normalizeResult(JSON.parse(text))
   } catch {
-    const start = cleaned.indexOf('{')
-    const end = cleaned.lastIndexOf('}')
-    if (start >= 0 && end > start) {
-      try {
-        return normalizeResult(JSON.parse(cleaned.slice(start, end + 1)))
-      } catch {
-        return null
-      }
-    }
     return null
   }
+}
+
+export function parseAiJson(text: string): AiResult | null {
+  // Urutan percobaan dari yang paling bersih ke yang paling toleran:
+  // parse langsung → buang pagar kode → ekstrak { ... } terluar.
+  const cleaned = stripThinkBlocks(text).trim()
+  if (!cleaned) return null
+  const direct = tryParseJson(cleaned)
+  if (direct) return direct
+  const defenced = cleaned.replace(/```(?:json)?/gi, '').trim()
+  if (defenced !== cleaned) {
+    const fromDefenced = tryParseJson(defenced)
+    if (fromDefenced) return fromDefenced
+  }
+  const start = defenced.indexOf('{')
+  const end = defenced.lastIndexOf('}')
+  if (start >= 0 && end > start) {
+    return tryParseJson(defenced.slice(start, end + 1))
+  }
+  return null
+}
+
+// Isi message.content kadang berupa array of parts, bukan string tunggal.
+function extractMessageText(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) return value.map(extractMessageText).join('')
+  if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>
+    if (typeof obj.text === 'string') return obj.text
+    if (typeof obj.content === 'string') return obj.content
+  }
+  return ''
+}
+
+export interface AiParseOutcome {
+  result: AiResult | null
+  finishReason: string
+  rawText: string
+}
+
+// Ekstrak hasil analisis dari respons Chat Completions mentah. Sumber teks
+// utama adalah message.content; bila kosong atau tidak terparse, coba
+// message.reasoning (beberapa model reasoning menaruh jawaban di sana).
+export function parseAiResponse(data: unknown): AiParseOutcome {
+  const root = data && typeof data === 'object' ? (data as Record<string, unknown>) : {}
+  const choices = Array.isArray(root.choices) ? root.choices : []
+  const first =
+    choices[0] && typeof choices[0] === 'object' ? (choices[0] as Record<string, unknown>) : {}
+  const message =
+    first.message && typeof first.message === 'object'
+      ? (first.message as Record<string, unknown>)
+      : {}
+  const finishReason = typeof first.finish_reason === 'string' ? first.finish_reason : ''
+  const contentText = extractMessageText(message.content)
+  const reasoningText = extractMessageText(message.reasoning)
+
+  let result = contentText ? parseAiJson(contentText) : null
+  if (!result && reasoningText) result = parseAiJson(reasoningText)
+  return { result, finishReason, rawText: contentText || reasoningText }
 }
 
 export default async function handler(req: AiRequest, res: AiResponse): Promise<void> {
@@ -216,9 +304,8 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
   }
   const model = process.env.OPENROUTER_MODEL || 'google/gemma-4-31b-it'
 
-  let aiResponse: Response
-  try {
-    aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const sendRequest = (withResponseFormat: boolean): Promise<Response> =>
+    fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -231,11 +318,39 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: buildPrompt(cvText, targetRole, jobDesc) },
         ],
-        response_format: { type: 'json_object' },
+        ...(withResponseFormat ? { response_format: { type: 'json_object' } } : {}),
         temperature: 0.4,
-        max_tokens: 2048,
+        // 3000 token agar JSON jawaban tidak terpotong batas default provider.
+        max_tokens: 3000,
       }),
     })
+
+  const readUpstreamMessage = async (response: Response): Promise<string> => {
+    try {
+      const errData = (await response.json()) as {
+        error?: { code?: number | string; message?: string }
+      }
+      return (errData.error?.message ?? '').slice(0, 300)
+    } catch {
+      return ''
+    }
+  }
+
+  let aiResponse: Response
+  let upstreamMessage: string | null = null
+  try {
+    aiResponse = await sendRequest(true)
+    if (!aiResponse.ok && aiResponse.status === 400) {
+      // Sebagian model menolak parameter response_format. Bila pesan error
+      // 400 memang menyebut parameter itu, ulangi sekali tanpa response_format;
+      // error 400 lain tetap dipetakan seperti biasa.
+      const firstMessage = await readUpstreamMessage(aiResponse)
+      if (/response_format|json|unsupported/i.test(firstMessage)) {
+        aiResponse = await sendRequest(false)
+      } else {
+        upstreamMessage = firstMessage
+      }
+    }
   } catch {
     res.status(502).json({
       error: 'Layanan AI sedang tidak bisa dihubungi. Coba lagi nanti — hasil analisis standar tetap bisa dipakai.',
@@ -248,16 +363,8 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
     // field "detail" dan log server, agar penyebab 502 terlihat. Yang
     // disertakan hanya status dan pesan OpenRouter — TIDAK termasuk API key,
     // header, atau isi CV/permintaan.
-    let upstreamMessage = ''
-    try {
-      const errData = (await aiResponse.json()) as {
-        error?: { code?: number | string; message?: string }
-      }
-      upstreamMessage = (errData.error?.message ?? '').slice(0, 300)
-    } catch {
-      upstreamMessage = ''
-    }
-    const detail = `OpenRouter HTTP ${aiResponse.status}${upstreamMessage ? `: ${upstreamMessage}` : ''}`
+    const message = upstreamMessage ?? (await readUpstreamMessage(aiResponse))
+    const detail = `OpenRouter HTTP ${aiResponse.status}${message ? `: ${message}` : ''}`
     console.error(`[analyze-ai] ${detail}`)
 
     if (aiResponse.status === 429) {
@@ -288,23 +395,34 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
     return
   }
 
-  let text = ''
+  let data: unknown = null
   try {
-    const data = (await aiResponse.json()) as {
-      choices?: { message?: { content?: string } }[]
-    }
-    text = data.choices?.[0]?.message?.content ?? ''
+    data = await aiResponse.json()
   } catch {
-    text = ''
+    data = null
   }
 
-  const result = text ? parseAiJson(text) : null
-  if (!result) {
+  const parsed = parseAiResponse(data)
+  if (!parsed.result) {
+    // Diagnostik parse: sertakan finish_reason, panjang teks mentah, dan
+    // cuplikan awal jawaban model pada field "detail" agar kegagalan bisa
+    // didiagnosis. Cuplikan berasal dari JAWABAN model atas CV pemanggil
+    // sendiri (bukan input CV mentah) dan hanya muncul pada mode gagal
+    // parse; isi CV tetap tidak dicatat ke log.
+    const snippet = parsed.rawText.slice(0, 200)
+    const detail =
+      `finish_reason: ${parsed.finishReason || 'tidak tersedia'}; ` +
+      `panjang teks mentah: ${parsed.rawText.length} karakter; ` +
+      `cuplikan awal jawaban model: ${snippet ? `"${snippet}"` : '(kosong)'}`
+    console.error(
+      `[analyze-ai] Jawaban model tidak terparse (finish_reason=${parsed.finishReason || '-'}, panjang=${parsed.rawText.length})`,
+    )
     res.status(502).json({
       error: 'Jawaban AI tidak bisa dibaca. Coba lagi — hasil analisis standar tetap bisa dipakai.',
+      detail,
     })
     return
   }
 
-  res.status(200).json(result)
+  res.status(200).json(parsed.result)
 }
