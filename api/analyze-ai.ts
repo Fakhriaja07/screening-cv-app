@@ -209,7 +209,7 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
     })
     return
   }
-  const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
+  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
 
   let geminiResponse: Response
   try {
@@ -245,8 +245,24 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
     return
   }
   if (!geminiResponse.ok) {
+    // Diagnosis: sertakan status HTTP + pesan error resmi Google pada field
+    // "detail" dan log server, agar penyebab 502 terlihat. Yang disertakan
+    // hanya status dan pesan Google — TIDAK termasuk API key, header, atau
+    // isi CV/permintaan.
+    let upstreamMessage = ''
+    try {
+      const errData = (await geminiResponse.json()) as {
+        error?: { message?: string }
+      }
+      upstreamMessage = (errData.error?.message ?? '').slice(0, 300)
+    } catch {
+      upstreamMessage = ''
+    }
+    const detail = `Gemini HTTP ${geminiResponse.status}${upstreamMessage ? `: ${upstreamMessage}` : ''}`
+    console.error(`[analyze-ai] ${detail}`)
     res.status(502).json({
       error: 'Layanan AI mengembalikan kesalahan. Coba lagi nanti — hasil analisis standar tetap bisa dipakai.',
+      detail,
     })
     return
   }
