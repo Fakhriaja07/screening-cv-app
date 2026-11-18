@@ -596,9 +596,14 @@ async function streamAnalysis(res: AiResponse, opts: StreamOptions): Promise<voi
           choice.delta && typeof choice.delta === 'object'
             ? (choice.delta as Record<string, unknown>)
             : {}
-        emitReasoning(
-          extractMessageText(delta.reasoning) + extractReasoningDetailsText(delta.reasoning_details),
-        )
+        // Sebagian provider (mis. Nemotron via OpenRouter) mengirim teks
+        // penalaran yang SAMA di delta.reasoning dan delta.reasoning_details
+        // sekaligus — menggabungkan keduanya membuat panel berpikir berisi
+        // teks dobel. Utamakan delta.reasoning; reasoning_details hanya
+        // dipakai bila field reasoning kosong.
+        const reasoningText =
+          extractMessageText(delta.reasoning) || extractReasoningDetailsText(delta.reasoning_details)
+        emitReasoning(reasoningText)
         const contentChunk = extractMessageText(delta.content)
         if (contentChunk) emitContent(contentChunk)
       }
