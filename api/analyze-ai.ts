@@ -36,6 +36,18 @@ const MIN_CV_CHARS = 50
 const MAX_JOBDESC_CHARS = 6_000
 const MAX_ROLE_CHARS = 200
 
+// Batas waktu menunggu respons OpenRouter per permintaan. Model gratis bisa
+// sangat lambat; tanpa batas ini fungsi serverless menggantung sampai
+// diputus platform dan pengguna tidak mendapat pesan yang jelas.
+const UPSTREAM_TIMEOUT_MS = 55_000
+
+class UpstreamTimeoutError extends Error {
+  constructor() {
+    super('OpenRouter tidak merespons dalam batas waktu')
+    this.name = 'UpstreamTimeoutError'
+  }
+}
+
 // --- Rate limit sederhana in-memory per IP ---
 // Best-effort per instance: state ini hidup di memori satu instance fungsi
 // serverless, jadi bukan batas global. Cukup untuk menahan penyalahgunaan
@@ -302,28 +314,52 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
     })
     return
   }
-  const model = process.env.OPENROUTER_MODEL || 'google/gemma-4-31b-it'
+  const model = process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b:free'
 
-  const sendRequest = (withResponseFormat: boolean): Promise<Response> =>
-    fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-        'X-Title': 'Screening CV',
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: buildPrompt(cvText, targetRole, jobDesc) },
-        ],
-        ...(withResponseFormat ? { response_format: { type: 'json_object' } } : {}),
-        temperature: 0.4,
-        // 3000 token agar JSON jawaban tidak terpotong batas default provider.
-        max_tokens: 3000,
-      }),
-    })
+  const sendRequest = async (options: {
+    withResponseFormat: boolean
+    withReasoning: boolean
+  }): Promise<Response> => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS)
+    try {
+      return await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+          'X-Title': 'Screening CV',
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: buildPrompt(cvText, targetRole, jobDesc) },
+          ],
+          ...(options.withResponseFormat ? { response_format: { type: 'json_object' } } : {}),
+          // Model reasoning bisa menghabiskan seluruh jatah token hanya
+          // untuk berpikir (kejadian sebelumnya: penalaran 12 ribu karakter
+          // memenuhi content dan JSON tidak pernah selesai). Batasi
+          // effort-nya agar jawaban JSON sempat ditulis.
+          ...(options.withReasoning ? { reasoning: { effort: 'low' } } : {}),
+          temperature: 0.4,
+          // 3000 token agar JSON jawaban tidak terpotong batas default provider.
+          max_tokens: 3000,
+        }),
+      })
+    } catch (err) {
+      if (
+        controller.signal.aborted ||
+        (err instanceof Error && err.name === 'AbortError')
+      ) {
+        throw new UpstreamTimeoutError()
+      }
+      throw err
+    } finally {
+      clearTimeout(timer)
+    }
+  }
 
   const readUpstreamMessage = async (response: Response): Promise<string> => {
     try {
@@ -338,20 +374,57 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
 
   let aiResponse: Response
   let upstreamMessage: string | null = null
+  let includeResponseFormat = true
+  let includeReasoning = true
   try {
-    aiResponse = await sendRequest(true)
-    if (!aiResponse.ok && aiResponse.status === 400) {
-      // Sebagian model menolak parameter response_format. Bila pesan error
-      // 400 memang menyebut parameter itu, ulangi sekali tanpa response_format;
-      // error 400 lain tetap dipetakan seperti biasa.
-      const firstMessage = await readUpstreamMessage(aiResponse)
-      if (/response_format|json|unsupported/i.test(firstMessage)) {
-        aiResponse = await sendRequest(false)
-      } else {
-        upstreamMessage = firstMessage
+    aiResponse = await sendRequest({
+      withResponseFormat: includeResponseFormat,
+      withReasoning: includeReasoning,
+    })
+    // Sebagian model menolak parameter opsional (reasoning / response_format).
+    // Bila error 400 menyebut parameter yang tidak didukung, buang parameter
+    // yang ditolak lalu ulangi — maksimal 2 kali pengulangan, satu jenis
+    // parameter dibuang tiap kali. Error 400 lain tidak diulang dan tetap
+    // dipetakan seperti biasa.
+    for (let retry = 0; retry < 2 && !aiResponse.ok && aiResponse.status === 400; retry++) {
+      const message400 = await readUpstreamMessage(aiResponse)
+      const lower = message400.toLowerCase()
+      let dropped = false
+      if (includeReasoning && lower.includes('reasoning')) {
+        includeReasoning = false
+        dropped = true
+      } else if (includeResponseFormat && /response_format|\bjson\b/.test(lower)) {
+        includeResponseFormat = false
+        dropped = true
+      } else if (/unsupported|not supported|unknown|invalid parameter/.test(lower)) {
+        // Parameter ditolak tanpa disebut namanya: buang reasoning dulu,
+        // lalu response_format pada pengulangan berikutnya.
+        if (includeReasoning) {
+          includeReasoning = false
+          dropped = true
+        } else if (includeResponseFormat) {
+          includeResponseFormat = false
+          dropped = true
+        }
       }
+      if (!dropped) {
+        upstreamMessage = message400
+        break
+      }
+      aiResponse = await sendRequest({
+        withResponseFormat: includeResponseFormat,
+        withReasoning: includeReasoning,
+      })
     }
-  } catch {
+  } catch (err) {
+    if (err instanceof UpstreamTimeoutError) {
+      console.error(`[analyze-ai] Timeout ${UPSTREAM_TIMEOUT_MS / 1000} detik menunggu OpenRouter`)
+      res.status(502).json({
+        error: 'Layanan AI terlalu lama merespons. Coba lagi — hasil analisis standar tetap bisa dipakai.',
+        detail: 'Timeout 55 detik menunggu OpenRouter',
+      })
+      return
+    }
     res.status(502).json({
       error: 'Layanan AI sedang tidak bisa dihubungi. Coba lagi nanti — hasil analisis standar tetap bisa dipakai.',
     })

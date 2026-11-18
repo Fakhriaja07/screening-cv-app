@@ -88,8 +88,8 @@ Poin hanya diberikan untuk bukti isi yang benar-benar ada; bagian kosong = 0.
 ## Backend AI (OpenRouter) — fitur "Analisis AI"
 
 Selain penilaian rule-based, ada fitur opsional **Analisis AI** yang memakai
-AI lewat **OpenRouter** (model default **Google Gemma 4 31B**,
-`google/gemma-4-31b-it`) untuk saran kualitatif: penulisan ulang poin
+AI lewat **OpenRouter** (model default **NVIDIA Nemotron 3 Ultra 550B
+(free)**, `nvidia/nemotron-3-ultra-550b-a55b:free`) untuk saran kualitatif: penulisan ulang poin
 pengalaman, daftar kekurangan (terhadap lowongan bila diisi), dan contoh
 ringkasan profil. Fitur ini **tidak mengubah skor utama**.
 
@@ -111,13 +111,20 @@ Browser ──POST /api/analyze-ai──▶ Vercel Serverless Function ──▶
 - Error OpenRouter lain dipetakan rapi: 401/403 (key ditolak) dan 402 (kredit
   tidak cukup) menjadi 502 dengan penjelasan + field `detail` berisi status
   dan pesan resmi OpenRouter (tanpa key dan tanpa isi CV).
+- Pengaman untuk model reasoning & model gratis yang lambat: permintaan
+  dikirim dengan parameter `reasoning: {effort: "low"}` agar model tidak
+  menghabiskan jatah token hanya untuk berpikir, dan dibatasi **timeout
+  55 detik** (AbortController) — lewat dari itu endpoint membalas 502
+  "terlalu lama merespons". Bila model menolak parameter opsional
+  (`reasoning`/`response_format`) dengan error 400, endpoint mengulang
+  permintaan dengan membuang parameter yang ditolak (maksimal 2 kali).
 
 ### Memasang API key
 
 1. Buat API key di **OpenRouter**: [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys).
 2. Di **Vercel**: Project `screening-cv-app` → Settings → Environment Variables →
    tambahkan `OPENROUTER_API_KEY` (dan opsional `OPENROUTER_MODEL`, default
-   `google/gemma-4-31b-it`).
+   `nvidia/nemotron-3-ultra-550b-a55b:free`).
 3. **Redeploy** project (Deployments → ⋯ → Redeploy) agar variabel terbaca.
 4. Untuk uji lokal: salin `.env.example` menjadi `.env.local`, isi key-nya,
    lalu jalankan `npx vercel dev`.
@@ -128,10 +135,13 @@ standar tidak terganggu.
 
 ### Catatan biaya & privasi
 
-- Model Gemma 4 31B di OpenRouter berbayar per token (pay-as-you-go, tanpa
-  markup di atas harga provider) dan butuh kredit OpenRouter: bila endpoint
-  membalas error **402**, artinya **kredit OpenRouter tidak cukup** — isi
-  kredit atau periksa batas pemakaian akun.
+- Model default adalah varian **gratis** (`:free`) di OpenRouter, jadi tidak
+  butuh kredit — tetapi kapasitas provider gratis terbatas: endpoint bisa
+  membalas **429** (rate limit/kuota gratis penuh) atau timeout saat model
+  sedang lambat. Bila `OPENROUTER_MODEL` diganti ke model berbayar, model itu
+  dipungut biaya per token dan butuh kredit OpenRouter: error **402**
+  artinya **kredit OpenRouter tidak cukup** — isi kredit atau periksa batas
+  pemakaian akun.
 - Pantau pemakaian dan biaya di dashboard OpenRouter.
 - Aplikasi sendiri **tidak menyimpan** teks CV: fungsi backend hanya
   meneruskannya ke OpenRouter dan tidak mencatat isinya ke log.
