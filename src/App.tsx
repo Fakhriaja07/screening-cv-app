@@ -452,9 +452,9 @@ export default function App() {
 
               {/* ----- ANALISIS AI ----- */}
               <div className="card ai-card">
-                <h3><Icon d={I.spark} size={18} /> Analisis AI (Gemini)</h3>
+                <h3><Icon d={I.spark} size={18} /> Analisis AI (OpenRouter)</h3>
                 <p>
-                  Mau saran yang lebih dalam dari skor di atas? AI Google Gemini bisa membaca
+                  Mau saran yang lebih dalam dari skor di atas? AI lewat OpenRouter bisa membaca
                   CV-mu secara kualitatif: menulis ulang poin pengalamanmu, menunjukkan
                   kekurangan terhadap lowongan, dan memberi contoh ringkasan profil.
                   Bagian ini terpisah dan <strong>tidak mengubah skor utama</strong>.
@@ -467,7 +467,7 @@ export default function App() {
                     onChange={(e) => setAiConsent(e.target.checked)}
                   />
                   <span>
-                    Saya setuju teks CV dikirim ke Google Gemini untuk dianalisis.
+                    Saya setuju teks CV dikirim ke OpenRouter (model Gemma 4 31B) untuk dianalisis.
                     Teks tidak disimpan oleh Screening CV.
                   </span>
                 </label>
@@ -578,7 +578,7 @@ export default function App() {
           Penilaian standar berbasis aturan (rule-based) dan berjalan sepenuhnya di
           browser kamu — bukan keputusan rekruter, dan tidak ada data yang diunggah
           atau disimpan. Satu-satunya pengecualian: fitur Analisis AI (opsional)
-          mengirim teks CV ke Google Gemini hanya bila kamu mencentang persetujuan,
+          mengirim teks CV ke OpenRouter hanya bila kamu mencentang persetujuan,
           dan teks itu tidak disimpan oleh Screening CV.
         </p>
       </footer>

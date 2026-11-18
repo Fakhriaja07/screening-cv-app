@@ -1,4 +1,4 @@
-// Klien untuk backend Analisis AI (POST /api/analyze-ai → Google Gemini).
+// Klien untuk backend Analisis AI (POST /api/analyze-ai → OpenRouter).
 // Dipakai hanya bila pengguna mencentang persetujuan pengiriman teks CV.
 
 export interface AiRewrite {

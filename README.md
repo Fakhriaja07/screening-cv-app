@@ -22,7 +22,7 @@ npx tsx scripts/run-tests.ts
 Menjalankan frontend + backend AI bersamaan (untuk fitur Analisis AI):
 
 ```bash
-npx vercel dev   # butuh Vercel CLI; membaca .env.local untuk GEMINI_API_KEY
+npx vercel dev   # butuh Vercel CLI; membaca .env.local untuk OPENROUTER_API_KEY
 ```
 
 ## Fitur
@@ -34,7 +34,7 @@ npx vercel dev   # butuh Vercel CLI; membaca .env.local untuk GEMINI_API_KEY
   terurut dengan detail per pemeriksaan, cek kata kunci lowongan, tombol salin
   laporan, tombol reset, dan tombol "Coba CV Contoh".
 - Penghitung karakter/kata langsung pada textarea CV.
-- **Analisis AI (Gemini)** — opsional, atas persetujuan pengguna: saran
+- **Analisis AI (OpenRouter)** — opsional, atas persetujuan pengguna: saran
   penulisan ulang, kekurangan kualitatif, dan contoh ringkasan profil dari
   backend `api/analyze-ai.ts` (lihat bagian Backend AI).
 
@@ -42,7 +42,7 @@ npx vercel dev   # butuh Vercel CLI; membaca .env.local untuk GEMINI_API_KEY
 
 ```
 api/
-  analyze-ai.ts      Backend Analisis AI (Vercel Serverless Function → Gemini)
+  analyze-ai.ts      Backend Analisis AI (Vercel Serverless Function → OpenRouter)
 src/
   App.tsx            Komponen utama (hero, cara kerja, form, hasil, transparansi, tips)
   App.css            Seluruh gaya aplikasi
@@ -85,18 +85,19 @@ Poin hanya diberikan untuk bukti isi yang benar-benar ada; bagian kosong = 0.
 - **Kata kunci lowongan** (terpisah, tidak mengubah skor): 18 kata paling sering
   dari deskripsi lowongan (stopword dibuang) dicek keberadaannya di CV.
 
-## Backend AI (Gemini) — fitur "Analisis AI"
+## Backend AI (OpenRouter) — fitur "Analisis AI"
 
 Selain penilaian rule-based, ada fitur opsional **Analisis AI** yang memakai
-Google Gemini untuk saran kualitatif: penulisan ulang poin pengalaman, daftar
-kekurangan (terhadap lowongan bila diisi), dan contoh ringkasan profil.
-Fitur ini **tidak mengubah skor utama**.
+AI lewat **OpenRouter** (model default **Google Gemma 4 31B**,
+`google/gemma-4-31b-it`) untuk saran kualitatif: penulisan ulang poin
+pengalaman, daftar kekurangan (terhadap lowongan bila diisi), dan contoh
+ringkasan profil. Fitur ini **tidak mengubah skor utama**.
 
 ### Arsitektur
 
 ```
-Browser ──POST /api/analyze-ai──▶ Vercel Serverless Function ──▶ Google Gemini
-         {cvText, targetRole,      (api/analyze-ai.ts,            (generateContent,
+Browser ──POST /api/analyze-ai──▶ Vercel Serverless Function ──▶ OpenRouter
+         {cvText, targetRole,      (api/analyze-ai.ts,            (Chat Completions,
           jobDesc}                   API key di env server)         JSON terstruktur)
 ```
 
@@ -105,32 +106,35 @@ Browser ──POST /api/analyze-ai──▶ Vercel Serverless Function ──▶
 - Ada rate limit sederhana in-memory: maks 5 permintaan per 10 menit per IP
   (best-effort per instance fungsi).
 - Frontend hanya memanggil endpoint setelah pengguna mencentang persetujuan
-  pengiriman teks CV. Bila kuota Gemini habis, endpoint membalas 429 dan
-  analisis standar tetap bisa dipakai.
+  pengiriman teks CV. Bila OpenRouter membalas rate limit (429), endpoint
+  meneruskannya sebagai 429 dan analisis standar tetap bisa dipakai.
+- Error OpenRouter lain dipetakan rapi: 401/403 (key ditolak) dan 402 (kredit
+  tidak cukup) menjadi 502 dengan penjelasan + field `detail` berisi status
+  dan pesan resmi OpenRouter (tanpa key dan tanpa isi CV).
 
 ### Memasang API key
 
-1. Buat API key gratis di **Google AI Studio** (aistudio.google.com → Get API key).
+1. Buat API key di **OpenRouter**: [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys).
 2. Di **Vercel**: Project `screening-cv-app` → Settings → Environment Variables →
-   tambahkan `GEMINI_API_KEY` (dan opsional `GEMINI_MODEL`, default
-   `gemini-3.8-flash`).
+   tambahkan `OPENROUTER_API_KEY` (dan opsional `OPENROUTER_MODEL`, default
+   `google/gemma-4-31b-it`).
 3. **Redeploy** project (Deployments → ⋯ → Redeploy) agar variabel terbaca.
 4. Untuk uji lokal: salin `.env.example` menjadi `.env.local`, isi key-nya,
    lalu jalankan `npx vercel dev`.
 
-Tanpa key, endpoint membalas `500` dengan pesan "GEMINI_API_KEY belum
+Tanpa key, endpoint membalas `500` dengan pesan "OPENROUTER_API_KEY belum
 terpasang" dan bagian Analisis AI menampilkan pesan itu — situs dan analisis
 standar tidak terganggu.
 
-### Catatan free tier & privasi
+### Catatan biaya & privasi
 
-- Tier gratis Gemini punya **kuota terbatas** (per menit/hari) — cukup untuk
-  uji coba dan pengguna awal; pantau pemakaian di Google AI Studio.
-- Menurut ketentuan Google, data yang dikirim lewat **tier gratis dapat
-  dipakai Google untuk meningkatkan produknya**; tier berbayar tidak begitu.
-  Pertimbangkan naik tier sebelum peluncuran komersial.
+- Model Gemma 4 31B di OpenRouter berbayar per token (pay-as-you-go, tanpa
+  markup di atas harga provider) dan butuh kredit OpenRouter: bila endpoint
+  membalas error **402**, artinya **kredit OpenRouter tidak cukup** — isi
+  kredit atau periksa batas pemakaian akun.
+- Pantau pemakaian dan biaya di dashboard OpenRouter.
 - Aplikasi sendiri **tidak menyimpan** teks CV: fungsi backend hanya
-  meneruskannya ke Gemini dan tidak mencatat isinya ke log.
+  meneruskannya ke OpenRouter dan tidak mencatat isinya ke log.
 
 ## Catatan
 

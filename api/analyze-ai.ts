@@ -1,8 +1,8 @@
 // Backend Analisis AI — Vercel Serverless Function.
 //
-// Alur: browser → POST /api/analyze-ai → fungsi ini → Google Gemini → JSON kembali ke browser.
-// API key hanya dibaca dari environment variable server (GEMINI_API_KEY) dan
-// tidak pernah dikirim ke frontend. Isi CV hanya diteruskan ke Gemini untuk
+// Alur: browser → POST /api/analyze-ai → fungsi ini → OpenRouter → JSON kembali ke browser.
+// API key hanya dibaca dari environment variable server (OPENROUTER_API_KEY) dan
+// tidak pernah dikirim ke frontend. Isi CV hanya diteruskan ke OpenRouter untuk
 // dianalisis — tidak dicatat ke log dan tidak disimpan di mana pun.
 
 interface AiRequest {
@@ -39,8 +39,8 @@ const MAX_ROLE_CHARS = 200
 // --- Rate limit sederhana in-memory per IP ---
 // Best-effort per instance: state ini hidup di memori satu instance fungsi
 // serverless, jadi bukan batas global. Cukup untuk menahan penyalahgunaan
-// kasual terhadap kuota gratis; untuk batas yang tegas gunakan penyimpanan
-// bersama (mis. Vercel KV / Upstash) di lapisan berikutnya.
+// kasual; untuk batas yang tegas gunakan penyimpanan bersama
+// (mis. Vercel KV / Upstash) di lapisan berikutnya.
 const RATE_LIMIT_MAX = 5
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000
 const rateBuckets = new Map<string, { count: number; windowStart: number }>()
@@ -62,6 +62,9 @@ function clientIp(req: AiRequest): string {
   if (first) return first.split(',')[0].trim()
   return req.socket?.remoteAddress ?? 'unknown'
 }
+
+const SYSTEM_PROMPT =
+  'Kamu adalah konsultan karier berbahasa Indonesia. Balas HANYA dengan JSON valid sesuai skema yang diminta — tanpa markdown, tanpa pagar kode, tanpa teks pembuka/penutup. Jangan mengarang pengalaman, perusahaan, atau angka yang tidak ada di CV.'
 
 function buildPrompt(cvText: string, targetRole: string, jobDesc: string): string {
   const rolePart = targetRole
@@ -129,17 +132,19 @@ function normalizeResult(raw: unknown): AiResult | null {
   }
 }
 
-function parseGeminiJson(text: string): AiResult | null {
-  // Respons Gemini kadang dibungkus pagar markdown atau teks tambahan;
-  // coba parse langsung, lalu fallback ke potongan { ... } terluar.
+function parseAiJson(text: string): AiResult | null {
+  // Respons model kadang dibungkus pagar markdown (```json ... ```) atau
+  // teks tambahan; buang pagar kode, coba parse langsung, lalu fallback ke
+  // potongan { ... } terluar.
+  const cleaned = text.replace(/```(?:json)?/gi, '').trim()
   try {
-    return normalizeResult(JSON.parse(text))
+    return normalizeResult(JSON.parse(cleaned))
   } catch {
-    const start = text.indexOf('{')
-    const end = text.lastIndexOf('}')
+    const start = cleaned.indexOf('{')
+    const end = cleaned.lastIndexOf('}')
     if (start >= 0 && end > start) {
       try {
-        return normalizeResult(JSON.parse(text.slice(start, end + 1)))
+        return normalizeResult(JSON.parse(cleaned.slice(start, end + 1)))
       } catch {
         return null
       }
@@ -202,35 +207,35 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
     return
   }
 
-  const apiKey = process.env.GEMINI_API_KEY
+  const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) {
     res.status(500).json({
-      error: 'Fitur Analisis AI belum aktif: GEMINI_API_KEY belum terpasang di server.',
+      error: 'Fitur Analisis AI belum aktif: OPENROUTER_API_KEY belum terpasang di server.',
     })
     return
   }
-  const model = process.env.GEMINI_MODEL || 'gemini-3.8-flash'
+  const model = process.env.OPENROUTER_MODEL || 'google/gemma-4-31b-it'
 
-  let geminiResponse: Response
+  let aiResponse: Response
   try {
-    geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey,
-        },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: buildPrompt(cvText, targetRole, jobDesc) }] }],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            temperature: 0.4,
-            maxOutputTokens: 2048,
-          },
-        }),
+    aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+        'X-Title': 'Screening CV',
       },
-    )
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: buildPrompt(cvText, targetRole, jobDesc) },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.4,
+        max_tokens: 2048,
+      }),
+    })
   } catch {
     res.status(502).json({
       error: 'Layanan AI sedang tidak bisa dihubungi. Coba lagi nanti — hasil analisis standar tetap bisa dipakai.',
@@ -238,28 +243,44 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
     return
   }
 
-  if (geminiResponse.status === 429) {
-    res.status(429).json({
-      error: 'Kuota AI gratis hari ini habis/sedang penuh, coba lagi nanti — hasil analisis standar tetap bisa dipakai.',
-    })
-    return
-  }
-  if (!geminiResponse.ok) {
-    // Diagnosis: sertakan status HTTP + pesan error resmi Google pada field
-    // "detail" dan log server, agar penyebab 502 terlihat. Yang disertakan
-    // hanya status dan pesan Google — TIDAK termasuk API key, header, atau
-    // isi CV/permintaan.
+  if (!aiResponse.ok) {
+    // Diagnosis: sertakan status HTTP + pesan error resmi OpenRouter pada
+    // field "detail" dan log server, agar penyebab 502 terlihat. Yang
+    // disertakan hanya status dan pesan OpenRouter — TIDAK termasuk API key,
+    // header, atau isi CV/permintaan.
     let upstreamMessage = ''
     try {
-      const errData = (await geminiResponse.json()) as {
-        error?: { message?: string }
+      const errData = (await aiResponse.json()) as {
+        error?: { code?: number | string; message?: string }
       }
       upstreamMessage = (errData.error?.message ?? '').slice(0, 300)
     } catch {
       upstreamMessage = ''
     }
-    const detail = `Gemini HTTP ${geminiResponse.status}${upstreamMessage ? `: ${upstreamMessage}` : ''}`
+    const detail = `OpenRouter HTTP ${aiResponse.status}${upstreamMessage ? `: ${upstreamMessage}` : ''}`
     console.error(`[analyze-ai] ${detail}`)
+
+    if (aiResponse.status === 429) {
+      res.status(429).json({
+        error: 'Layanan AI sedang dibatasi (rate limit) atau kuota gratis sedang penuh, coba lagi nanti — hasil analisis standar tetap bisa dipakai.',
+        detail,
+      })
+      return
+    }
+    if (aiResponse.status === 401 || aiResponse.status === 403) {
+      res.status(502).json({
+        error: 'API key OpenRouter ditolak. Periksa konfigurasi OPENROUTER_API_KEY di server — hasil analisis standar tetap bisa dipakai.',
+        detail,
+      })
+      return
+    }
+    if (aiResponse.status === 402) {
+      res.status(502).json({
+        error: 'Kredit OpenRouter tidak cukup untuk menjalankan analisis AI. Isi kredit atau periksa batas pemakaian akun OpenRouter — hasil analisis standar tetap bisa dipakai.',
+        detail,
+      })
+      return
+    }
     res.status(502).json({
       error: 'Layanan AI mengembalikan kesalahan. Coba lagi nanti — hasil analisis standar tetap bisa dipakai.',
       detail,
@@ -269,16 +290,15 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
 
   let text = ''
   try {
-    const data = (await geminiResponse.json()) as {
-      candidates?: { content?: { parts?: { text?: string }[] } }[]
+    const data = (await aiResponse.json()) as {
+      choices?: { message?: { content?: string } }[]
     }
-    const parts = data.candidates?.[0]?.content?.parts ?? []
-    text = parts.map((p) => p.text ?? '').join('')
+    text = data.choices?.[0]?.message?.content ?? ''
   } catch {
     text = ''
   }
 
-  const result = text ? parseGeminiJson(text) : null
+  const result = text ? parseAiJson(text) : null
   if (!result) {
     res.status(502).json({
       error: 'Jawaban AI tidak bisa dibaca. Coba lagi — hasil analisis standar tetap bisa dipakai.',
