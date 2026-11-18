@@ -113,7 +113,7 @@ Browser ──POST /api/analyze-ai──▶ Vercel Serverless Function ──▶
 1. Buat API key gratis di **Google AI Studio** (aistudio.google.com → Get API key).
 2. Di **Vercel**: Project `screening-cv-app` → Settings → Environment Variables →
    tambahkan `GEMINI_API_KEY` (dan opsional `GEMINI_MODEL`, default
-   `gemini-2.5-flash`).
+   `gemini-3.8-flash`).
 3. **Redeploy** project (Deployments → ⋯ → Redeploy) agar variabel terbaca.
 4. Untuk uji lokal: salin `.env.example` menjadi `.env.local`, isi key-nya,
    lalu jalankan `npx vercel dev`.
