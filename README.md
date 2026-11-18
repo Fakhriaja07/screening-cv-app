@@ -19,6 +19,12 @@ Uji logika penilaian (opsional):
 npx tsx scripts/run-tests.ts
 ```
 
+Menjalankan frontend + backend AI bersamaan (untuk fitur Analisis AI):
+
+```bash
+npx vercel dev   # butuh Vercel CLI; membaca .env.local untuk GEMINI_API_KEY
+```
+
 ## Fitur
 
 - Upload CV **PDF** (pdfjs-dist, worker dari paket itu sendiri), **DOCX** (mammoth),
@@ -28,16 +34,22 @@ npx tsx scripts/run-tests.ts
   terurut dengan detail per pemeriksaan, cek kata kunci lowongan, tombol salin
   laporan, tombol reset, dan tombol "Coba CV Contoh".
 - Penghitung karakter/kata langsung pada textarea CV.
+- **Analisis AI (Gemini)** — opsional, atas persetujuan pengguna: saran
+  penulisan ulang, kekurangan kualitatif, dan contoh ringkasan profil dari
+  backend `api/analyze-ai.ts` (lihat bagian Backend AI).
 
 ## Struktur Folder
 
 ```
+api/
+  analyze-ai.ts      Backend Analisis AI (Vercel Serverless Function → Gemini)
 src/
   App.tsx            Komponen utama (hero, cara kerja, form, hasil, transparansi, tips)
   App.css            Seluruh gaya aplikasi
   index.css          Gaya dasar (reset & font)
   lib/
     analyze.ts       Logika penilaian (murni TypeScript, tanpa DOM)
+    ai.ts            Klien frontend untuk POST /api/analyze-ai
     sampleCv.ts      Teks CV contoh bawaan
     readFile.ts      Ekstraksi teks dari file PDF/DOCX/TXT
 scripts/
@@ -73,9 +85,58 @@ Poin hanya diberikan untuk bukti isi yang benar-benar ada; bagian kosong = 0.
 - **Kata kunci lowongan** (terpisah, tidak mengubah skor): 18 kata paling sering
   dari deskripsi lowongan (stopword dibuang) dicek keberadaannya di CV.
 
+## Backend AI (Gemini) — fitur "Analisis AI"
+
+Selain penilaian rule-based, ada fitur opsional **Analisis AI** yang memakai
+Google Gemini untuk saran kualitatif: penulisan ulang poin pengalaman, daftar
+kekurangan (terhadap lowongan bila diisi), dan contoh ringkasan profil.
+Fitur ini **tidak mengubah skor utama**.
+
+### Arsitektur
+
+```
+Browser ──POST /api/analyze-ai──▶ Vercel Serverless Function ──▶ Google Gemini
+         {cvText, targetRole,      (api/analyze-ai.ts,            (generateContent,
+          jobDesc}                   API key di env server)         JSON terstruktur)
+```
+
+- Endpoint hanya menerima `POST` JSON: `cvText` (wajib, 50–12.000 karakter),
+  `targetRole` (opsional), `jobDesc` (opsional, maks 6.000 karakter).
+- Ada rate limit sederhana in-memory: maks 5 permintaan per 10 menit per IP
+  (best-effort per instance fungsi).
+- Frontend hanya memanggil endpoint setelah pengguna mencentang persetujuan
+  pengiriman teks CV. Bila kuota Gemini habis, endpoint membalas 429 dan
+  analisis standar tetap bisa dipakai.
+
+### Memasang API key
+
+1. Buat API key gratis di **Google AI Studio** (aistudio.google.com → Get API key).
+2. Di **Vercel**: Project `screening-cv-app` → Settings → Environment Variables →
+   tambahkan `GEMINI_API_KEY` (dan opsional `GEMINI_MODEL`, default
+   `gemini-2.0-flash`).
+3. **Redeploy** project (Deployments → ⋯ → Redeploy) agar variabel terbaca.
+4. Untuk uji lokal: salin `.env.example` menjadi `.env.local`, isi key-nya,
+   lalu jalankan `npx vercel dev`.
+
+Tanpa key, endpoint membalas `500` dengan pesan "GEMINI_API_KEY belum
+terpasang" dan bagian Analisis AI menampilkan pesan itu — situs dan analisis
+standar tidak terganggu.
+
+### Catatan free tier & privasi
+
+- Tier gratis Gemini punya **kuota terbatas** (per menit/hari) — cukup untuk
+  uji coba dan pengguna awal; pantau pemakaian di Google AI Studio.
+- Menurut ketentuan Google, data yang dikirim lewat **tier gratis dapat
+  dipakai Google untuk meningkatkan produknya**; tier berbayar tidak begitu.
+  Pertimbangkan naik tier sebelum peluncuran komersial.
+- Aplikasi sendiri **tidak menyimpan** teks CV: fungsi backend hanya
+  meneruskannya ke Gemini dan tidak mencatat isinya ke log.
+
 ## Catatan
 
-- **100% client-side**: tidak ada backend, database, atau pengiriman data ke
-  server. File dan teks CV hanya diproses di browser pengguna.
-- Penilaian bersifat **rule-based** (berbasis aturan) — bukan AI dan bukan
+- **Analisis standar 100% client-side**: penilaian rule-based tidak memakai
+  backend, database, atau pengiriman data ke server — file dan teks CV hanya
+  diproses di browser pengguna. Satu-satunya pengecualian adalah fitur
+  Analisis AI di atas, yang hanya berjalan atas persetujuan pengguna.
+- Penilaian standar bersifat **rule-based** (berbasis aturan) — bukan
   keputusan rekruter.

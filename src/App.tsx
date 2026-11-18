@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
 import { analyzeCv, countWords, type AnalysisResult, type CheckItem } from './lib/analyze'
+import { requestAiAnalysis, type AiAnalysis } from './lib/ai'
 import { SAMPLE_CV } from './lib/sampleCv'
 import { extractTextFromFile } from './lib/readFile'
 
@@ -26,6 +27,7 @@ const I = {
   zap: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z',
   book: 'M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15zM4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5',
   search: 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35',
+  spark: 'M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4L12 3zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z',
 }
 
 // ---------- Ring skor beranimasi ----------
@@ -99,6 +101,10 @@ export default function App() {
   const [loadingFile, setLoadingFile] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [aiConsent, setAiConsent] = useState(false)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiResult, setAiResult] = useState<AiAnalysis | null>(null)
+  const [aiError, setAiError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const resultRef = useRef<HTMLDivElement>(null)
 
@@ -146,6 +152,27 @@ export default function App() {
     setFileName('')
     setError('')
     setCopied(false)
+    setAiConsent(false)
+    setAiResult(null)
+    setAiError('')
+  }
+
+  async function handleAiAnalyze() {
+    if (!aiConsent || aiLoading) return
+    if (cvText.trim().length < 50) {
+      setAiError('Teks CV terlalu pendek untuk dianalisis AI. Lengkapi dulu teks CV-nya.')
+      return
+    }
+    setAiLoading(true)
+    setAiError('')
+    try {
+      const data = await requestAiAnalysis({ cvText, targetRole, jobDesc })
+      setAiResult(data)
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : 'Analisis AI gagal. Coba lagi nanti.')
+    } finally {
+      setAiLoading(false)
+    }
   }
 
   async function handleCopyReport() {
@@ -198,8 +225,9 @@ export default function App() {
           <h1>Screening CV</h1>
           <p className="hero-sub">
             Masukkan CV-mu, dapatkan skor 0–100 dari 6 aspek dan 14 pemeriksaan,
-            lengkap dengan bagian mana saja yang harus diperbaiki. Semua analisis
+            lengkap dengan bagian mana saja yang harus diperbaiki. Analisis standar
             berjalan 100% di browser — file CV tidak diunggah ke server mana pun.
+            Ada juga Analisis AI opsional untuk saran penulisan ulang.
           </p>
           <div className="hero-actions">
             <a className="btn btn-primary" href="#analisis"><Icon d={I.chart} size={18} /> Mulai Analisis</a>
@@ -421,6 +449,94 @@ export default function App() {
                   </div>
                 </div>
               )}
+
+              {/* ----- ANALISIS AI ----- */}
+              <div className="card ai-card">
+                <h3><Icon d={I.spark} size={18} /> Analisis AI (Gemini)</h3>
+                <p>
+                  Mau saran yang lebih dalam dari skor di atas? AI Google Gemini bisa membaca
+                  CV-mu secara kualitatif: menulis ulang poin pengalamanmu, menunjukkan
+                  kekurangan terhadap lowongan, dan memberi contoh ringkasan profil.
+                  Bagian ini terpisah dan <strong>tidak mengubah skor utama</strong>.
+                </p>
+
+                <label className="consent-row">
+                  <input
+                    type="checkbox"
+                    checked={aiConsent}
+                    onChange={(e) => setAiConsent(e.target.checked)}
+                  />
+                  <span>
+                    Saya setuju teks CV dikirim ke Google Gemini untuk dianalisis.
+                    Teks tidak disimpan oleh Screening CV.
+                  </span>
+                </label>
+
+                <div className="ai-actions">
+                  <button
+                    className="btn btn-primary"
+                    type="button"
+                    onClick={handleAiAnalyze}
+                    disabled={!aiConsent || aiLoading || cvText.trim().length < 50}
+                  >
+                    <Icon d={I.spark} size={16} />
+                    {aiLoading ? 'Menganalisis dengan AI…' : aiResult ? 'Analisis Ulang dengan AI' : 'Analisis dengan AI'}
+                  </button>
+                  {cvText.trim().length < 50 && (
+                    <span className="ai-hint">Teks CV minimal 50 karakter untuk analisis AI.</span>
+                  )}
+                </div>
+
+                {aiError && <div className="alert alert-error"><Icon d={I.alert} size={16} /> {aiError}</div>}
+
+                {aiResult && (
+                  <div className="ai-result">
+                    {aiResult.ringkasan && (
+                      <div className="ai-block">
+                        <h4>Ringkasan Penilaian AI</h4>
+                        <p>{aiResult.ringkasan}</p>
+                      </div>
+                    )}
+
+                    {aiResult.saranPenulisanUlang.length > 0 && (
+                      <div className="ai-block">
+                        <h4>Saran Penulisan Ulang</h4>
+                        <ul className="rewrite-list">
+                          {aiResult.saranPenulisanUlang.map((r, i) => (
+                            <li className="rewrite-item" key={i}>
+                              <span className="rewrite-label">Asli</span>
+                              <p className="rewrite-asli">{r.asli}</p>
+                              <span className="rewrite-label">Saran</span>
+                              <p className="rewrite-saran">{r.saran}</p>
+                              {r.alasan && <p className="rewrite-alasan">{r.alasan}</p>}
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="ai-note">
+                          Saran di atas adalah contoh — sesuaikan angka dan fakta dengan
+                          pengalaman aslimu. Jangan memakai angka yang tidak benar.
+                        </p>
+                      </div>
+                    )}
+
+                    {aiResult.kekurangan.length > 0 && (
+                      <div className="ai-block">
+                        <h4>Kekurangan Menurut AI</h4>
+                        <ul className="ai-list">
+                          {aiResult.kekurangan.map((k, i) => <li key={i}>{k}</li>)}
+                        </ul>
+                      </div>
+                    )}
+
+                    {aiResult.saranRingkasan && (
+                      <div className="ai-block">
+                        <h4>Contoh Ringkasan Profil</h4>
+                        <p className="ai-summary">{aiResult.saranRingkasan}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </>
           )}
 
@@ -459,9 +575,11 @@ export default function App() {
 
       <footer className="footer">
         <p>
-          Penilaian berbasis aturan (rule-based) dan berjalan sepenuhnya di browser kamu —
-          bukan AI dan bukan keputusan rekruter. Tidak ada data yang diunggah, disimpan,
-          atau dikirim ke server mana pun.
+          Penilaian standar berbasis aturan (rule-based) dan berjalan sepenuhnya di
+          browser kamu — bukan keputusan rekruter, dan tidak ada data yang diunggah
+          atau disimpan. Satu-satunya pengecualian: fitur Analisis AI (opsional)
+          mengirim teks CV ke Google Gemini hanya bila kamu mencentang persetujuan,
+          dan teks itu tidak disimpan oleh Screening CV.
         </p>
       </footer>
     </div>
