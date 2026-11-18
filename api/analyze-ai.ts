@@ -16,6 +16,10 @@ interface AiResponse {
   status: (code: number) => AiResponse
   json: (data: unknown) => void
   setHeader: (name: string, value: string) => void
+  // Hanya dipakai mode streaming (respons Node asli Vercel memilikinya):
+  // menulis potongan aliran NDJSON dan menutup respons.
+  write?: (chunk: string) => boolean
+  end?: (chunk?: string) => void
 }
 
 interface RewriteItem {
@@ -40,6 +44,12 @@ const MAX_ROLE_CHARS = 200
 // sangat lambat; tanpa batas ini fungsi serverless menggantung sampai
 // diputus platform dan pengguna tidak mendapat pesan yang jelas.
 const UPSTREAM_TIMEOUT_MS = 55_000
+
+// Mode streaming: batas waktu keseluruhan aliran lebih longgar karena proses
+// berpikir model ditampilkan langsung ke pengguna, dan jatah token keluaran
+// lebih besar agar penalaran + JSON jawaban sama-sama muat.
+const STREAM_TIMEOUT_MS = 90_000
+const STREAM_MAX_TOKENS = 6000
 
 class UpstreamTimeoutError extends Error {
   constructor() {
@@ -253,6 +263,398 @@ export function parseAiResponse(data: unknown): AiParseOutcome {
   return { result, finishReason, rawText: contentText || reasoningText }
 }
 
+// --- Mode streaming -------------------------------------------------------
+// Sebagian provider menaruh penalaran di delta.reasoning_details sebagai
+// array bagian ({type:"reasoning.text", text:"..."} / {summary:"..."}).
+// Bagian terenkripsi (tanpa teks) dilewati.
+function extractReasoningDetailsText(value: unknown): string {
+  if (!Array.isArray(value)) return ''
+  let out = ''
+  for (const item of value) {
+    if (item && typeof item === 'object') {
+      const obj = item as Record<string, unknown>
+      if (typeof obj.text === 'string') out += obj.text
+      else if (typeof obj.summary === 'string') out += obj.summary
+    }
+  }
+  return out
+}
+
+const THINK_OPEN_TAGS = ['<thinking>', '<think>']
+const THINK_CLOSE_TAGS = ['</thinking>', '</think>']
+
+// Memisahkan teks content yang masuk bertahap menjadi penalaran (teks di
+// dalam blok <think>...</think>) dan konten jawaban. Aman terhadap tag yang
+// terpotong tepat di batas potongan aliran: ekor buffer yang mungkin awalan
+// tag ditahan sampai potongan berikutnya tiba.
+class ThinkSplitter {
+  private buffer = ''
+  private inThink = false
+
+  push(chunk: string): { reasoning: string; content: string } {
+    this.buffer += chunk
+    return this.drain(false)
+  }
+
+  flush(): { reasoning: string; content: string } {
+    return this.drain(true)
+  }
+
+  private drain(final: boolean): { reasoning: string; content: string } {
+    let reasoning = ''
+    let content = ''
+    for (;;) {
+      const tags = this.inThink ? THINK_CLOSE_TAGS : THINK_OPEN_TAGS
+      const lower = this.buffer.toLowerCase()
+      let tagStart = -1
+      let tagLength = 0
+      for (const tag of tags) {
+        const idx = lower.indexOf(tag)
+        if (idx >= 0 && (tagStart < 0 || idx < tagStart)) {
+          tagStart = idx
+          tagLength = tag.length
+        }
+      }
+      if (tagStart >= 0) {
+        const before = this.buffer.slice(0, tagStart)
+        if (this.inThink) reasoning += before
+        else content += before
+        this.buffer = this.buffer.slice(tagStart + tagLength)
+        this.inThink = !this.inThink
+        continue
+      }
+      if (final) {
+        if (this.inThink) reasoning += this.buffer
+        else content += this.buffer
+        this.buffer = ''
+      } else {
+        const hold = this.partialTagSuffixLength(tags)
+        const cut = this.buffer.length - hold
+        if (this.inThink) reasoning += this.buffer.slice(0, cut)
+        else content += this.buffer.slice(0, cut)
+        this.buffer = this.buffer.slice(cut)
+      }
+      break
+    }
+    return { reasoning, content }
+  }
+
+  // Panjang sufiks buffer yang merupakan awalan (belum utuh) salah satu tag.
+  private partialTagSuffixLength(tags: string[]): number {
+    const lower = this.buffer.toLowerCase()
+    let max = 0
+    for (const tag of tags) {
+      for (let len = 1; len < tag.length && len <= lower.length; len++) {
+        if (lower.endsWith(tag.slice(0, len))) max = Math.max(max, len)
+      }
+    }
+    return max
+  }
+}
+
+interface StreamOptions {
+  apiKey: string
+  model: string
+  cvText: string
+  targetRole: string
+  jobDesc: string
+}
+
+// Menjalankan analisis dalam mode streaming: meneruskan penalaran model
+// sebagai event NDJSON begitu tiba, lalu satu event hasil di akhir.
+// Semua error SEBELUM aliran dimulai (key, upstream HTTP, timeout awal)
+// sudah ditangani pemanggil / fase fetch di sini dengan respons JSON biasa;
+// fungsi ini hanya dipanggil setelah validasi lolos dan aliran adalah
+// satu-satunya keluaran yang tersisa untuk kegagalan di tengah proses.
+async function streamAnalysis(res: AiResponse, opts: StreamOptions): Promise<void> {
+  const { apiKey, model, cvText, targetRole, jobDesc } = opts
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS)
+
+  const sendRequest = async (options: {
+    withResponseFormat: boolean
+    withReasoning: boolean
+  }): Promise<Response> => {
+    try {
+      return await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+          'X-Title': 'Screening CV',
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: buildPrompt(cvText, targetRole, jobDesc) },
+          ],
+          stream: true,
+          ...(options.withResponseFormat ? { response_format: { type: 'json_object' } } : {}),
+          // Effort "medium" khusus jalur streaming: cukup berpikir untuk
+          // ditampilkan, tanpa menghabiskan seluruh jatah token.
+          ...(options.withReasoning ? { reasoning: { effort: 'medium' } } : {}),
+          temperature: 0.4,
+          max_tokens: STREAM_MAX_TOKENS,
+        }),
+      })
+    } catch (err) {
+      if (controller.signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
+        throw new UpstreamTimeoutError()
+      }
+      throw err
+    }
+  }
+
+  const readErrMessage = async (response: Response): Promise<string> => {
+    try {
+      const errData = (await response.json()) as {
+        error?: { code?: number | string; message?: string }
+      }
+      return (errData.error?.message ?? '').slice(0, 300)
+    } catch {
+      return ''
+    }
+  }
+
+  // --- Fase fetch: aliran belum dimulai, error dibalas JSON biasa ---
+  let aiResponse: Response
+  let upstreamMessage: string | null = null
+  let includeResponseFormat = true
+  let includeReasoning = true
+  try {
+    aiResponse = await sendRequest({
+      withResponseFormat: includeResponseFormat,
+      withReasoning: includeReasoning,
+    })
+    // Penolakan parameter opsional (400) ditangani sama seperti mode biasa:
+    // buang parameter yang ditolak, ulangi maksimal 2 kali.
+    for (let retry = 0; retry < 2 && !aiResponse.ok && aiResponse.status === 400; retry++) {
+      const message400 = await readErrMessage(aiResponse)
+      const lower = message400.toLowerCase()
+      let dropped = false
+      if (includeReasoning && lower.includes('reasoning')) {
+        includeReasoning = false
+        dropped = true
+      } else if (includeResponseFormat && /response_format|\bjson\b/.test(lower)) {
+        includeResponseFormat = false
+        dropped = true
+      } else if (/unsupported|not supported|unknown|invalid parameter/.test(lower)) {
+        if (includeReasoning) {
+          includeReasoning = false
+          dropped = true
+        } else if (includeResponseFormat) {
+          includeResponseFormat = false
+          dropped = true
+        }
+      }
+      if (!dropped) {
+        upstreamMessage = message400
+        break
+      }
+      aiResponse = await sendRequest({
+        withResponseFormat: includeResponseFormat,
+        withReasoning: includeReasoning,
+      })
+    }
+  } catch (err) {
+    clearTimeout(timer)
+    if (err instanceof UpstreamTimeoutError) {
+      console.error(`[analyze-ai] (stream) Timeout ${STREAM_TIMEOUT_MS / 1000} detik menunggu OpenRouter`)
+      res.status(502).json({
+        error: 'Layanan AI terlalu lama merespons. Coba lagi — hasil analisis standar tetap bisa dipakai.',
+        detail: 'Timeout 90 detik menunggu OpenRouter (streaming)',
+      })
+      return
+    }
+    res.status(502).json({
+      error: 'Layanan AI sedang tidak bisa dihubungi. Coba lagi nanti — hasil analisis standar tetap bisa dipakai.',
+    })
+    return
+  }
+
+  if (!aiResponse.ok) {
+    clearTimeout(timer)
+    const message = upstreamMessage ?? (await readErrMessage(aiResponse))
+    const detail = `OpenRouter HTTP ${aiResponse.status}${message ? `: ${message}` : ''}`
+    console.error(`[analyze-ai] (stream) ${detail}`)
+    if (aiResponse.status === 429) {
+      res.status(429).json({
+        error: 'Layanan AI sedang dibatasi (rate limit) atau kuota gratis sedang penuh, coba lagi nanti — hasil analisis standar tetap bisa dipakai.',
+        detail,
+      })
+      return
+    }
+    if (aiResponse.status === 401 || aiResponse.status === 403) {
+      res.status(502).json({
+        error: 'API key OpenRouter ditolak. Periksa konfigurasi OPENROUTER_API_KEY di server — hasil analisis standar tetap bisa dipakai.',
+        detail,
+      })
+      return
+    }
+    if (aiResponse.status === 402) {
+      res.status(502).json({
+        error: 'Kredit OpenRouter tidak cukup untuk menjalankan analisis AI. Isi kredit atau periksa batas pemakaian akun OpenRouter — hasil analisis standar tetap bisa dipakai.',
+        detail,
+      })
+      return
+    }
+    res.status(502).json({
+      error: 'Layanan AI mengembalikan kesalahan. Coba lagi nanti — hasil analisis standar tetap bisa dipakai.',
+      detail,
+    })
+    return
+  }
+
+  const reader = aiResponse.body?.getReader()
+  if (!reader) {
+    clearTimeout(timer)
+    res.status(502).json({
+      error: 'Layanan AI mengembalikan kesalahan. Coba lagi nanti — hasil analisis standar tetap bisa dipakai.',
+      detail: 'OpenRouter tidak mengirim aliran data (stream kosong).',
+    })
+    return
+  }
+
+  // --- Fase aliran: keluaran menjadi NDJSON, satu event per baris ---
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8')
+  res.setHeader('Cache-Control', 'no-cache, no-transform')
+  res.setHeader('X-Accel-Buffering', 'no')
+  res.status(200)
+  const send = (event: Record<string, unknown>) => {
+    try {
+      res.write?.(`${JSON.stringify(event)}\n`)
+    } catch {
+      // Klien terputus; abaikan — pembacaan upstream dihentikan di catch.
+    }
+  }
+
+  const splitter = new ThinkSplitter()
+  let reasoningAll = ''
+  let contentAll = ''
+  let finishReason = ''
+  let streamError: { error: string; detail: string } | null = null
+
+  const emitReasoning = (text: string) => {
+    if (!text) return
+    reasoningAll += text
+    send({ type: 'reasoning', text })
+  }
+  const emitContent = (chunk: string) => {
+    const split = splitter.push(chunk)
+    emitReasoning(split.reasoning)
+    contentAll += split.content
+  }
+
+  try {
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let upstreamDone = false
+    while (!upstreamDone) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      let nl = buffer.indexOf('\n')
+      while (nl >= 0) {
+        const line = buffer.slice(0, nl).trim()
+        buffer = buffer.slice(nl + 1)
+        nl = buffer.indexOf('\n')
+        if (!line.startsWith('data:')) continue
+        const dataStr = line.slice('data:'.length).trim()
+        if (!dataStr) continue
+        if (dataStr === '[DONE]') {
+          upstreamDone = true
+          break
+        }
+        let chunkJson: Record<string, unknown>
+        try {
+          chunkJson = JSON.parse(dataStr) as Record<string, unknown>
+        } catch {
+          continue
+        }
+        if (chunkJson.error && typeof chunkJson.error === 'object') {
+          const errObj = chunkJson.error as Record<string, unknown>
+          const msg = asString(errObj.message).slice(0, 300)
+          streamError = {
+            error: 'Layanan AI mengembalikan kesalahan. Coba lagi nanti — hasil analisis standar tetap bisa dipakai.',
+            detail: `OpenRouter${msg ? `: ${msg}` : ''}`,
+          }
+          upstreamDone = true
+          break
+        }
+        const choices = Array.isArray(chunkJson.choices) ? chunkJson.choices : []
+        const choice =
+          choices[0] && typeof choices[0] === 'object'
+            ? (choices[0] as Record<string, unknown>)
+            : null
+        if (!choice) continue
+        if (typeof choice.finish_reason === 'string' && choice.finish_reason) {
+          finishReason = choice.finish_reason
+        }
+        const delta =
+          choice.delta && typeof choice.delta === 'object'
+            ? (choice.delta as Record<string, unknown>)
+            : {}
+        emitReasoning(
+          extractMessageText(delta.reasoning) + extractReasoningDetailsText(delta.reasoning_details),
+        )
+        const contentChunk = extractMessageText(delta.content)
+        if (contentChunk) emitContent(contentChunk)
+      }
+    }
+  } catch (err) {
+    if (controller.signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
+      streamError = {
+        error: 'Layanan AI terlalu lama merespons. Coba lagi — hasil analisis standar tetap bisa dipakai.',
+        detail: 'Timeout 90 detik menunggu OpenRouter (streaming)',
+      }
+    } else if (!streamError) {
+      streamError = {
+        error: 'Layanan AI sedang tidak bisa dihubungi. Coba lagi nanti — hasil analisis standar tetap bisa dipakai.',
+        detail: 'Aliran data dari OpenRouter terputus di tengah proses.',
+      }
+    }
+  } finally {
+    clearTimeout(timer)
+  }
+
+  // Sisa splitter (tag tidak ditutup / potongan terakhir) tetap diproses.
+  const rest = splitter.flush()
+  if (!streamError) emitReasoning(rest.reasoning)
+  else reasoningAll += rest.reasoning
+  contentAll += rest.content
+
+  if (streamError) {
+    console.error(`[analyze-ai] (stream) ${streamError.detail}`)
+    send({ type: 'error', error: streamError.error, detail: streamError.detail })
+    res.end?.()
+    return
+  }
+
+  let result = contentAll ? parseAiJson(contentAll) : null
+  if (!result && reasoningAll) result = parseAiJson(reasoningAll)
+  if (result) {
+    send({ type: 'result', data: result })
+  } else {
+    const rawText = contentAll || reasoningAll
+    const snippet = rawText.slice(0, 200)
+    const detail =
+      `finish_reason: ${finishReason || 'tidak tersedia'}; ` +
+      `panjang teks mentah: ${rawText.length} karakter; ` +
+      `cuplikan awal jawaban model: ${snippet ? `"${snippet}"` : '(kosong)'}`
+    console.error(
+      `[analyze-ai] (stream) Jawaban model tidak terparse (finish_reason=${finishReason || '-'}, panjang=${rawText.length})`,
+    )
+    send({
+      type: 'error',
+      error: 'Jawaban AI tidak bisa dibaca. Coba lagi — hasil analisis standar tetap bisa dipakai.',
+      detail,
+    })
+  }
+  res.end?.()
+}
+
 export default async function handler(req: AiRequest, res: AiResponse): Promise<void> {
   res.setHeader('Content-Type', 'application/json; charset=utf-8')
 
@@ -315,6 +717,15 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
     return
   }
   const model = process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b:free'
+
+  // Mode streaming (body memuat "stream": true): proses berpikir model
+  // diteruskan langsung ke browser sebagai event NDJSON. Semua validasi,
+  // rate limit, dan pemeriksaan key di atas sudah berjalan sama seperti
+  // mode biasa — error sebelum aliran dimulai dibalas JSON biasa.
+  if (payload.stream === true) {
+    await streamAnalysis(res, { apiKey, model, cvText, targetRole, jobDesc })
+    return
+  }
 
   const sendRequest = async (options: {
     withResponseFormat: boolean

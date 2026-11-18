@@ -119,6 +119,35 @@ Browser ──POST /api/analyze-ai──▶ Vercel Serverless Function ──▶
   (`reasoning`/`response_format`) dengan error 400, endpoint mengulang
   permintaan dengan membuang parameter yang ditolak (maksimal 2 kali).
 
+### Mode streaming (panel proses berpikir)
+
+Frontend memanggil endpoint dengan `"stream": true` agar proses berpikir
+model terlihat langsung di panel "Proses berpikir AI". Dalam mode ini
+respons bukan lagi satu JSON, melainkan aliran **NDJSON**
+(`Content-Type: application/x-ndjson`, satu event JSON per baris):
+
+- `{"type":"reasoning","text":"..."}` — potongan penalaran model, diambil
+  dari `delta.reasoning` / `delta.reasoning_details`; penalaran yang
+  tercampur ke `delta.content` dalam blok `<think>...</think>` dipisahkan
+  ke event ini juga.
+- `{"type":"result","data":{...}}` — satu kali di akhir, hasil analisis
+  dengan skema yang sama seperti mode non-streaming.
+- `{"type":"error","error":"...","detail":"..."}` — kegagalan di tengah
+  aliran (error upstream, timeout, atau jawaban tidak terparse), dengan
+  pesan dan detail diagnostik yang sama seperti mode non-streaming.
+
+Error **sebelum** aliran dimulai (validasi, rate limit, key belum
+terpasang, upstream menolak di awal) tetap dibalas sebagai JSON biasa
+dengan status HTTP seperti mode non-streaming. Parameter khusus jalur
+streaming: `reasoning: {effort: "medium"}`, `max_tokens` 6000, dan batas
+waktu keseluruhan aliran **90 detik**. Mode non-streaming tidak berubah
+(effort low, `max_tokens` 3000, timeout 55 detik). Di sisi frontend, panel
+menampilkan teks penalaran secara langsung (dibatasi ±8.000 karakter)
+beserta penghitung detik; setelah selesai panel terlipat menjadi ringkasan
+yang bisa dibuka lagi. Bila permintaan streaming gagal sebelum event
+pertama tiba, frontend otomatis mencoba sekali mode non-streaming sebagai
+cadangan.
+
 ### Memasang API key
 
 1. Buat API key di **OpenRouter**: [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys).

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
 import { analyzeCv, countWords, type AnalysisResult, type CheckItem } from './lib/analyze'
-import { requestAiAnalysis, type AiAnalysis } from './lib/ai'
+import { requestAiAnalysis, requestAiAnalysisStreaming, type AiAnalysis } from './lib/ai'
 import { SAMPLE_CV } from './lib/sampleCv'
 import { extractTextFromFile } from './lib/readFile'
 
@@ -105,8 +105,29 @@ export default function App() {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiResult, setAiResult] = useState<AiAnalysis | null>(null)
   const [aiError, setAiError] = useState('')
+  const [aiThinking, setAiThinking] = useState('')
+  const [aiThinkingOpen, setAiThinkingOpen] = useState(false)
+  const [aiElapsed, setAiElapsed] = useState(0)
+  const [aiDuration, setAiDuration] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const resultRef = useRef<HTMLDivElement>(null)
+  const aiStartRef = useRef(0)
+  const thinkingBodyRef = useRef<HTMLDivElement>(null)
+
+  // Penghitung detik berjalan selama analisis AI berlangsung.
+  useEffect(() => {
+    if (!aiLoading) return
+    const id = window.setInterval(() => {
+      setAiElapsed(Math.floor((Date.now() - aiStartRef.current) / 1000))
+    }, 500)
+    return () => window.clearInterval(id)
+  }, [aiLoading])
+
+  // Panel proses berpikir selalu bergulir mengikuti teks terbaru.
+  useEffect(() => {
+    const el = thinkingBodyRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [aiThinking, aiThinkingOpen])
 
   async function handleFile(file: File) {
     setError('')
@@ -155,6 +176,10 @@ export default function App() {
     setAiConsent(false)
     setAiResult(null)
     setAiError('')
+    setAiThinking('')
+    setAiThinkingOpen(false)
+    setAiElapsed(0)
+    setAiDuration(null)
   }
 
   async function handleAiAnalyze() {
@@ -165,12 +190,44 @@ export default function App() {
     }
     setAiLoading(true)
     setAiError('')
+    setAiThinking('')
+    setAiThinkingOpen(false)
+    setAiDuration(null)
+    setAiElapsed(0)
+    aiStartRef.current = Date.now()
+    const input = { cvText, targetRole, jobDesc }
+    let receivedEvent = false
     try {
-      const data = await requestAiAnalysis({ cvText, targetRole, jobDesc })
+      const data = await requestAiAnalysisStreaming(input, {
+        onActivity: () => {
+          receivedEvent = true
+        },
+        onReasoning: (text) => {
+          setAiThinking((prev) => {
+            if (prev.length >= 8000) return prev
+            const next = prev + text
+            return next.length > 8000 ? `${next.slice(0, 8000)}…` : next
+          })
+        },
+      })
       setAiResult(data)
-    } catch (e) {
-      setAiError(e instanceof Error ? e.message : 'Analisis AI gagal. Coba lagi nanti.')
+    } catch (streamErr) {
+      if (!receivedEvent) {
+        // Streaming gagal sebelum event pertama (jaringan/HTTP error):
+        // coba sekali mode non-streaming sebagai cadangan.
+        try {
+          const data = await requestAiAnalysis(input)
+          setAiResult(data)
+        } catch (fallbackErr) {
+          setAiError(
+            fallbackErr instanceof Error ? fallbackErr.message : 'Analisis AI gagal. Coba lagi nanti.',
+          )
+        }
+      } else {
+        setAiError(streamErr instanceof Error ? streamErr.message : 'Analisis AI gagal. Coba lagi nanti.')
+      }
     } finally {
+      setAiDuration(Math.max(1, Math.round((Date.now() - aiStartRef.current) / 1000)))
       setAiLoading(false)
     }
   }
@@ -486,6 +543,39 @@ export default function App() {
                     <span className="ai-hint">Teks CV minimal 50 karakter untuk analisis AI.</span>
                   )}
                 </div>
+
+                {(aiLoading || aiThinking) && (
+                  <div className="thinking-panel">
+                    {aiLoading ? (
+                      <>
+                        <div className="thinking-head">
+                          <span>Proses berpikir AI</span>
+                          <span className="thinking-time">{aiElapsed} detik</span>
+                        </div>
+                        <div className="thinking-body" ref={thinkingBodyRef}>
+                          {aiThinking || 'Menghubungi model AI…'}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="thinking-summary"
+                          onClick={() => setAiThinkingOpen((o) => !o)}
+                        >
+                          {aiError
+                            ? `Proses berpikir terhenti (±${aiDuration ?? aiElapsed} detik) — klik untuk ${aiThinkingOpen ? 'menutup' : 'melihat'}`
+                            : `Proses berpikir selesai (±${aiDuration ?? aiElapsed} detik) — klik untuk ${aiThinkingOpen ? 'menutup' : 'melihat'}`}
+                        </button>
+                        {aiThinkingOpen && (
+                          <div className="thinking-body thinking-body-bordered" ref={thinkingBodyRef}>
+                            {aiThinking}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
 
                 {aiError && <div className="alert alert-error"><Icon d={I.alert} size={16} /> {aiError}</div>}
 

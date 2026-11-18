@@ -534,6 +534,65 @@
   font-size: 13px;
   color: #94a3b8;
 }
+
+/* ===== Panel proses berpikir AI (streaming) ===== */
+.thinking-panel {
+  margin-top: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  overflow: hidden;
+}
+.thinking-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 13px;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #64748b;
+}
+.thinking-time {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+.thinking-body {
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 11px 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: #64748b;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.thinking-body-bordered {
+  border-top: 1px solid #e2e8f0;
+}
+.thinking-summary {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 11px 13px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #1d4ed8;
+  cursor: pointer;
+}
+.thinking-summary:hover {
+  background: #eff6ff;
+}
 .ai-result {
   margin-top: 6px;
 }
