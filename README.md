@@ -56,21 +56,27 @@ scripts/
   run-tests.ts       Uji logika penilaian dengan 3 CV + uji deteksi HP
 ```
 
-## Aturan Penilaian (total 100 poin, 6 aspek, 14 pemeriksaan)
+## Aturan Penilaian (total 100 poin, 6 aspek, 20 pemeriksaan + 1 kondisional)
 
 Poin hanya diberikan untuk bukti isi yang benar-benar ada; bagian kosong = 0.
-Penilaian **diperketat pada 2026-11-19**: poin penuh hanya untuk kualitas
-yang benar-benar kuat, bukan sekadar "ada". Kalibrasi patokan
-(`scripts/run-tests.ts`): CV kuat 93, CV menengah 51, CV lemah 7.
+Penilaian **diperluas pada 2026-11-19 lewat aspek yang dinilai** (bukan
+lewat menaikkan kuota angka — pendekatan kuota sempat dicoba dan dibatalkan
+atas koreksi pengguna): kini dinilai juga kedalaman entri pengalaman,
+frasa lemah/klise, sertifikasi & pelatihan, bahasa asing, konsistensi
+format periode & urutan kronologis, kerapian bahasa, dan — bila posisi
+target diisi — relevansi ringkasan terhadap posisi target (pemeriksaan
+ke-21 yang kondisional). Ambang pemeriksaan dasar tetap seperti v1.
+Kalibrasi patokan (`scripts/run-tests.ts`): CV kuat 96, CV menengah 58,
+CV lemah 16.
 
 | Aspek | Maks | Pemeriksaan |
 | --- | --- | --- |
 | Kontak | 20 | Email valid (7), nomor HP Indonesia (6), LinkedIn (4), link portofolio (3) |
-| Ringkasan | 10 | Panjang 30–80 kata (5) + menyebut bidang/posisi atau lama pengalaman (2) + lama pengalaman (2) + kekuatan/skill (1); poin penuh mensyaratkan semuanya |
-| Pengalaman | 28 | Struktur pengalaman (10: entri jabatan + perusahaan + periode, bullet konsisten; paragraf dibatasi), kata kerja aksi (8: ≥70% bullet diawali kata kerja aksi kuat & bervariasi), angka pencapaian berbeda ≥3 = 10 |
-| Pendidikan | 12 | Kelengkapan pendidikan (8: institusi 3 + jurusan 2 + tahun lulus 3), IPK/GPA (4) |
-| Keahlian | 10 | Jumlah item skill: ≥10 = 10, 7–9 = 7, 5–6 = 5, 3–4 = 3, 1–2 = 1 |
-| Format & ATS | 20 | Panjang 350–1.000 kata = 10 (bertingkat di luarnya), tahun/periode tercantum (5), bullet ≥6 = 5 |
+| Ringkasan | 10 | Panjang isi ringkasan: ≥40 kata = 10, 20–39 = 7, 8–19 = 4, 1–7 = 2. Bila posisi target diisi: ringkasan maks 7 (tingkat yang sama, diskalakan) + relevansi ringkasan terhadap posisi target (3) |
+| Pengalaman | 28 | Bagian pengalaman (6), kata kerja aksi berbeda ≥5 = 6, angka pencapaian ≥3 = 8, kedalaman entri (5: jabatan + perusahaan + periode + uraian isi per entri), frasa lemah & klise (3) |
+| Pendidikan | 12 | Pendidikan tercantum (6), IPK/GPA (3), sertifikasi & pelatihan sebagai bagian tersendiri (3) |
+| Keahlian | 10 | Jumlah item skill: ≥8 = 8, 5–7 = 5, 3–4 = 3, 1–2 = 1; bahasa asing (2: bagian tersendiri = 2, hanya disebut = 1) |
+| Format & ATS | 20 | Panjang 220–900 kata = 8 (bertingkat di luarnya), tahun/periode tercantum (4), bullet ≥6 = 3, konsistensi format & urutan kronologis (3), kerapian bahasa (2) |
 
 - **Nomor HP**: rangkaian digit yang boleh berisi spasi, strip, titik, kurung, dan
   awalan `+` dibersihkan dulu, lalu divalidasi sebagai satu nomor utuh
@@ -82,10 +88,17 @@ yang benar-benar kuat, bukan sekadar "ada". Kalibrasi patokan
   "portofolio" tanpa alamat tidak dihitung.
 - **Hasil terukur**: angka dengan `%`/satuan (juta, ribu, orang, klien, proyek,
   jam, hari, bulan, tahun) atau nominal `Rp`, dengan tahun kalender dan fragmen
-  nomor HP dikecualikan; dihitung dari bagian pengalaman dan hanya nilai yang
-  berbeda (nilai sama berulang dihitung sekali).
-- **Label**: ≥90 "Sangat Siap Dilamar", ≥75 "Sudah Bagus", ≥55 "Perlu Perbaikan",
-  <55 "Perlu Dirombak Dulu".
+  nomor HP dikecualikan.
+- **Frasa lemah & klise**: frasa generik tanpa bukti ("bertanggung jawab
+  atas", "pekerja keras", "bekerja di bawah tekanan", "dapat bekerja dalam
+  tim maupun individu", "bersedia ditempatkan di mana saja") dilaporkan apa
+  adanya dan menurunkan poin; hanya dinilai bila ada bagian ringkasan/
+  pengalaman.
+- **Kerapian bahasa**: kata ganti "saya" ≥4 kali di bagian pengalaman dan
+  kata dari daftar kecil yang sering salah eja (mis. aktifitas, praktek,
+  ijin, resiko) — pemeriksaan dasar, bukan tata bahasa menyeluruh.
+- **Label**: ≥85 "Sangat Siap Dilamar", ≥70 "Sudah Bagus", ≥50 "Perlu Perbaikan",
+  <50 "Perlu Dirombak Dulu".
 - **Kata kunci lowongan** (terpisah, tidak mengubah skor): 18 kata paling sering
   dari deskripsi lowongan (stopword dibuang) dicek keberadaannya di CV.
 

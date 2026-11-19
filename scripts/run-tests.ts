@@ -50,15 +50,15 @@ function check(name: string, ok: boolean, detail: string) {
 
 const strong = analyzeCv(SAMPLE_CV)
 console.log('CV KUAT per aspek:', strong.aspects.map((a) => `${a.name} ${a.score}/${a.max}`).join(' | '))
-check('CV kuat (contoh bawaan)', strong.total >= 82 && strong.total <= 93, `skor ${strong.total}/100 (${strong.label})`)
+check('CV kuat (contoh bawaan)', strong.total >= 90 && strong.total <= 98, `skor ${strong.total}/100 (${strong.label})`)
 
 const medium = analyzeCv(MEDIUM_CV)
 console.log('CV MENENGAH per aspek:', medium.aspects.map((a) => `${a.name} ${a.score}/${a.max}`).join(' | '))
-check('CV menengah realistis', medium.total >= 40 && medium.total <= 54, `skor ${medium.total}/100 (${medium.label})`)
+check('CV menengah realistis', medium.total >= 50 && medium.total <= 65, `skor ${medium.total}/100 (${medium.label})`)
 
 const weak = analyzeCv(WEAK_CV)
 console.log('CV LEMAH per aspek:', weak.aspects.map((a) => `${a.name} ${a.score}/${a.max}`).join(' | '))
-check('CV lemah', weak.total <= 22, `skor ${weak.total}/100 (${weak.label})`)
+check('CV lemah', weak.total <= 20, `skor ${weak.total}/100 (${weak.label})`)
 
 check('HP format kurung "(62 8 ) 95 - 6031 - 48022"', detectPhone('(62 8 ) 95 - 6031 - 48022') === true, 'harus true')
 check('HP rentang tahun "2022 - 2024"', detectPhone('Bekerja tahun 2022 - 2024 di Jakarta') === false, 'harus false')
@@ -181,32 +181,189 @@ check(
 clearHistory(store)
 check('Riwayat: hapus mengosongkan storage', loadHistory(store).length === 0, 'setelah clearHistory terbaca 0 entri')
 
-// ---------- Pengetatan penilaian (2026-11-19): kalibrasi patokan baru ----------
+// ---------- Rombakan penilaian berbasis aspek (2026-11-19) ----------
+// Pengetatan kuota angka (93/51/7) DIBATALKAN atas koreksi pengguna;
+// keketatan kini dari aspek yang dinilai. Kuota dasar kembali ke v1
+// (ambang label ≥85/≥70/≥50; kata kerja aksi ≥5; hasil terukur ≥3;
+// skill ≥8; panjang ideal 220–900 kata).
 check(
-  'Pengetatan: skor patokan terkunci 93/51/7',
-  strong.total === 93 && medium.total === 51 && weak.total === 7,
-  `kuat ${strong.total}, menengah ${medium.total}, lemah ${weak.total} (harus 93/51/7)`,
+  'Rombakan aspek: skor patokan terkunci 96/58/16',
+  strong.total === 96 && medium.total === 58 && weak.total === 16,
+  `kuat ${strong.total}, menengah ${medium.total}, lemah ${weak.total} (harus 96/58/16)`,
 )
 
 check(
-  'Pengetatan: CV kuat tidak lagi sempurna & label mengikuti ambang baru',
-  strong.total < 100 && strong.label === 'Sangat Siap Dilamar' && medium.label === 'Perlu Dirombak Dulu',
-  `kuat ${strong.total} (${strong.label}), menengah ${medium.total} (${medium.label})`,
+  'Rombakan aspek: label kembali ke ambang v1',
+  strong.label === 'Sangat Siap Dilamar' &&
+    medium.label === 'Perlu Perbaikan' &&
+    weak.label === 'Perlu Dirombak Dulu',
+  `kuat ${strong.total} (${strong.label}), menengah ${medium.total} (${medium.label}), lemah ${weak.total} (${weak.label})`,
 )
 
 const strongCheck = (id: string) => strong.aspects.flatMap((a) => a.checks).find((c) => c.id === id)
 const mediumCheck = (id: string) => medium.aspects.flatMap((a) => a.checks).find((c) => c.id === id)
 const weakCheck = (id: string) => weak.aspects.flatMap((a) => a.checks).find((c) => c.id === id)
+const checkOf = (r: ReturnType<typeof analyzeCv>, id: string) =>
+  r.aspects.flatMap((a) => a.checks).find((c) => c.id === id)
+
 check(
-  'Pengetatan: rincian pemeriksaan kunci sesuai aturan baru',
-  strongCheck('panjang')?.score === 3 &&
-    strongCheck('hasil-terukur')?.score === 10 &&
-    strongCheck('kata-kerja-aksi')?.score === 8 &&
-    mediumCheck('hasil-terukur')?.score === 0 &&
-    mediumCheck('panjang')?.score === 0 &&
-    weakCheck('pendidikan')?.score === 0 &&
-    weakCheck('pengalaman-heading')?.score === 0,
-  `kuat panjang ${strongCheck('panjang')?.score}/10, menengah hasil-terukur ${mediumCheck('hasil-terukur')?.score}/10, lemah pendidikan ${weakCheck('pendidikan')?.score}/8`,
+  'Rombakan aspek: CV kuat kehilangan poin hanya dari aspek baru (sertifikasi & bahasa)',
+  strong.total < 100 &&
+    strongCheck('sertifikasi')?.score === 0 &&
+    strongCheck('bahasa')?.score === 1 &&
+    strongCheck('kedalaman-entri')?.score === 5 &&
+    strongCheck('frasa-lemah')?.score === 3 &&
+    strongCheck('konsistensi-format')?.score === 3 &&
+    strongCheck('kerapian-bahasa')?.score === 2 &&
+    strongCheck('hasil-terukur')?.score === 8 &&
+    strongCheck('kata-kerja-aksi')?.score === 6,
+  `kuat: sertifikasi ${strongCheck('sertifikasi')?.score}/3, bahasa ${strongCheck('bahasa')?.score}/2, kedalaman ${strongCheck('kedalaman-entri')?.score}/5, frasa ${strongCheck('frasa-lemah')?.score}/3, konsistensi ${strongCheck('konsistensi-format')?.score}/3, kerapian ${strongCheck('kerapian-bahasa')?.score}/2`,
+)
+
+check(
+  'Rombakan aspek: jumlah pemeriksaan 20 (21 bila posisi target diisi)',
+  strong.aspects.flatMap((a) => a.checks).length === 20 &&
+    analyzeCv(SAMPLE_CV, { targetRole: 'Data Analyst' }).aspects.flatMap((a) => a.checks).length === 21,
+  `tanpa peran ${strong.aspects.flatMap((a) => a.checks).length}, dengan peran ${analyzeCv(SAMPLE_CV, { targetRole: 'Data Analyst' }).aspects.flatMap((a) => a.checks).length}`,
+)
+
+// --- Pemeriksaan baru: frasa lemah & klise ---
+const CLICHE_CV = `Sari Wulandari
+sari.wulandari@gmail.com | 0813-1111-2222
+
+Ringkasan
+Saya pekerja keras, mampu bekerja di bawah tekanan, dapat bekerja dalam tim maupun individu, dan bersedia ditempatkan di mana saja.
+
+Pengalaman
+Kasir — Toko Berkah (2022 - 2023)
+- Bertanggung jawab atas kasir dan melayani pembeli setiap hari.`
+const cliche = analyzeCv(CLICHE_CV)
+check(
+  'Aspek baru: frasa klise terdeteksi & dilaporkan (negatif)',
+  checkOf(cliche, 'frasa-lemah')?.score === 0 &&
+    (checkOf(cliche, 'frasa-lemah')?.message.includes('"pekerja keras"') ?? false) &&
+    (checkOf(cliche, 'frasa-lemah')?.message.includes('"bertanggung jawab atas"') ?? false),
+  `skor ${checkOf(cliche, 'frasa-lemah')?.score}/3; pesan: ${checkOf(cliche, 'frasa-lemah')?.message.slice(0, 110)}…`,
+)
+check(
+  'Aspek baru: tanpa frasa klise → poin penuh (positif)',
+  mediumCheck('frasa-lemah')?.score === 3 && weakCheck('frasa-lemah')?.score === 0,
+  `menengah ${mediumCheck('frasa-lemah')?.score}/3 (tanpa klise), lemah ${weakCheck('frasa-lemah')?.score}/3 (tanpa bagian ringkasan/pengalaman → tidak diberi poin cuma-cuma)`,
+)
+
+// --- Pemeriksaan baru: kedalaman entri ---
+const SHALLOW_CV = `Dedi Kurnia
+dedi.kurnia@gmail.com
+
+Pengalaman
+Kasir — Toko Berkah (2022 - 2023)
+Staf Gudang — PT Logistik Jaya (2021 - 2022)`
+const shallow = analyzeCv(SHALLOW_CV)
+check(
+  'Aspek baru: entri hanya judul tanpa uraian → kedalaman 0 (negatif)',
+  checkOf(shallow, 'kedalaman-entri')?.score === 0 &&
+    (checkOf(shallow, 'kedalaman-entri')?.message.includes('tanpa uraian isi') ?? false),
+  `skor ${checkOf(shallow, 'kedalaman-entri')?.score}/5; pesan: ${checkOf(shallow, 'kedalaman-entri')?.message.slice(0, 110)}…`,
+)
+const HALF_DEEP_CV = `Dedi Kurnia
+dedi.kurnia@gmail.com
+
+Pengalaman
+Kasir — Toko Berkah (2022 - 2023)
+- Melayani pembeli setiap hari.
+Staf Gudang — PT Logistik Jaya (2021 - 2022)`
+check(
+  'Aspek baru: separuh entri lengkap → kedalaman sebagian (campuran)',
+  checkOf(analyzeCv(HALF_DEEP_CV), 'kedalaman-entri')?.score === 3 &&
+    mediumCheck('kedalaman-entri')?.score === 5,
+  `campuran ${checkOf(analyzeCv(HALF_DEEP_CV), 'kedalaman-entri')?.score}/5, menengah (1 entri lengkap) ${mediumCheck('kedalaman-entri')?.score}/5`,
+)
+
+// --- Pemeriksaan baru: konsistensi format & urutan ---
+const MIXED_FORMAT_CV = `Dedi Kurnia
+dedi.kurnia@gmail.com
+
+Pengalaman
+Kasir — Toko Berkah (Jan 2021 - Des 2022)
+- Melayani pembeli setiap hari.
+Staf Gudang — PT Logistik Jaya (2023 - 2024)
+- Mencatat stok barang masuk dan keluar.`
+const mixedFmt = analyzeCv(MIXED_FORMAT_CV)
+check(
+  'Aspek baru: format periode campur + urutan lama-dulu → konsistensi 0 (negatif)',
+  checkOf(mixedFmt, 'konsistensi-format')?.score === 0 &&
+    (checkOf(mixedFmt, 'konsistensi-format')?.message.includes('campur aduk') ?? false) &&
+    (checkOf(mixedFmt, 'konsistensi-format')?.message.includes('belum dari yang terbaru') ?? false),
+  `skor ${checkOf(mixedFmt, 'konsistensi-format')?.score}/3; pesan: ${checkOf(mixedFmt, 'konsistensi-format')?.message.slice(0, 130)}…`,
+)
+check(
+  'Aspek baru: format seragam & urutan terbaru-dulu → konsistensi penuh (positif)',
+  strongCheck('konsistensi-format')?.score === 3,
+  `kuat ${strongCheck('konsistensi-format')?.score}/3`,
+)
+
+// --- Pemeriksaan baru: kerapian bahasa ---
+const MESSY_LANG_CV = `Dedi Kurnia
+dedi.kurnia@gmail.com
+
+Pengalaman
+Kasir — Toko Berkah (2022 - 2023)
+- Saya melayani pembeli dan saya mencatat uang masuk setiap hari.
+- Saya melakukan aktifitas kasir dan praktek menghitung uang.
+- Saya membantu mengangkat barang dan saya menata display toko.`
+const messy = analyzeCv(MESSY_LANG_CV)
+check(
+  'Aspek baru: salah eja + "saya" berlebihan → kerapian 0 (negatif)',
+  checkOf(messy, 'kerapian-bahasa')?.score === 0 &&
+    (checkOf(messy, 'kerapian-bahasa')?.message.includes('"aktifitas"') ?? false) &&
+    (checkOf(messy, 'kerapian-bahasa')?.message.includes('"praktek"') ?? false),
+  `skor ${checkOf(messy, 'kerapian-bahasa')?.score}/2; pesan: ${checkOf(messy, 'kerapian-bahasa')?.message.slice(0, 130)}…`,
+)
+
+// --- Pemeriksaan baru: sertifikasi & bahasa ---
+const CERT_LANG_CV = `Rina Amelia
+rina.amelia@gmail.com | 0812-3333-4444
+
+Pengalaman
+Staf Administrasi — PT Maju Bersama (2022 - 2024)
+- Mengelola arsip dan input data harian.
+
+Sertifikasi & Pelatihan
+- Sertifikat BNSP Data Entry (2024)
+- Pelatihan Microsoft Excel Lanjutan — LPK Komputama (2023)
+
+Bahasa
+Bahasa Inggris — aktif, TOEFL 550
+Bahasa Mandarin — dasar`
+const certLang = analyzeCv(CERT_LANG_CV)
+check(
+  'Aspek baru: bagian sertifikasi & bahasa tersendiri → poin penuh (positif)',
+  checkOf(certLang, 'sertifikasi')?.score === 3 && checkOf(certLang, 'bahasa')?.score === 2,
+  `sertifikasi ${checkOf(certLang, 'sertifikasi')?.score}/3, bahasa ${checkOf(certLang, 'bahasa')?.score}/2`,
+)
+const CERT_MENTION_CV = `Rina Amelia
+rina.amelia@gmail.com
+
+Ringkasan
+Saya memiliki sertifikat pelatihan komputer dari lembaga kursus lokal dan berpengalaman bekerja dua tahun di bidang administrasi perkantoran dan pengarsipan dokumen.`
+check(
+  'Aspek baru: sertifikasi hanya disebut (bukan bagian) → poin sebagian; tanpa bahasa → 0',
+  checkOf(analyzeCv(CERT_MENTION_CV), 'sertifikasi')?.score === 1 &&
+    mediumCheck('sertifikasi')?.score === 0 &&
+    mediumCheck('bahasa')?.score === 0,
+  `sebutan saja ${checkOf(analyzeCv(CERT_MENTION_CV), 'sertifikasi')?.score}/3, menengah sertifikasi ${mediumCheck('sertifikasi')?.score}/3 & bahasa ${mediumCheck('bahasa')?.score}/2`,
+)
+
+// --- Pemeriksaan baru: relevansi ringkasan terhadap posisi target ---
+const strongRole = analyzeCv(SAMPLE_CV, { targetRole: 'Data Analyst' })
+const mediumWrongRole = analyzeCv(MEDIUM_CV, { targetRole: 'Akuntansi' })
+check(
+  'Aspek baru: relevansi ringkasan — menyebut posisi target (positif) vs tidak sama sekali (negatif)',
+  checkOf(strongRole, 'relevansi-ringkasan')?.score === 3 &&
+    checkOf(strongRole, 'ringkasan')?.max === 7 &&
+    checkOf(mediumWrongRole, 'relevansi-ringkasan')?.score === 0 &&
+    strongCheck('relevansi-ringkasan') === undefined,
+  `kuat+Data Analyst relevansi ${checkOf(strongRole, 'relevansi-ringkasan')?.score}/3 (ringkasan maks ${checkOf(strongRole, 'ringkasan')?.max}), menengah+Akuntansi ${checkOf(mediumWrongRole, 'relevansi-ringkasan')?.score}/3, tanpa peran: pemeriksaan tidak ada`,
 )
 
 // ---------- Uji Fase 2: contoh kalimat, template, daftar skill ----------

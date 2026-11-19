@@ -1,6 +1,8 @@
 // CV contoh bawaan: CV Bahasa Indonesia yang memang kuat,
-// dipakai tombol "Coba CV Contoh". Dengan aturan penilaian ketat
-// (2026-11-19) skornya 93/100 — kuat, tetapi tidak sempurna.
+// dipakai tombol "Coba CV Contoh". Dengan penilaian berbasis aspek
+// (2026-11-19) skornya 96/100 — kehilangan poin pada aspek sertifikasi
+// (belum ada bagian sertifikasi/pelatihan) dan bahasa (bahasa asing hanya
+// disebut sebagai skill, tanpa bagian/tingkat kemahiran tersendiri).
 export const SAMPLE_CV = `Muhammad Fakhri
 Data Analyst
 mfakhri338@gmail.com | +62 812-3456-7890 | linkedin.com/in/mfakhri | github.com/Fakhriaja07

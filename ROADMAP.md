@@ -7,7 +7,9 @@ Terakhir diperbarui 2026-11-19: Fase 0, Fase 1, dan Fase 2 selesai;
 Fase 3 (Mode HRD) dibatalkan atas keputusan pengguna; kartu bagikan
 Fase 4 sempat selesai lalu **DICABUT** atas keputusan pengguna
 (2026-11-19), testimoni & distribusi berjalan terus. Pada hari yang
-sama penilaian diperketat — lihat bagian "Pengetatan penilaian".
+sama penilaian sempat diperketat lewat kuota angka, lalu **dirombak
+menjadi pengetatan berbasis aspek** atas koreksi pengguna — lihat
+bagian "Pengetatan penilaian".
 
 ## Nilai jual yang sudah dimiliki (terverifikasi di kode)
 
@@ -16,9 +18,12 @@ sama penilaian diperketat — lihat bagian "Pengetatan penilaian".
 - **Gratis, tanpa daftar, hasil seketika:** tanpa akun/paywall di tengah hasil.
 - **Untuk Indonesia:** Bahasa Indonesia penuh; deteksi nomor HP 08 / +62 /
   format kurung; deteksi link portofolio (GitHub, Vercel, Notion, dll).
-- **Skor jujur & transparan:** 100 poin, 6 aspek, 14 pemeriksaan; CV kuat
-  93, CV menengah 51, CV lemah 7 (uji di `scripts/run-tests.ts`, setelah
-  pengetatan 2026-11-19; sebelumnya 100/57/16).
+- **Skor jujur & transparan:** 100 poin, 6 aspek, 20 pemeriksaan
+  (+1 kondisional: relevansi ringkasan bila posisi target diisi);
+  CV kuat 96, CV menengah 58, CV lemah 16 (uji di
+  `scripts/run-tests.ts`, setelah rombakan berbasis aspek 2026-11-19;
+  riwayat: 100/57/16 di v1, lalu 93/51/7 pada pengetatan kuota angka
+  yang dibatalkan — lihat "Pengetatan penilaian").
   Bobot dan cara hitung dibuka di halaman "Bagaimana skor dihitung?".
 - **Bisa langsung ditindaklanjuti:** prioritas perbaikan terurut + cek kata
   kunci terhadap deskripsi lowongan + tombol salin laporan.
@@ -112,7 +117,7 @@ sama penilaian diperketat — lihat bagian "Pengetatan penilaian".
   pengguna, bukan kode) dan sengaja TANPA testimoni palsu maupun
   penghitung palsu — ditunggu dari pengguna nyata.
 
-### Pengetatan penilaian — 2026-11-19
+### Pengetatan penilaian — 2026-11-19 (pendekatan kuota DIGANTIKAN rombakan berbasis aspek di bawah)
 
 Atas masukan pengguna bahwa skor terlalu mudah tinggi (CV contoh kuat
 mencapai 100/100 sehingga penilaian terlihat tidak profesional),
@@ -138,6 +143,66 @@ yang benar-benar kuat, bukan sekadar "ada":
   ≥55 Perlu Perbaikan, <55 Perlu Dirombak Dulu.
 - **Kalibrasi baru (terkunci di uji):** CV kuat 100 → **93**, CV
   menengah 57 → **51**, CV lemah 16 → **7**.
+
+### Rombakan pengetatan: berbasis aspek, bukan kuota angka — 2026-11-19
+
+Pengguna mengoreksi pendekatan di atas dengan kata-katanya:
+*"jangan perketatnya melalui angka2 itu, tapi dari aspek yg dinilai"*.
+Pengetatan berbasis kuota (≥3 angka berbeda, ≥70% + ≥6 kata kerja,
+≥10 skill, jendela 350–1.000 kata, ambang label ≥90/≥75/≥55)
+**dibatalkan dan dikembalikan ke aturan v1** (ambang label ≥85/≥70/≥50;
+kata kerja aksi penuh pada ≥5 kata berbeda; hasil terukur ≥3; skill
+penuh ≥8; panjang ideal 220–900 kata). Kekuatan penilaian kini datang
+dari **keluasan dan kedalaman aspek yang dinilai** — dimensi kualitas
+yang sebelumnya tidak dinilai sama sekali kini diperiksa. Bobot
+didistribusikan ulang di dalam aspek yang sama; total tetap 100 poin
+dan 6 aspek. Pemeriksaan baru (id pemeriksaan lama tidak berubah,
+pemetaan contoh Fase 2 utuh dan diperluas):
+
+- **Kedalaman entri pengalaman (5, Pengalaman):** tiap entri dinilai
+  kelengkapannya — jabatan + perusahaan + periode + uraian isi. Entri
+  yang hanya berisi judul/periode tanpa uraian dinilai kurang dan
+  dilaporkan jumlahnya.
+- **Frasa lemah & klise (3, Pengalaman):** frasa generik tanpa bukti
+  ("bertanggung jawab atas", "pekerja keras", "mampu bekerja di bawah
+  tekanan", "dapat bekerja dalam tim maupun individu", "bersedia
+  ditempatkan di mana saja") dideteksi dan dilaporkan apa adanya.
+  Hanya dinilai bila ada bagian ringkasan/pengalaman, agar CV kosong
+  tidak mendapat poin dari ketiadaan frasa.
+- **Sertifikasi & pelatihan (3, Pendidikan):** bagian pendukung
+  profesional tersendiri; hanya disebut tanpa bagian = poin sebagian.
+- **Bahasa asing (2, Keahlian):** bagian bahasa tersendiri beserta
+  tingkat kemahiran; hanya disebut (mis. sebagai item skill) = sebagian.
+- **Konsistensi format & urutan (3, Format & ATS):** gaya penulisan
+  periode harus seragam di seluruh CV (rentang tahun vs bulan–tahun vs
+  angka tidak dicampur) dan entri pengalaman diurutkan dari yang
+  terbaru (kronologis terbalik); pelanggaran dilaporkan dengan contoh
+  gaya yang ditemukan.
+- **Kerapian bahasa (2, Format & ATS):** kata ganti "saya" berlebihan
+  (≥4 kali) di bagian pengalaman, dan kata dari daftar kecil yang
+  sering salah eja (aktifitas, praktek, ijin, resiko, dst. — bentuk
+  baku KBBI dilaporkan). Dinyatakan jujur sebagai pemeriksaan dasar
+  dari daftar kecil, bukan tata bahasa menyeluruh.
+- **Relevansi ringkasan (3, Ringkasan — kondisional):** hanya muncul
+  bila posisi target diisi; sebagian poin ringkasan (maks ringkasan
+  menjadi 7 + relevansi 3) menilai apakah ringkasan menyebut
+  posisi/bidang yang dituju.
+
+Bobot pemeriksaan lama di dalam aspeknya diskalakan untuk memberi
+ruang (mis. Pengalaman: heading 10→6, kata kerja aksi 8→6, hasil
+terukur 10→8; Format: panjang 10→8, periode 5→4, bullet 5→3) —
+ambang/syaratnya tetap v1, hanya nilai poinnya yang dibagi ulang.
+
+**Kalibrasi hasil rombakan (terkunci di uji):** CV kuat 100 (v1) →
+**96** — kehilangan poin murni dari aspek baru: belum ada bagian
+sertifikasi/pelatihan (−3) dan bahasa asing hanya disebut sebagai
+skill tanpa bagian/tingkat kemahiran (−1). CV menengah 57 → **58**:
+lolos beberapa aspek kualitas baru secara sah (entri magangnya lengkap
+dengan uraian 5/5, tanpa frasa klise 3/3, bahasa rapi 2/2) tetapi tetap
+gagal di dasar yang besar (hasil terukur 0, skill sedikit, tanpa
+sertifikasi/bahasa/IPK/portofolio). CV lemah tetap **16**: aspek baru
+tidak memberinya poin cuma-cuma. Angka tidak direkayasa mengejar
+target — keketatan terjelaskan oleh aspek baru yang gagal dipenuhi.
 
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 

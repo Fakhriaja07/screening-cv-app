@@ -68,7 +68,7 @@ function ScoreRing({ score, size = 150 }: { score: number; size?: number }) {
   }, [score])
   const r = 52
   const c = 2 * Math.PI * r
-  const color = score >= 90 ? '#16a34a' : score >= 75 ? '#0ea5e9' : score >= 55 ? '#f59e0b' : '#dc2626'
+  const color = score >= 85 ? '#16a34a' : score >= 70 ? '#0ea5e9' : score >= 50 ? '#f59e0b' : '#dc2626'
   return (
     <div className="ring-wrap" style={{ width: size, height: size }}>
       <svg viewBox="0 0 120 120" width={size} height={size}>
@@ -154,7 +154,7 @@ const ATS_TIPS = [
   'Tulis pencapaian dengan angka: persen, jumlah orang/proyek, atau nominal — bukan hanya daftar tugas.',
   'Mulai setiap poin pengalaman dengan kata kerja aksi, misalnya meningkatkan, mengelola, membangun.',
   'Samakan kata kunci penting dari deskripsi lowongan dengan isi CV-mu secara jujur.',
-  'Jaga panjang CV di kisaran 350–1.000 kata (1–2 halaman padat) dan susun dengan bullet yang rapi.',
+  'Jaga panjang CV di kisaran 220–900 kata (1–2 halaman) dan susun dengan bullet yang rapi.',
   'Cantumkan kontak lengkap: email, nomor HP, LinkedIn, dan link portofolio.',
 ]
 
@@ -380,7 +380,7 @@ export default function App() {
           <span className="badge"><Icon d={I.zap} size={14} /> Penilaian CV Bahasa Indonesia</span>
           <h1>Screening CV</h1>
           <p className="hero-sub">
-            Masukkan CV-mu, dapatkan skor 0–100 dari 6 aspek dan 14 pemeriksaan,
+            Masukkan CV-mu, dapatkan skor 0–100 dari 6 aspek dan 20 pemeriksaan,
             lengkap dengan bagian mana saja yang harus diperbaiki. Analisis standar
             berjalan 100% di browser — file CV tidak diunggah ke server mana pun.
             Ada juga Analisis AI opsional untuk saran penulisan ulang.
@@ -394,7 +394,7 @@ export default function App() {
           <div className="hero-stats">
             <div><strong>100</strong><span>total poin</span></div>
             <div><strong>6</strong><span>aspek dinilai</span></div>
-            <div><strong>14</strong><span>pemeriksaan</span></div>
+            <div><strong>20</strong><span>pemeriksaan</span></div>
           </div>
         </div>
       </header>
@@ -843,22 +843,24 @@ export default function App() {
             <h3><Icon d={I.book} size={18} /> Bagaimana skor dihitung?</h3>
             <p>
               Penilaian berbasis aturan (rule-based) dengan total <strong>100 poin</strong> dari
-              <strong> 6 aspek</strong> dan <strong>14 pemeriksaan</strong>. Poin hanya diberikan
+              <strong> 6 aspek</strong> dan <strong>20 pemeriksaan</strong>. Poin hanya diberikan
               untuk bukti isi yang benar-benar ada di CV:
             </p>
             <ul className="rules-list">
               <li><strong>Kontak — 20 poin:</strong> email valid (7), nomor HP Indonesia (6), LinkedIn (4), link portofolio (3). Format HP 08xx, +62, maupun bertanda kurung dengan spasi/strip/titik tetap terbaca.</li>
-              <li><strong>Ringkasan — 10 poin:</strong> poin penuh mensyaratkan panjang 30–80 kata DAN menyebut bidang/posisi atau lama pengalaman DAN minimal satu kekuatan/skill — teks yang sekadar ada tidak lagi cukup.</li>
-              <li><strong>Pengalaman — 28 poin:</strong> struktur pengalaman (10: tiap entri memuat jabatan + perusahaan + periode, dalam bullet yang konsisten — paragraf dibatasi), kata kerja aksi (8: poin penuh bila ≥70% poin diawali kata kerja aksi kuat dan bervariasi), dan angka pencapaian berbeda seperti persen/jumlah/nominal (10: poin penuh bila ≥3) — tahun dan nomor HP tidak dihitung sebagai pencapaian.</li>
-              <li><strong>Pendidikan — 12 poin:</strong> kelengkapan pendidikan (8: institusi + jurusan + tahun lulus harus terbaca semua untuk poin penuh) dan IPK/GPA (4).</li>
-              <li><strong>Keahlian — 10 poin:</strong> dihitung dari jumlah item skill pada bagian tersendiri; 10 item atau lebih = poin penuh.</li>
-              <li><strong>Format &amp; ATS — 20 poin:</strong> panjang ideal 350–1.000 kata (10), tahun/periode tercantum (5), struktur bullet (5).</li>
+              <li><strong>Ringkasan — 10 poin:</strong> dinilai dari panjang isi ringkasan; 40 kata atau lebih = poin penuh. Bila kamu mengisi posisi target, sebagian poin (3) dialihkan untuk menilai relevansi ringkasan: apakah ringkasanmu menyebut posisi/bidang yang dituju.</li>
+              <li><strong>Pengalaman — 28 poin:</strong> bagian pengalaman (6), variasi kata kerja aksi (6), angka pencapaian seperti persen/jumlah/nominal (8) — tahun dan nomor HP tidak dihitung sebagai pencapaian — ditambah kedalaman entri (5: setiap entri dinilai kelengkapannya: jabatan + perusahaan + periode + uraian isi) dan frasa lemah &amp; klise (3: frasa generik tanpa bukti seperti "pekerja keras" atau "bertanggung jawab atas" menurunkan poin).</li>
+              <li><strong>Pendidikan — 12 poin:</strong> pendidikan tercantum (6), IPK/GPA (3), dan sertifikasi &amp; pelatihan sebagai bagian tersendiri (3).</li>
+              <li><strong>Keahlian — 10 poin:</strong> daftar skill (8; 8 item atau lebih = poin penuh) dan bahasa asing beserta tingkat kemahirannya (2).</li>
+              <li><strong>Format &amp; ATS — 20 poin:</strong> panjang ideal 220–900 kata (8), tahun/periode tercantum (4), struktur bullet (3), konsistensi format &amp; urutan (3: satu format periode untuk semua entri, entri pengalaman diurutkan dari yang terbaru), dan kerapian bahasa (2: kata ganti "saya" yang berlebihan di poin pengalaman dan kata yang sering salah eja dari daftar periksa dasar).</li>
             </ul>
             <p>
-              Label skor: 90+ Sangat Siap Dilamar • 75–89 Sudah Bagus • 55–74 Perlu Perbaikan •
-              di bawah 55 Perlu Dirombak Dulu. Penilaian diperketat (2026-11-19): poin penuh
-              hanya untuk kualitas yang benar-benar kuat, bukan sekadar ada. Cek kata kunci
-              lowongan ditampilkan terpisah dan tidak mengubah skor utama.
+              Label skor: 85+ Sangat Siap Dilamar • 70–84 Sudah Bagus • 50–69 Perlu Perbaikan •
+              di bawah 50 Perlu Dirombak Dulu. Sejak 2026-11-19 penilaian diperluas lewat
+              aspek yang dinilai — kedalaman entri, frasa klise, sertifikasi, bahasa asing,
+              konsistensi format, kerapian bahasa, dan relevansi ringkasan — bukan lewat
+              menaikkan kuota angka. Cek kata kunci lowongan ditampilkan terpisah dan
+              tidak mengubah skor utama.
             </p>
           </div>
 

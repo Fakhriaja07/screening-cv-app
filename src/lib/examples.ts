@@ -5,7 +5,7 @@
 // Angka pada contoh memakai placeholder [kurung siku] yang harus diganti
 // pengguna dengan angka aslinya — aturan anti-karang yang sama seperti
 // fitur Analisis AI. Modul ini hanya MEMBACA hasil analyze.ts; logika dan
-// angka skor tidak diubah oleh modul ini.
+// angka skor tidak diubah sama sekali.
 
 // ---------- Contoh sebelum → sesudah per id pemeriksaan ----------
 
@@ -73,16 +73,70 @@ export const CHECK_EXAMPLES: Record<string, CheckExample> = {
   keahlian: {
     sebelum: 'Keahlian: komputer, internet.',
     sesudah:
-      'Keahlian: Microsoft Excel (PivotTable, VLOOKUP), Microsoft Word, Google Workspace, Canva, Input Data, Pengarsipan Digital, Komunikasi, Kerja Tim, Penjadwalan, Korespondensi Bisnis',
+      'Keahlian: Microsoft Excel (PivotTable, VLOOKUP), Microsoft Word, Google Workspace, Canva, Input Data, Pengarsipan Digital, Komunikasi, Kerja Tim',
     catatan:
-      'Daftarkan minimal 10 skill spesifik untuk poin penuh dan pisahkan dengan koma. Nama tools jauh lebih kuat daripada kata umum seperti "komputer".',
+      'Daftarkan minimal 8 skill spesifik dan pisahkan dengan koma. Nama tools jauh lebih kuat daripada kata umum seperti "komputer".',
   },
   panjang: {
     sebelum: 'CV hanya berisi nama, satu kalimat perkenalan, dan riwayat sekolah (di bawah 60 kata).',
     sesudah:
-      'CV 1–2 halaman padat (350–1.000 kata): ringkasan 3–4 kalimat, pengalaman dalam poin-poin pencapaian, pendidikan, dan daftar keahlian.',
+      'CV 1–2 halaman (220–900 kata): ringkasan 3–4 kalimat, pengalaman dalam poin-poin pencapaian, pendidikan, dan daftar keahlian.',
     catatan:
       'Terlalu pendek terlihat kosong; terlalu panjang melelahkan. Bila masih singkat, tambahkan isi dari magang, organisasi, proyek, atau sertifikasi.',
+  },
+  'kedalaman-entri': {
+    sebelum:
+      'Pengalaman\nKasir — Toko Berkah (2022–2023)\nStaf Gudang — PT Logistik Jaya (2021–2022)',
+    sesudah:
+      'Pengalaman\nKasir — Toko Berkah (2022–2023)\n• Melayani [100+] transaksi per hari (tunai dan QRIS)\n• Mencatat selisih kas harian dengan selisih nol selama [6 bulan]\nStaf Gudang — PT Logistik Jaya (2021–2022)\n• Mencatat keluar-masuk [500+] item stok per minggu\n• Menata ulang rak gudang sehingga waktu pencarian barang turun [20%]',
+    catatan:
+      'Setiap entri pengalaman harus lengkap: jabatan + perusahaan + periode + uraian isi. Entri yang hanya berisi judul terlihat seperti riwayat kosong — rekruter tidak bisa menilai apa yang kamu kerjakan.',
+  },
+  'frasa-lemah': {
+    sebelum:
+      'Saya pekerja keras, mampu bekerja di bawah tekanan, dapat bekerja dalam tim maupun individu, dan bertanggung jawab atas kebersihan toko.',
+    sesudah:
+      'Menjaga kebersihan dan kerapian area toko setiap hari hingga lolos audit kebersihan cabang dengan nilai [95]. Melatih [2] kasir baru sampai bisa bertugas mandiri dalam [2 minggu].',
+    catatan:
+      'Frasa klise ("pekerja keras", "bertanggung jawab atas", "bersedia ditempatkan di mana saja") diklaim hampir semua pelamar, jadi tidak membedakanmu. Ganti dengan bukti: hasil kerja, angka, atau contoh nyata.',
+  },
+  sertifikasi: {
+    sebelum: '(tidak ada bagian sertifikasi/pelatihan di CV)',
+    sesudah:
+      'Sertifikasi & Pelatihan\n• Sertifikat [nama sertifikasi] — [lembaga penerbit] ([tahun])\n• Pelatihan [topik pelatihan] — [penyelenggara] ([tahun])',
+    catatan:
+      'Cantumkan hanya sertifikat yang benar-benar kamu miliki dan relevan dengan posisi yang dilamar. Bagian tersendiri membuat sertifikasi mudah ditemukan rekruter dan sistem ATS.',
+  },
+  bahasa: {
+    sebelum: '(kemampuan bahasa asing tidak disebut sama sekali di CV)',
+    sesudah:
+      'Bahasa\n• Bahasa Inggris — aktif (percakapan dan tertulis)\n• Bahasa Mandarin — dasar (percakapan sehari-hari)',
+    catatan:
+      'Tulis bahasa yang kamu kuasai beserta tingkat kemahirannya secara jujur. Bila ada skor tes resmi (mis. TOEFL/IELTS), cantumkan — itu bukti yang bisa diverifikasi.',
+  },
+  'konsistensi-format': {
+    sebelum:
+      'Pengalaman\nKasir — Toko Berkah (Jan 2021 - Des 2022)\nStaf Gudang — PT Logistik (2023–2024)',
+    sesudah:
+      'Pengalaman\nStaf Gudang — PT Logistik (2023–2024)\nKasir — Toko Berkah (2021–2022)',
+    catatan:
+      'Dua hal diperiksa: (1) format periode seragam — pilih SATU gaya (mis. selalu "2021–2024" atau selalu "Jan 2021 – Des 2022"), jangan campur; (2) urutan entri dari yang terbaru, karena rekruter membaca dari pengalaman terakhir.',
+  },
+  'kerapian-bahasa': {
+    sebelum:
+      'Saya melakukan aktifitas kasir setiap hari. Saya merubah jadwal piket dan saya mengecek stok di gudang.',
+    sesudah:
+      'Melakukan aktivitas kasir setiap hari, mengubah jadwal piket, dan mengecek stok gudang.',
+    catatan:
+      'Dua kebiasaan yang dinilai: hindari mengawali poin pengalaman dengan "Saya …" berulang-ulang (langsung ke kata kerjanya), dan pakai ejaan baku — aktifitas → aktivitas, merubah → mengubah, praktek → praktik, ijin → izin.',
+  },
+  'relevansi-ringkasan': {
+    sebelum:
+      'Lulusan baru yang sedang mencari pekerjaan dan ingin mengembangkan diri di perusahaan yang baik.',
+    sesudah:
+      'Lulusan SMK Administrasi Perkantoran dengan pengalaman magang input data dan pengarsipan. Terampil Microsoft Excel dan Google Workspace. Mencari posisi Staf Administrasi untuk berkontribusi pada kerapian data dan dokumen perusahaan.',
+    catatan:
+      'Sebutkan posisi/bidang yang kamu tuju secara eksplisit di ringkasan (sesuaikan dengan posisi target yang kamu isi). Ringkasan yang generik membuat rekruter menebak kamu melamar sebagai apa.',
   },
   periode: {
     sebelum: 'Pengalaman: Kasir di Toko Berkah (tanpa tahun).',
