@@ -14,6 +14,12 @@ import {
   type StorageLike,
 } from '../src/lib/history'
 import { SAMPLE_CV } from '../src/lib/sampleCv'
+import {
+  buildSummaryTemplate,
+  checkSkills,
+  getCheckExample,
+  getRoleSkills,
+} from '../src/lib/examples'
 
 const MEDIUM_CV = `Budi Santoso
 budi.santoso@gmail.com | 0812-9876-5432 | linkedin.com/in/budisantoso
@@ -175,6 +181,85 @@ check(
 
 clearHistory(store)
 check('Riwayat: hapus mengosongkan storage', loadHistory(store).length === 0, 'setelah clearHistory terbaca 0 entri')
+
+// ---------- Uji Fase 2: contoh kalimat, template, daftar skill ----------
+check(
+  'Fase 2: skor persis tidak berubah',
+  strong.total === 100 && medium.total === 57 && weak.total === 16,
+  `kuat ${strong.total}, menengah ${medium.total}, lemah ${weak.total} (harus 100/57/16)`,
+)
+
+const weakTop3 = weak.priorities.slice(0, 3)
+check(
+  'Fase 2: prioritas utama CV lemah punya contoh',
+  weakTop3.length === 3 && weakTop3.every((c) => getCheckExample(c.id) !== null),
+  weakTop3.map((c) => `${c.id}: ${getCheckExample(c.id) ? 'ada' : 'TIDAK ADA'}`).join(' | '),
+)
+
+const allCovered = [...weak.priorities, ...medium.priorities].every((c) => getCheckExample(c.id) !== null)
+check(
+  'Fase 2: semua prioritas CV lemah & menengah punya contoh',
+  allCovered,
+  `prioritas lemah ${weak.priorities.length}, menengah ${medium.priorities.length}`,
+)
+
+const exMeasurable = getCheckExample('hasil-terukur')
+check(
+  'Fase 2: contoh hasil-terukur memakai placeholder angka',
+  exMeasurable !== null && exMeasurable.sesudah.includes('[') && exMeasurable.catatan.includes('Jangan mengarang'),
+  exMeasurable ? `sesudah: "${exMeasurable.sesudah.slice(0, 60)}…"` : 'contoh tidak ditemukan',
+)
+
+check(
+  'Fase 2: id pemeriksaan tak dikenal → tanpa contoh',
+  getCheckExample('id-ngawur') === null,
+  'harus null',
+)
+
+const tplRole = buildSummaryTemplate('Data Analyst')
+const tplEmpty = buildSummaryTemplate('   ')
+check(
+  'Fase 2: template ringkasan memakai posisi target',
+  tplRole.includes('posisi Data Analyst') && tplRole.includes('[skill 1]'),
+  `dengan peran: "…${tplRole.slice(tplRole.indexOf('posisi'), tplRole.indexOf('posisi') + 30)}…"`,
+)
+check(
+  'Fase 2: template tanpa posisi → placeholder peran',
+  tplEmpty.includes('[posisi yang dilamar]'),
+  'placeholder [posisi yang dilamar] tampil',
+)
+
+check(
+  'Fase 2: pencocokan peran ke kamus skill',
+  getRoleSkills('Data Analyst').id === 'data-analyst' &&
+    getRoleSkills('Staff Administrasi').id === 'administrasi' &&
+    getRoleSkills('Digital Marketing').id === 'marketing' &&
+    getRoleSkills('Desainer Grafis').id === 'desain-grafis' &&
+    getRoleSkills('').id === 'umum' &&
+    getRoleSkills('Petani').id === 'umum',
+  `Data Analyst→${getRoleSkills('Data Analyst').id}, Administrasi→${getRoleSkills('Staff Administrasi').id}, tak dikenal→${getRoleSkills('Petani').id}`,
+)
+
+const presence = checkSkills('Saya bisa SQL dan Microsoft Excel, sedang belajar Python.', [
+  'SQL', 'Python', 'Tableau', 'Microsoft Excel',
+])
+const presenceMap = Object.fromEntries(presence.map((p) => [p.skill, p.present]))
+check(
+  'Fase 2: pencocokan skill di teks CV',
+  presenceMap['SQL'] === true &&
+    presenceMap['Python'] === true &&
+    presenceMap['Microsoft Excel'] === true &&
+    presenceMap['Tableau'] === false,
+  presence.map((p) => `${p.skill}=${p.present}`).join(', '),
+)
+
+const dataSkills = getRoleSkills('Data Analyst').skills
+check(
+  'Fase 2: kamus skill per peran berisi 8–12 skill',
+  dataSkills.length >= 8 && dataSkills.length <= 12 &&
+    getRoleSkills('').skills.length >= 8,
+  `Data Analyst ${dataSkills.length} skill, fallback ${getRoleSkills('').skills.length} skill`,
+)
 
 if (failures > 0) {
   console.error(`\n${failures} uji GAGAL`)

@@ -3,7 +3,8 @@
 Disusun 2026-11-18 (malam) dari kondisi situs yang sudah live di
 https://screening-cv-app.vercel.app/ dan repo
 https://github.com/Fakhriaja07/screening-cv-app.
-Terakhir diperbarui 2026-11-19: Fase 0 dan Fase 1 selesai.
+Terakhir diperbarui 2026-11-19: Fase 0, Fase 1, dan Fase 2 selesai;
+Fase 3 (Mode HRD) dibatalkan atas keputusan pengguna.
 
 ## Nilai jual yang sudah dimiliki (terverifikasi di kode)
 
@@ -26,9 +27,12 @@ Terakhir diperbarui 2026-11-19: Fase 0 dan Fase 1 selesai.
 - ~~Tidak ada riwayat skor: tidak ada `localStorage`, tidak ada
   perbandingan sebelum vs sesudah revisi.~~
   **Selesai di Fase 1 (2026-11-19)** — lihat catatan Fase 1 di bawah.
-- Hasil hanya bilang *apa* yang kurang, belum memberi **contoh kalimat
-  perbaikan** ("tulis seperti ini").
+- ~~Hasil hanya bilang *apa* yang kurang, belum memberi **contoh kalimat
+  perbaikan** ("tulis seperti ini").~~
+  **Selesai di Fase 2 (2026-11-19)** — lihat catatan Fase 2 di bawah.
 - Tidak ada mode HRD / unggah banyak CV sekaligus dan ranking.
+  **Mode HRD dibatalkan** atas keputusan pengguna (2026-11-19) — target
+  pasar hanya pencari kerja, bukan rekruter. Lihat Fase 3.
 - Tidak ada tombol bagikan hasil dan tidak ada bukti sosial
   (testimoni / jumlah CV dianalisis).
 
@@ -53,18 +57,33 @@ Terakhir diperbarui 2026-11-19: Fase 0 dan Fase 1 selesai.
   privasi, dan tombol "Hapus riwayat". Uji unit di
   `scripts/run-tests.ts`.
 
-### Fase 2 — Contoh kalimat perbaikan (sedang)
+### Fase 2 — Contoh kalimat perbaikan (sedang) — SELESAI 2026-11-19
 - Untuk tiap prioritas perbaikan, beri 1 contoh "sebelum → sesudah",
   mis. pengalaman tanpa angka → "Meningkatkan penjualan 30% dalam
   6 bulan dengan …", plus template ringkasan dan daftar skill.
 - Effort: sedang. Dampak: ini yang membedakan dari sekadar "skor".
+- Implementasi: modul `src/lib/examples.ts` memetakan id pemeriksaan
+  (ke-14-nya) ke contoh {sebelum, sesudah, catatan} generik-ilustratif —
+  angka memakai placeholder [kurung siku] agar tidak mengarang
+  pengalaman pengguna. Item prioritas di hasil menampilkan toggle
+  "Lihat contoh". Kartu "Template Ringkasan & Daftar Skill" berisi
+  template ringkasan isi-titik-titik (posisi target terisi otomatis,
+  ada tombol salin) dan daftar skill saran untuk 8 peran umum +
+  fallback Umum/Fresh Graduate, dicocokkan sederhana terhadap teks CV
+  (sudah ada / belum) dengan label jujur bahwa ini saran umum. Logika
+  skor di `analyze.ts` tidak berubah (skor uji tetap 100/57/16).
+  Uji di `scripts/run-tests.ts`.
 
-### Fase 3 — Mode HRD (besar, pasar yang mau membayar)
-- Unggah banyak CV sekaligus, ranking terhadap satu lowongan,
-  ekspor CSV hasil. Tetap client-side sebisa mungkin.
-- Effort: besar. Dampak: segmen kedua (rekruter/HRD), peluang monetisasi.
-- Jangan dikerjakan sebelum Fase 0–2, karena mode HRD butuh
-  kepercayaan dari pengguna individu dulu.
+### Fase 3 — Mode HRD — **DIBATALKAN** (keputusan pengguna, 2026-11-19)
+- **DIBATALKAN, tidak dikerjakan.** Target pasar Screening CV hanya
+  pencari kerja dan fresh graduate, bukan rekruter/HRD, jadi mode ini
+  tidak lagi relevan. Bagian di bawah dipertahankan sebagai catatan
+  keputusan, bukan rencana aktif.
+- ~~Unggah banyak CV sekaligus, ranking terhadap satu lowongan,
+  ekspor CSV hasil. Tetap client-side sebisa mungkin.~~
+- ~~Effort: besar. Dampak: segmen kedua (rekruter/HRD), peluang monetisasi.~~
+- ~~Jangan dikerjakan sebelum Fase 0–2, karena mode HRD butuh
+  kepercayaan dari pengguna individu dulu.~~
 
 ### Fase 4 — Bukti sosial & distribusi (berjalan terus)
 - Kartu hasil yang bisa dibagikan (skor + 1 perbaikan utama),
@@ -82,6 +101,9 @@ Terakhir diperbarui 2026-11-19: Fase 0 dan Fase 1 selesai.
 
 ## Keputusan yang masih di tangan Ehsan
 
-1. Mulai dari Fase 0 + 1, atau langsung loncat ke Fase 3 (Mode HRD)?
-2. Kalau Mode HRD: tetap gratis dulu untuk mengumpulkan pengguna,
-   atau langsung berbayar per batch?
+1. ~~Mulai dari Fase 0 + 1, atau langsung loncat ke Fase 3 (Mode HRD)?~~
+   **Sudah diputuskan (2026-11-19):** urutan Fase 0 → 1 → 2 dikerjakan,
+   dan Mode HRD (Fase 3) dibatalkan — target pasar hanya pencari kerja.
+2. ~~Kalau Mode HRD: tetap gratis dulu untuk mengumpulkan pengguna,
+   atau langsung berbayar per batch?~~
+   **Tidak berlaku lagi** — Fase 3 dibatalkan.

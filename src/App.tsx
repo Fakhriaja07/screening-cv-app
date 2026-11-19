@@ -12,6 +12,12 @@ import {
   type ScoreHistoryEntry,
 } from './lib/history'
 import { requestAiAnalysis, requestAiAnalysisStreaming, type AiAnalysis } from './lib/ai'
+import {
+  buildSummaryTemplate,
+  checkSkills,
+  getCheckExample,
+  getRoleSkills,
+} from './lib/examples'
 import { SAMPLE_CV } from './lib/sampleCv'
 import { extractTextFromFile } from './lib/readFile'
 
@@ -97,6 +103,52 @@ function CheckRow({ check }: { check: CheckItem }) {
   )
 }
 
+// Baris prioritas perbaikan + contoh kalimat "sebelum → sesudah" (Fase 2).
+// Contoh bersifat generik-ilustratif dari modul examples.ts — hanya tampil
+// untuk pemeriksaan yang memang punya contoh yang cocok.
+function PriorityRow({ check }: { check: CheckItem }) {
+  const [open, setOpen] = useState(false)
+  const example = getCheckExample(check.id)
+  return (
+    <li className={`check-row status-${check.status}`}>
+      <span className="check-icon">
+        {check.status === 'baik' ? <Icon d={I.check} size={15} /> : <Icon d={I.alert} size={15} />}
+      </span>
+      <div className="check-body">
+        <div className="check-head">
+          <strong>{check.title}</strong>
+          <span className="check-meta">{check.aspect} • {check.score}/{check.max} poin</span>
+        </div>
+        <p>{check.message}</p>
+        {example && (
+          <div className="example-wrap">
+            <button
+              type="button"
+              className="example-toggle"
+              onClick={() => setOpen((o) => !o)}
+              aria-expanded={open}
+            >
+              {open ? 'Sembunyikan contoh' : 'Lihat contoh'}
+            </button>
+            {open && (
+              <div className="example-box">
+                <span className="example-label">Contoh:</span>
+                <p className="example-before">
+                  <span className="example-tag">Sebelum:</span> {example.sebelum}
+                </p>
+                <p className="example-after">
+                  <span className="example-tag">Sesudah:</span> {example.sesudah}
+                </p>
+                <p className="example-note">{example.catatan}</p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </li>
+  )
+}
+
 const ATS_TIPS = [
   'Gunakan heading standar yang mudah dikenali sistem ATS: Ringkasan, Pengalaman, Pendidikan, Keahlian.',
   'Tulis pencapaian dengan angka: persen, jumlah orang/proyek, atau nominal — bukan hanya daftar tugas.',
@@ -116,6 +168,7 @@ export default function App() {
   const [loadingFile, setLoadingFile] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [copiedTemplate, setCopiedTemplate] = useState(false)
   const [aiConsent, setAiConsent] = useState(false)
   const [aiLoading, setAiLoading] = useState(false)
   const [aiResult, setAiResult] = useState<AiAnalysis | null>(null)
@@ -201,6 +254,7 @@ export default function App() {
     setFileName('')
     setError('')
     setCopied(false)
+    setCopiedTemplate(false)
     setAiConsent(false)
     setAiResult(null)
     setAiError('')
@@ -300,6 +354,22 @@ export default function App() {
     }
     setCopied(true)
     window.setTimeout(() => setCopied(false), 2000)
+  }
+
+  async function handleCopyTemplate() {
+    const text = buildSummaryTemplate(targetRole)
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+    setCopiedTemplate(true)
+    window.setTimeout(() => setCopiedTemplate(false), 2000)
   }
 
   return (
@@ -567,9 +637,55 @@ export default function App() {
                   <p>Semua pemeriksaan lolos dengan poin penuh. CV-mu sudah kuat — tinggal sesuaikan kata kunci untuk tiap lowongan.</p>
                 ) : (
                   <ul className="check-list">
-                    {result.priorities.map((c) => <CheckRow key={c.id} check={c} />)}
+                    {result.priorities.map((c) => <PriorityRow key={c.id} check={c} />)}
                   </ul>
                 )}
+              </div>
+
+              {/* ----- TEMPLATE RINGKASAN & DAFTAR SKILL (Fase 2) ----- */}
+              <div className="card">
+                <h3><Icon d={I.book} size={18} /> Template Ringkasan &amp; Daftar Skill</h3>
+
+                <h4 className="subhead">Template Ringkasan</h4>
+                <p>
+                  Salin template ini, lalu ganti semua bagian dalam [kurung siku]
+                  dengan datamu sendiri.
+                </p>
+                <div className="template-box">{buildSummaryTemplate(targetRole)}</div>
+                <button className="btn btn-secondary" type="button" onClick={handleCopyTemplate}>
+                  <Icon d={I.copy} size={16} /> {copiedTemplate ? 'Template tersalin!' : 'Salin Template'}
+                </button>
+
+                {(() => {
+                  const roleSkills = getRoleSkills(targetRole)
+                  const skillStatus = checkSkills(cvText, roleSkills.skills)
+                  const presentCount = skillStatus.filter((s) => s.present).length
+                  return (
+                    <>
+                      <h4 className="subhead">Daftar Skill — {roleSkills.label}</h4>
+                      <p>
+                        {presentCount} dari {skillStatus.length} skill yang umum dicari untuk
+                        peran ini sudah terbaca di CV-mu. Ini saran umum — hanya centang yang
+                        benar-benar kamu kuasai; jangan mencantumkan skill yang tidak kamu miliki.
+                      </p>
+                      <ul className="skill-list">
+                        {skillStatus.map((s) => (
+                          <li key={s.skill} className={s.present ? 'skill-present' : 'skill-missing'}>
+                            <span className="skill-icon">
+                              {s.present ? <Icon d={I.check} size={13} /> : <Icon d={I.minus} size={13} />}
+                            </span>
+                            <span className="skill-name">{s.skill}</span>
+                            <span className="skill-state">{s.present ? 'Sudah ada di CV' : 'Belum ada'}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="ai-note">
+                        Pencocokan dilakukan sederhana dari teks CV — skill yang kamu tulis
+                        dengan nama lain bisa saja tidak tertangkap di daftar ini.
+                      </p>
+                    </>
+                  )
+                })()}
               </div>
 
               {result.keywords && (

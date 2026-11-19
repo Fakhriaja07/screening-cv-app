@@ -778,6 +778,135 @@
   font-size: 13.5px;
 }
 
+/* ===== Contoh perbaikan, template & daftar skill (Fase 2) ===== */
+.example-wrap {
+  margin-top: 8px;
+}
+.example-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.example-toggle:hover {
+  text-decoration: underline;
+}
+.example-box {
+  margin-top: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.example-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+.example-before, .example-after {
+  font-size: 13.5px;
+  line-height: 1.55;
+  white-space: pre-line;
+}
+.example-before {
+  color: #64748b;
+}
+.example-after {
+  color: #0f172a;
+  font-weight: 600;
+}
+.example-tag {
+  font-weight: 700;
+}
+.example-before .example-tag {
+  color: #b45309;
+}
+.example-after .example-tag {
+  color: #15803d;
+}
+.example-note {
+  font-size: 12.5px;
+  color: #94a3b8;
+  line-height: 1.5;
+}
+.subhead {
+  font-size: 15px;
+  color: #0f172a;
+  margin: 20px 0 8px;
+}
+.template-box {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  padding: 12px 14px;
+  color: #1e3a8a;
+  font-size: 14.5px;
+  line-height: 1.6;
+  margin: 10px 0 12px;
+}
+.skill-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.skill-list li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 0;
+  border-top: 1px solid #eef2f6;
+  font-size: 14px;
+}
+.skill-list li:first-child {
+  border-top: none;
+  padding-top: 2px;
+}
+.skill-icon {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.skill-present .skill-icon {
+  background: #dcfce7;
+  color: #15803d;
+}
+.skill-missing .skill-icon {
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+.skill-name {
+  font-weight: 600;
+  color: #334155;
+}
+.skill-missing .skill-name {
+  font-weight: 500;
+  color: #64748b;
+}
+.skill-state {
+  margin-left: auto;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+.skill-present .skill-state {
+  color: #15803d;
+}
+
 /* ===== Footer ===== */
 .footer {
   text-align: center;
