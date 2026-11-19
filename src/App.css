@@ -907,14 +907,6 @@
   color: #15803d;
 }
 
-/* ===== Bagikan hasil (Fase 4) ===== */
-.share-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 14px;
-}
-
 /* ===== Footer ===== */
 .footer {
   text-align: center;

@@ -5,7 +5,7 @@
 // Angka pada contoh memakai placeholder [kurung siku] yang harus diganti
 // pengguna dengan angka aslinya — aturan anti-karang yang sama seperti
 // fitur Analisis AI. Modul ini hanya MEMBACA hasil analyze.ts; logika dan
-// angka skor tidak diubah sama sekali.
+// angka skor tidak diubah oleh modul ini.
 
 // ---------- Contoh sebelum → sesudah per id pemeriksaan ----------
 
@@ -73,14 +73,14 @@ export const CHECK_EXAMPLES: Record<string, CheckExample> = {
   keahlian: {
     sebelum: 'Keahlian: komputer, internet.',
     sesudah:
-      'Keahlian: Microsoft Excel (PivotTable, VLOOKUP), Microsoft Word, Google Workspace, Canva, Input Data, Pengarsipan Digital, Komunikasi, Kerja Tim',
+      'Keahlian: Microsoft Excel (PivotTable, VLOOKUP), Microsoft Word, Google Workspace, Canva, Input Data, Pengarsipan Digital, Komunikasi, Kerja Tim, Penjadwalan, Korespondensi Bisnis',
     catatan:
-      'Daftarkan minimal 8 skill spesifik dan pisahkan dengan koma. Nama tools jauh lebih kuat daripada kata umum seperti "komputer".',
+      'Daftarkan minimal 10 skill spesifik untuk poin penuh dan pisahkan dengan koma. Nama tools jauh lebih kuat daripada kata umum seperti "komputer".',
   },
   panjang: {
     sebelum: 'CV hanya berisi nama, satu kalimat perkenalan, dan riwayat sekolah (di bawah 60 kata).',
     sesudah:
-      'CV 1–2 halaman (220–900 kata): ringkasan 3–4 kalimat, pengalaman dalam poin-poin pencapaian, pendidikan, dan daftar keahlian.',
+      'CV 1–2 halaman padat (350–1.000 kata): ringkasan 3–4 kalimat, pengalaman dalam poin-poin pencapaian, pendidikan, dan daftar keahlian.',
     catatan:
       'Terlalu pendek terlihat kosong; terlalu panjang melelahkan. Bila masih singkat, tambahkan isi dari magang, organisasi, proyek, atau sertifikasi.',
   },

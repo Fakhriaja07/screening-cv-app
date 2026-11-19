@@ -18,15 +18,6 @@ import {
   getCheckExample,
   getRoleSkills,
 } from './lib/examples'
-import {
-  buildShareCardBlob,
-  buildShareText,
-  shareDataFromResult,
-  telegramShareUrl,
-  whatsappShareUrl,
-  xShareUrl,
-  SITE_URL,
-} from './lib/share'
 import { SAMPLE_CV } from './lib/sampleCv'
 import { extractTextFromFile } from './lib/readFile'
 
@@ -58,11 +49,6 @@ const I = {
   minus: 'M5 12h14',
   clock: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2',
   trash: 'M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6',
-  share: 'M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13',
-  download: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
-  send: 'M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z',
-  message: 'M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z',
-  xlogo: 'M5 4l14 16M19 4L5 20',
 }
 
 // ---------- Ring skor beranimasi ----------
@@ -82,7 +68,7 @@ function ScoreRing({ score, size = 150 }: { score: number; size?: number }) {
   }, [score])
   const r = 52
   const c = 2 * Math.PI * r
-  const color = score >= 85 ? '#16a34a' : score >= 70 ? '#0ea5e9' : score >= 50 ? '#f59e0b' : '#dc2626'
+  const color = score >= 90 ? '#16a34a' : score >= 75 ? '#0ea5e9' : score >= 55 ? '#f59e0b' : '#dc2626'
   return (
     <div className="ring-wrap" style={{ width: size, height: size }}>
       <svg viewBox="0 0 120 120" width={size} height={size}>
@@ -168,7 +154,7 @@ const ATS_TIPS = [
   'Tulis pencapaian dengan angka: persen, jumlah orang/proyek, atau nominal — bukan hanya daftar tugas.',
   'Mulai setiap poin pengalaman dengan kata kerja aksi, misalnya meningkatkan, mengelola, membangun.',
   'Samakan kata kunci penting dari deskripsi lowongan dengan isi CV-mu secara jujur.',
-  'Jaga panjang CV di kisaran 220–900 kata (1–2 halaman) dan susun dengan bullet yang rapi.',
+  'Jaga panjang CV di kisaran 350–1.000 kata (1–2 halaman padat) dan susun dengan bullet yang rapi.',
   'Cantumkan kontak lengkap: email, nomor HP, LinkedIn, dan link portofolio.',
 ]
 
@@ -183,8 +169,6 @@ export default function App() {
   const [dragging, setDragging] = useState(false)
   const [copied, setCopied] = useState(false)
   const [copiedTemplate, setCopiedTemplate] = useState(false)
-  const [copiedShare, setCopiedShare] = useState(false)
-  const [downloadingCard, setDownloadingCard] = useState(false)
   const [aiConsent, setAiConsent] = useState(false)
   const [aiLoading, setAiLoading] = useState(false)
   const [aiResult, setAiResult] = useState<AiAnalysis | null>(null)
@@ -271,7 +255,6 @@ export default function App() {
     setError('')
     setCopied(false)
     setCopiedTemplate(false)
-    setCopiedShare(false)
     setAiConsent(false)
     setAiResult(null)
     setAiError('')
@@ -387,58 +370,6 @@ export default function App() {
     }
     setCopiedTemplate(true)
     window.setTimeout(() => setCopiedTemplate(false), 2000)
-  }
-
-  // ----- Bagikan hasil (Fase 4) -----
-  // Yang dibagikan hanya skor, verdict, posisi target, dan 1 perbaikan utama
-  // (judul + pesan generik pemeriksaan) — isi CV dan data pribadi tidak ikut.
-  async function handleCopyShareText() {
-    if (!result) return
-    const text = buildShareText(shareDataFromResult(result, targetRole))
-    try {
-      await navigator.clipboard.writeText(text)
-    } catch {
-      const ta = document.createElement('textarea')
-      ta.value = text
-      document.body.appendChild(ta)
-      ta.select()
-      document.execCommand('copy')
-      document.body.removeChild(ta)
-    }
-    setCopiedShare(true)
-    window.setTimeout(() => setCopiedShare(false), 2000)
-  }
-
-  async function handleDownloadCard() {
-    if (!result || downloadingCard) return
-    setDownloadingCard(true)
-    try {
-      const blob = await buildShareCardBlob(shareDataFromResult(result, targetRole))
-      if (!blob) return
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `kartu-skor-cv-${result.total}.png`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-    } finally {
-      setDownloadingCard(false)
-    }
-  }
-
-  async function handleNativeShare() {
-    if (!result) return
-    try {
-      await navigator.share({
-        title: 'Skor CV Saya — Screening CV',
-        text: buildShareText(shareDataFromResult(result, targetRole)),
-        url: SITE_URL,
-      })
-    } catch {
-      // Pengguna membatalkan dialog bagikan — tidak perlu tindakan apa pun.
-    }
   }
 
   return (
@@ -627,69 +558,6 @@ export default function App() {
                   <div className="alert alert-warn"><Icon d={I.alert} size={16} /> {result.roleWarning}</div>
                 )}
               </div>
-
-              {/* ----- BAGIKAN HASIL (Fase 4) ----- */}
-              {(() => {
-                const shareData = shareDataFromResult(result, targetRole)
-                const shareText = buildShareText(shareData)
-                const canNativeShare = typeof navigator !== 'undefined' && 'share' in navigator
-                return (
-                  <div className="card share-card">
-                    <h3><Icon d={I.share} size={18} /> Bagikan Hasil</h3>
-                    <p>
-                      Pamerkan pencapaianmu ke teman sesama pencari kerja. Yang dibagikan
-                      hanya skor, label kesiapan, posisi target, dan satu perbaikan utama —
-                      isi CV dan data pribadimu tidak ikut dibagikan.
-                    </p>
-                    <div className="share-actions">
-                      <button
-                        className="btn btn-primary"
-                        type="button"
-                        onClick={handleDownloadCard}
-                        disabled={downloadingCard}
-                      >
-                        <Icon d={I.download} size={16} /> {downloadingCard ? 'Membuat kartu…' : 'Unduh Kartu'}
-                      </button>
-                      <a
-                        className="btn btn-secondary"
-                        href={whatsappShareUrl(shareText)}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <Icon d={I.message} size={16} /> WhatsApp
-                      </a>
-                      <a
-                        className="btn btn-secondary"
-                        href={telegramShareUrl(shareText)}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <Icon d={I.send} size={16} /> Telegram
-                      </a>
-                      <a
-                        className="btn btn-secondary"
-                        href={xShareUrl(shareText)}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <Icon d={I.xlogo} size={15} /> X
-                      </a>
-                      <button className="btn btn-secondary" type="button" onClick={handleCopyShareText}>
-                        <Icon d={I.copy} size={16} /> {copiedShare ? 'Teks tersalin!' : 'Salin Teks Bagikan'}
-                      </button>
-                      {canNativeShare && (
-                        <button className="btn btn-secondary" type="button" onClick={handleNativeShare}>
-                          <Icon d={I.share} size={16} /> Bagikan…
-                        </button>
-                      )}
-                    </div>
-                    <p className="ai-note">
-                      Kartu gambar (PNG 1200×630) dibuat langsung di browser kamu dari
-                      data skor di atas — tidak ada yang diunggah ke server.
-                    </p>
-                  </div>
-                )
-              })()}
 
               {history.length > 0 && (
                 <div className="card history-card">
@@ -980,16 +848,17 @@ export default function App() {
             </p>
             <ul className="rules-list">
               <li><strong>Kontak — 20 poin:</strong> email valid (7), nomor HP Indonesia (6), LinkedIn (4), link portofolio (3). Format HP 08xx, +62, maupun bertanda kurung dengan spasi/strip/titik tetap terbaca.</li>
-              <li><strong>Ringkasan — 10 poin:</strong> dinilai dari panjang isi ringkasan; 40 kata atau lebih = poin penuh.</li>
-              <li><strong>Pengalaman — 28 poin:</strong> bagian pengalaman (10), variasi kata kerja aksi (8), dan angka pencapaian seperti persen/jumlah/nominal (10) — tahun dan nomor HP tidak dihitung sebagai pencapaian.</li>
-              <li><strong>Pendidikan — 12 poin:</strong> pendidikan tercantum (8) dan IPK/GPA (4).</li>
-              <li><strong>Keahlian — 10 poin:</strong> dihitung dari jumlah item skill yang tercantum; 8 item atau lebih = poin penuh.</li>
-              <li><strong>Format &amp; ATS — 20 poin:</strong> panjang ideal 220–900 kata (10), tahun/periode tercantum (5), struktur bullet (5).</li>
+              <li><strong>Ringkasan — 10 poin:</strong> poin penuh mensyaratkan panjang 30–80 kata DAN menyebut bidang/posisi atau lama pengalaman DAN minimal satu kekuatan/skill — teks yang sekadar ada tidak lagi cukup.</li>
+              <li><strong>Pengalaman — 28 poin:</strong> struktur pengalaman (10: tiap entri memuat jabatan + perusahaan + periode, dalam bullet yang konsisten — paragraf dibatasi), kata kerja aksi (8: poin penuh bila ≥70% poin diawali kata kerja aksi kuat dan bervariasi), dan angka pencapaian berbeda seperti persen/jumlah/nominal (10: poin penuh bila ≥3) — tahun dan nomor HP tidak dihitung sebagai pencapaian.</li>
+              <li><strong>Pendidikan — 12 poin:</strong> kelengkapan pendidikan (8: institusi + jurusan + tahun lulus harus terbaca semua untuk poin penuh) dan IPK/GPA (4).</li>
+              <li><strong>Keahlian — 10 poin:</strong> dihitung dari jumlah item skill pada bagian tersendiri; 10 item atau lebih = poin penuh.</li>
+              <li><strong>Format &amp; ATS — 20 poin:</strong> panjang ideal 350–1.000 kata (10), tahun/periode tercantum (5), struktur bullet (5).</li>
             </ul>
             <p>
-              Label skor: 85+ Sangat Siap Dilamar • 70–84 Sudah Bagus • 50–69 Perlu Perbaikan •
-              di bawah 50 Perlu Dirombak Dulu. Cek kata kunci lowongan ditampilkan terpisah dan
-              tidak mengubah skor utama.
+              Label skor: 90+ Sangat Siap Dilamar • 75–89 Sudah Bagus • 55–74 Perlu Perbaikan •
+              di bawah 55 Perlu Dirombak Dulu. Penilaian diperketat (2026-11-19): poin penuh
+              hanya untuk kualitas yang benar-benar kuat, bukan sekadar ada. Cek kata kunci
+              lowongan ditampilkan terpisah dan tidak mengubah skor utama.
             </p>
           </div>
 

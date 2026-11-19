@@ -4,8 +4,10 @@ Disusun 2026-11-18 (malam) dari kondisi situs yang sudah live di
 https://screening-cv-app.vercel.app/ dan repo
 https://github.com/Fakhriaja07/screening-cv-app.
 Terakhir diperbarui 2026-11-19: Fase 0, Fase 1, dan Fase 2 selesai;
-Fase 3 (Mode HRD) dibatalkan atas keputusan pengguna; bagian kartu
-bagikan Fase 4 selesai, testimoni & distribusi berjalan terus.
+Fase 3 (Mode HRD) dibatalkan atas keputusan pengguna; kartu bagikan
+Fase 4 sempat selesai lalu **DICABUT** atas keputusan pengguna
+(2026-11-19), testimoni & distribusi berjalan terus. Pada hari yang
+sama penilaian diperketat — lihat bagian "Pengetatan penilaian".
 
 ## Nilai jual yang sudah dimiliki (terverifikasi di kode)
 
@@ -15,7 +17,8 @@ bagikan Fase 4 selesai, testimoni & distribusi berjalan terus.
 - **Untuk Indonesia:** Bahasa Indonesia penuh; deteksi nomor HP 08 / +62 /
   format kurung; deteksi link portofolio (GitHub, Vercel, Notion, dll).
 - **Skor jujur & transparan:** 100 poin, 6 aspek, 14 pemeriksaan; CV kuat
-  100, CV menengah 57, CV lemah 16 (uji di `scripts/run-tests.ts`).
+  93, CV menengah 51, CV lemah 7 (uji di `scripts/run-tests.ts`, setelah
+  pengetatan 2026-11-19; sebelumnya 100/57/16).
   Bobot dan cara hitung dibuka di halaman "Bagaimana skor dihitung?".
 - **Bisa langsung ditindaklanjuti:** prioritas perbaikan terurut + cek kata
   kunci terhadap deskripsi lowongan + tombol salin laporan.
@@ -35,7 +38,8 @@ bagikan Fase 4 selesai, testimoni & distribusi berjalan terus.
   **Mode HRD dibatalkan** atas keputusan pengguna (2026-11-19) — target
   pasar hanya pencari kerja, bukan rekruter. Lihat Fase 3.
 - ~~Tidak ada tombol bagikan hasil.~~
-  **Selesai di Fase 4 (2026-11-19)** — lihat catatan Fase 4 di bawah.
+  **Sempat selesai di Fase 4 (2026-11-19), lalu DICABUT pada hari yang
+  sama atas keputusan pengguna** — lihat catatan Fase 4 di bawah.
   Bukti sosial (testimoni nyata) memang belum ada — menunggu pengguna
   nyata; tidak dibuat-buat.
 
@@ -74,8 +78,9 @@ bagikan Fase 4 selesai, testimoni & distribusi berjalan terus.
   ada tombol salin) dan daftar skill saran untuk 8 peran umum +
   fallback Umum/Fresh Graduate, dicocokkan sederhana terhadap teks CV
   (sudah ada / belum) dengan label jujur bahwa ini saran umum. Logika
-  skor di `analyze.ts` tidak berubah (skor uji tetap 100/57/16).
-  Uji di `scripts/run-tests.ts`.
+  skor di `analyze.ts` tidak berubah oleh Fase 2 (skor uji saat itu
+  100/57/16; skor diperketat belakangan pada 2026-11-19 menjadi
+  93/51/7 — lihat "Pengetatan penilaian"). Uji di `scripts/run-tests.ts`.
 
 ### Fase 3 — Mode HRD — **DIBATALKAN** (keputusan pengguna, 2026-11-19)
 - **DIBATALKAN, tidak dikerjakan.** Target pasar Screening CV hanya
@@ -94,15 +99,45 @@ bagikan Fase 4 selesai, testimoni & distribusi berjalan terus.
 - Bagikan ke komunitas pencari kerja, kampus, grup Telegram/WhatsApp.
 - Catatan: penghitung "CV sudah dianalisis" butuh server — jangan
   dibuat angka palsu; kalau mau, pakai testimoni nyata saja dulu.
-- **Kartu bagikan: SELESAI 2026-11-19.** Implementasi: modul
-  `src/lib/share.ts` — teks bagikan (skor, verdict, posisi target,
-  1 perbaikan utama, URL situs; tanpa isi CV/data pribadi), tombol
-  WhatsApp/Telegram/X/Salin Teks, dan unduhan kartu gambar PNG
-  1200×630 yang digambar client-side lewat Canvas API (gaya og-image
-  Versi B: latar terang, aksen teal). Uji di `scripts/run-tests.ts`.
+- **Kartu bagikan: SELESAI 2026-11-19, lalu DICABUT pada hari yang
+  sama atas keputusan pengguna (2026-11-19).** Sempat diimplementasikan
+  sebagai modul `src/lib/share.ts` — teks bagikan (skor, verdict,
+  posisi target, 1 perbaikan utama, URL situs; tanpa isi CV/data
+  pribadi), tombol WhatsApp/Telegram/X/Salin Teks, dan unduhan kartu
+  gambar PNG 1200×630 client-side. Pengguna memutuskan fitur ini tidak
+  diperlukan, jadi kartu "Bagikan Hasil", modul, gaya, dan ujinya
+  dihapus total dari kode dan dari situs live — dicatat di sini agar
+  riwayat keputusannya jelas, bukan dihapus diam-diam.
 - Testimoni & distribusi ke komunitas: **berjalan terus** (aktivitas
   pengguna, bukan kode) dan sengaja TANPA testimoni palsu maupun
   penghitung palsu — ditunggu dari pengguna nyata.
+
+### Pengetatan penilaian — 2026-11-19
+
+Atas masukan pengguna bahwa skor terlalu mudah tinggi (CV contoh kuat
+mencapai 100/100 sehingga penilaian terlihat tidak profesional),
+`src/lib/analyze.ts` diperketat. Total tetap 100 poin, 6 aspek, dan
+14 pemeriksaan dengan id yang sama (pemetaan contoh Fase 2 utuh);
+yang berubah adalah syarat poin penuh — kini hanya untuk kualitas
+yang benar-benar kuat, bukan sekadar "ada":
+
+- **Hasil terukur:** penuh hanya bila ≥3 angka pencapaian *berbeda*
+  di bagian pengalaman (sebelumnya menghitung kemunculan di seluruh CV).
+- **Kata kerja aksi:** penuh hanya bila ≥70% bullet pengalaman diawali
+  kata kerja aksi kuat, dikombinasikan dengan variasi kata kerja.
+- **Struktur pengalaman:** penuh mensyaratkan entri lengkap (jabatan +
+  perusahaan + periode) dalam bullet konsisten; paragraf dibatasi.
+- **Ringkasan:** penuh mensyaratkan 30–80 kata + bidang/posisi atau
+  lama pengalaman + minimal satu kekuatan/skill.
+- **Keahlian:** penuh hanya bila ≥10 skill (sebelumnya 8).
+- **Pendidikan:** penuh mensyaratkan institusi + jurusan + tahun lulus
+  terbaca (sebelumnya cukup "tercantum").
+- **Panjang CV:** jendela ideal 350–1.000 kata (sebelumnya 220–900),
+  bertingkat di luarnya dan lebih berat untuk CV sangat pendek.
+- **Ambang verdict naik:** ≥90 Sangat Siap Dilamar, ≥75 Sudah Bagus,
+  ≥55 Perlu Perbaikan, <55 Perlu Dirombak Dulu.
+- **Kalibrasi baru (terkunci di uji):** CV kuat 100 → **93**, CV
+  menengah 57 → **51**, CV lemah 16 → **7**.
 
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
