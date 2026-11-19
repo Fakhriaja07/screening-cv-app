@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
 import { analyzeCv, countWords, type AnalysisResult, type CheckItem } from './lib/analyze'
+import {
+  addHistoryEntry,
+  aspectDeltas,
+  clearHistory,
+  entryFromResult,
+  formatHistoryDate,
+  loadHistory,
+  scoreDelta,
+  type ScoreHistoryEntry,
+} from './lib/history'
 import { requestAiAnalysis, requestAiAnalysisStreaming, type AiAnalysis } from './lib/ai'
 import { SAMPLE_CV } from './lib/sampleCv'
 import { extractTextFromFile } from './lib/readFile'
@@ -28,6 +38,11 @@ const I = {
   book: 'M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15zM4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5',
   search: 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35',
   spark: 'M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4L12 3zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z',
+  trendUp: 'M23 6L13.5 15.5L8.5 10.5L1 18M17 6h6v6',
+  trendDown: 'M23 18L13.5 8.5L8.5 13.5L1 6M17 18h6v-6',
+  minus: 'M5 12h14',
+  clock: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2',
+  trash: 'M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6',
 }
 
 // ---------- Ring skor beranimasi ----------
@@ -109,6 +124,8 @@ export default function App() {
   const [aiThinkingOpen, setAiThinkingOpen] = useState(false)
   const [aiElapsed, setAiElapsed] = useState(0)
   const [aiDuration, setAiDuration] = useState<number | null>(null)
+  const [history, setHistory] = useState<ScoreHistoryEntry[]>(() => loadHistory())
+  const [prevEntry, setPrevEntry] = useState<ScoreHistoryEntry | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const resultRef = useRef<HTMLDivElement>(null)
   const aiStartRef = useRef(0)
@@ -153,10 +170,21 @@ export default function App() {
       setError('Teks CV masih terlalu pendek. Upload file CV atau tempel teks CV terlebih dahulu.')
       return
     }
-    setResult(analyzeCv(cvText, { targetRole, jobDesc }))
+    const res = analyzeCv(cvText, { targetRole, jobDesc })
+    setResult(res)
+    // Fase 1: simpan skor ke riwayat perangkat (hanya skor — teks CV tidak
+    // disimpan) dan ingat entri sebelumnya untuk perbandingan sebelum → sesudah.
+    setPrevEntry(loadHistory()[0] ?? null)
+    setHistory(addHistoryEntry(entryFromResult(res, targetRole)))
     requestAnimationFrame(() => {
       resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     })
+  }
+
+  function handleClearHistory() {
+    clearHistory()
+    setHistory([])
+    setPrevEntry(null)
   }
 
   function handleSample() {
@@ -180,6 +208,7 @@ export default function App() {
     setAiThinkingOpen(false)
     setAiElapsed(0)
     setAiDuration(null)
+    setPrevEntry(null)
   }
 
   async function handleAiAnalyze() {
@@ -459,6 +488,69 @@ export default function App() {
                   <div className="alert alert-warn"><Icon d={I.alert} size={16} /> {result.roleWarning}</div>
                 )}
               </div>
+
+              {history.length > 0 && (
+                <div className="card history-card">
+                  <h3><Icon d={I.clock} size={18} /> Riwayat Skor</h3>
+
+                  {prevEntry && (() => {
+                    const d = scoreDelta(prevEntry.total, result.total)
+                    const changed = aspectDeltas(prevEntry, entryFromResult(result, targetRole))
+                      .filter((a) => a.delta !== null && a.delta !== 0)
+                    return (
+                      <div className="compare-box">
+                        <p className="compare-main">
+                          <span className={`delta-badge delta-${d.direction}`}>
+                            <Icon
+                              d={d.direction === 'naik' ? I.trendUp : d.direction === 'turun' ? I.trendDown : I.minus}
+                              size={15}
+                            />
+                            {d.word}
+                          </span>
+                          <span>
+                            Cek terakhir ({formatHistoryDate(prevEntry.at)}):{' '}
+                            <strong>{prevEntry.total}</strong> → Sekarang:{' '}
+                            <strong>{result.total}</strong> ({d.text})
+                          </span>
+                        </p>
+                        {changed.length > 0 ? (
+                          <ul className="aspect-deltas">
+                            {changed.map((a) => (
+                              <li key={a.name}>
+                                <span className="ad-name">{a.name}:</span> {a.previous} → {a.score}{' '}
+                                <span className={`ad-delta ad-${a.direction}`}>
+                                  ({a.delta !== null && a.delta > 0 ? `+${a.delta}` : a.delta})
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="aspect-deltas-note">Semua aspek sama seperti cek terakhir.</p>
+                        )}
+                      </div>
+                    )
+                  })()}
+
+                  <ul className="history-list">
+                    {history.slice(0, 5).map((e, i) => (
+                      <li className="history-row" key={`${e.at}-${i}`}>
+                        <span className="history-date">{formatHistoryDate(e.at)}</span>
+                        <span className="history-score">{e.total}/100</span>
+                        <span className="history-label">{e.label}</span>
+                        {e.role && <span className="history-role">{e.role}</span>}
+                      </li>
+                    ))}
+                  </ul>
+
+                  <p className="history-note">
+                    Riwayat hanya menyimpan skor dan tanggal — tanpa teks CV — di
+                    perangkat ini saja (localStorage), tidak dikirim ke server.
+                  </p>
+                  <button className="btn btn-plain history-clear" type="button" onClick={handleClearHistory}>
+                    <Icon d={I.trash} size={15} /> Hapus riwayat
+                  </button>
+                </div>
+              )}
 
               {result.strengths.length > 0 && (
                 <div className="card">

@@ -1,6 +1,18 @@
 // Uji logika penilaian: 3 CV (kuat/menengah/lemah) + deteksi HP.
 // Jalankan: npx tsx scripts/run-tests.ts
 import { analyzeCv, detectPhone, findPortfolio } from '../src/lib/analyze'
+import {
+  addHistoryEntry,
+  aspectDeltas,
+  clearHistory,
+  entryFromResult,
+  loadHistory,
+  scoreDelta,
+  HISTORY_MAX_ENTRIES,
+  HISTORY_STORAGE_KEY,
+  type ScoreHistoryEntry,
+  type StorageLike,
+} from '../src/lib/history'
 import { SAMPLE_CV } from '../src/lib/sampleCv'
 
 const MEDIUM_CV = `Budi Santoso
@@ -48,6 +60,121 @@ check('HP rentang tahun "2022 - 2024"', detectPhone('Bekerja tahun 2022 - 2024 d
 check('HP telepon kantor "021-5551234"', detectPhone('Telepon kantor 021-5551234') === false, 'harus false')
 check('Portofolio github.com terdeteksi', findPortfolio('github.com/Fakhriaja07') !== null, String(findPortfolio('github.com/Fakhriaja07')))
 check('Kata "portofolio" tanpa alamat', findPortfolio('Saya punya portofolio yang bagus') === null, 'harus null')
+
+// ---------- Uji riwayat skor (Fase 1) ----------
+class MockStorage implements StorageLike {
+  private map = new Map<string, string>()
+  getItem(k: string): string | null {
+    return this.map.get(k) ?? null
+  }
+  setItem(k: string, v: string): void {
+    this.map.set(k, v)
+  }
+  removeItem(k: string): void {
+    this.map.delete(k)
+  }
+}
+
+const store = new MockStorage()
+const entry1 = entryFromResult(strong, 'Data Analyst', new Date('2026-11-19T10:00:00.000Z'))
+addHistoryEntry(entry1, store)
+const loaded1 = loadHistory(store)
+check(
+  'Riwayat: simpan → baca kembali',
+  loaded1.length === 1 &&
+    loaded1[0].total === strong.total &&
+    loaded1[0].label === strong.label &&
+    loaded1[0].role === 'Data Analyst' &&
+    loaded1[0].aspects.length === 6,
+  `entri terbaca ${loaded1.length}, total ${loaded1[0]?.total}`,
+)
+
+const storedRaw = store.getItem(HISTORY_STORAGE_KEY) ?? ''
+const storedKeys = storedRaw ? Object.keys(JSON.parse(storedRaw)[0]).sort() : []
+check(
+  'Riwayat: hanya data skor yang disimpan (tanpa teks CV)',
+  JSON.stringify(storedKeys) === JSON.stringify(['aspects', 'at', 'label', 'role', 'total']) &&
+    !storedRaw.includes('Budi') &&
+    !storedRaw.toLowerCase().includes('cvtext'),
+  `kunci tersimpan: ${storedKeys.join(', ')}`,
+)
+
+const store2 = new MockStorage()
+for (let i = 1; i <= HISTORY_MAX_ENTRIES + 2; i++) {
+  const e: ScoreHistoryEntry = {
+    at: new Date(Date.UTC(2026, 10, 19, 0, i)).toISOString(),
+    total: i,
+    label: 'Uji',
+    role: '',
+    aspects: strong.aspects.map((a) => ({ name: a.name, score: a.score, max: a.max })),
+  }
+  addHistoryEntry(e, store2)
+}
+const loaded2 = loadHistory(store2)
+check(
+  `Riwayat: dibatasi ${HISTORY_MAX_ENTRIES} entri terbaru`,
+  loaded2.length === HISTORY_MAX_ENTRIES && loaded2[0].total === HISTORY_MAX_ENTRIES + 2,
+  `tersimpan ${loaded2.length} entri, teratas total ${loaded2[0]?.total}`,
+)
+
+const store3 = new MockStorage()
+store3.setItem(HISTORY_STORAGE_KEY, 'bukan-json{{{')
+let corruptOk = false
+try {
+  corruptOk = loadHistory(store3).length === 0
+} catch {
+  corruptOk = false
+}
+store3.setItem(HISTORY_STORAGE_KEY, '[123, null, {"at": 5}]')
+try {
+  corruptOk = corruptOk && loadHistory(store3).length === 0
+} catch {
+  corruptOk = false
+}
+check('Riwayat: data rusak diabaikan tanpa crash', corruptOk, 'loadHistory mengembalikan []')
+
+const dUp = scoreDelta(57, 73)
+const dDown = scoreDelta(73, 57)
+const dSame = scoreDelta(60, 60)
+check(
+  'Selisih skor naik/turun/tetap',
+  dUp.delta === 16 && dUp.direction === 'naik' && dUp.text === '+16' &&
+    dDown.delta === -16 && dDown.direction === 'turun' && dDown.text === '-16' &&
+    dSame.delta === 0 && dSame.direction === 'tetap' && dSame.text === '0',
+  `57→73 ${dUp.text} (${dUp.word}), 73→57 ${dDown.text} (${dDown.word}), 60→60 ${dSame.text} (${dSame.word})`,
+)
+
+const prevEntry: ScoreHistoryEntry = {
+  at: '2026-11-18T10:00:00.000Z',
+  total: 57,
+  label: 'Perlu Perbaikan',
+  role: '',
+  aspects: [
+    { name: 'Kontak', score: 13, max: 20 },
+    { name: 'Pengalaman', score: 18, max: 28 },
+  ],
+}
+const currEntry: ScoreHistoryEntry = {
+  at: '2026-11-19T10:00:00.000Z',
+  total: 73,
+  label: 'Sudah Bagus',
+  role: '',
+  aspects: [
+    { name: 'Kontak', score: 13, max: 20 },
+    { name: 'Pengalaman', score: 24, max: 28 },
+  ],
+}
+const aDeltas = aspectDeltas(prevEntry, currEntry)
+check(
+  'Selisih per aspek',
+  aDeltas.length === 2 &&
+    aDeltas[0].delta === 0 && aDeltas[0].direction === 'tetap' &&
+    aDeltas[1].delta === 6 && aDeltas[1].direction === 'naik' && aDeltas[1].previous === 18,
+  aDeltas.map((a) => `${a.name} ${a.previous}→${a.score} (${a.delta})`).join(' | '),
+)
+
+clearHistory(store)
+check('Riwayat: hapus mengosongkan storage', loadHistory(store).length === 0, 'setelah clearHistory terbaca 0 entri')
 
 if (failures > 0) {
   console.error(`\n${failures} uji GAGAL`)

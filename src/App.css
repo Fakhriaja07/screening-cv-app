@@ -665,6 +665,119 @@
   color: #1e3a8a;
 }
 
+/* ===== Riwayat skor (Fase 1) ===== */
+.compare-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+.compare-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 14.5px;
+  color: #334155;
+}
+.delta-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.delta-naik {
+  background: #dcfce7;
+  color: #15803d;
+}
+.delta-turun {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.delta-tetap {
+  background: #f1f5f9;
+  color: #475569;
+}
+.aspect-deltas {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13.5px;
+  color: #475569;
+}
+.aspect-deltas .ad-name {
+  font-weight: 600;
+  color: #334155;
+}
+.aspect-deltas .ad-delta {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.ad-naik {
+  color: #15803d;
+}
+.ad-turun {
+  color: #b91c1c;
+}
+.aspect-deltas-note {
+  margin-top: 10px;
+  font-size: 13.5px;
+  color: #64748b;
+}
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.history-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  border-top: 1px solid #eef2f6;
+  font-size: 13.5px;
+}
+.history-row:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+.history-date {
+  color: #64748b;
+  min-width: 158px;
+}
+.history-score {
+  font-weight: 800;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+}
+.history-label {
+  color: #334155;
+  font-weight: 600;
+}
+.history-role {
+  color: #94a3b8;
+}
+.history-note {
+  font-size: 12.5px;
+  color: #94a3b8;
+  margin-top: 12px;
+}
+.history-clear {
+  margin-top: 4px;
+  padding: 6px 8px;
+  font-size: 13.5px;
+}
+
 /* ===== Footer ===== */
 .footer {
   text-align: center;

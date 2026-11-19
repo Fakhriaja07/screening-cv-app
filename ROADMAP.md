@@ -3,7 +3,7 @@
 Disusun 2026-11-18 (malam) dari kondisi situs yang sudah live di
 https://screening-cv-app.vercel.app/ dan repo
 https://github.com/Fakhriaja07/screening-cv-app.
-File ini hanya draf lokal — belum di-push ke GitHub, belum di-deploy.
+Terakhir diperbarui 2026-11-19: Fase 0 dan Fase 1 selesai.
 
 ## Nilai jual yang sudah dimiliki (terverifikasi di kode)
 
@@ -20,10 +20,12 @@ File ini hanya draf lokal — belum di-push ke GitHub, belum di-deploy.
 
 ## Yang masih kurang (terverifikasi di kode, 2026-11-18)
 
-- `index.html` hanya punya `<title>` — **tanpa meta description,
-  tanpa Open Graph/Twitter card**, tanpa sitemap/robots.
-- Tidak ada riwayat skor: tidak ada `localStorage`, tidak ada
-  perbandingan sebelum vs sesudah revisi (`src/App.tsx`).
+- ~~`index.html` hanya punya `<title>` — tanpa meta description,
+  tanpa Open Graph/Twitter card, tanpa sitemap/robots.~~
+  **Selesai di Fase 0 (2026-11-19).**
+- ~~Tidak ada riwayat skor: tidak ada `localStorage`, tidak ada
+  perbandingan sebelum vs sesudah revisi.~~
+  **Selesai di Fase 1 (2026-11-19)** — lihat catatan Fase 1 di bawah.
 - Hasil hanya bilang *apa* yang kurang, belum memberi **contoh kalimat
   perbaikan** ("tulis seperti ini").
 - Tidak ada mode HRD / unggah banyak CV sekaligus dan ranking.
@@ -38,10 +40,18 @@ File ini hanya draf lokal — belum di-push ke GitHub, belum di-deploy.
 - Sasaran kata kunci: "cek CV ATS gratis", "penilaian CV bahasa Indonesia".
 - Effort: kecil. Dampak: orang bisa menemukan dan membagikan situsnya.
 
-### Fase 1 — Alasan untuk kembali (sedang)
+### Fase 1 — Alasan untuk kembali (sedang) — SELESAI 2026-11-19
 - Simpan skor terakhir di `localStorage`; saat CV dianalisis ulang,
   tampilkan "sebelum → sesudah" dan selisih skornya.
 - Effort: sedang. Dampak: pengguna punya alasan revisi lalu kembali.
+- Implementasi: modul `src/lib/history.ts` (kunci
+  `screening-cv:history:v1`, maks 10 entri) menyimpan HANYA skor —
+  waktu, skor total, skor per aspek, label, posisi target — tanpa teks
+  CV, jadi janji privasi tetap utuh. Kartu "Riwayat Skor" di hasil
+  menampilkan perbandingan cek terakhir → sekarang (total + per aspek,
+  dengan kata Naik/Turun/Tetap), daftar 5 riwayat terakhir, catatan
+  privasi, dan tombol "Hapus riwayat". Uji unit di
+  `scripts/run-tests.ts`.
 
 ### Fase 2 — Contoh kalimat perbaikan (sedang)
 - Untuk tiap prioritas perbaikan, beri 1 contoh "sebelum → sesudah",
