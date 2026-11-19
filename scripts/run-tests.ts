@@ -20,6 +20,17 @@ import {
   getCheckExample,
   getRoleSkills,
 } from '../src/lib/examples'
+import {
+  buildShareText,
+  scoreColor,
+  shareDataFromResult,
+  telegramShareUrl,
+  truncateText,
+  whatsappShareUrl,
+  wrapText,
+  xShareUrl,
+  SITE_URL,
+} from '../src/lib/share'
 
 const MEDIUM_CV = `Budi Santoso
 budi.santoso@gmail.com | 0812-9876-5432 | linkedin.com/in/budisantoso
@@ -259,6 +270,104 @@ check(
   dataSkills.length >= 8 && dataSkills.length <= 12 &&
     getRoleSkills('').skills.length >= 8,
   `Data Analyst ${dataSkills.length} skill, fallback ${getRoleSkills('').skills.length} skill`,
+)
+
+// ---------- Uji Fase 4: teks bagikan, pembungkus teks kartu, URL intent ----------
+const shareWeak = shareDataFromResult(weak, 'Sales')
+const shareWeakText = buildShareText(shareWeak)
+check(
+  'Fase 4: teks bagikan memuat skor, verdict, peran, perbaikan utama, URL',
+  shareWeakText.includes(`${weak.total}/100`) &&
+    shareWeakText.includes(weak.label) &&
+    shareWeakText.includes('Posisi target: Sales') &&
+    shareWeakText.includes(weak.priorities[0].title) &&
+    shareWeakText.includes(SITE_URL) &&
+    SITE_URL === 'https://screening-cv-app.vercel.app/',
+  shareWeakText.split('\n')[0],
+)
+
+check(
+  'Fase 4: teks bagikan TIDAK memuat isi CV / data pribadi contoh',
+  !shareWeakText.includes('Andi') &&
+    !shareWeakText.includes('andi.pratama@gmail.com') &&
+    !shareWeakText.includes('toko pakaian') &&
+    !shareWeakText.includes('kasir'),
+  'nama, email, dan frasa isi CV contoh tidak boleh muncul',
+)
+
+const sharePerfect = shareDataFromResult(strong, '')
+const sharePerfectText = buildShareText(sharePerfect)
+check(
+  'Fase 4: skor sempurna tanpa peran & tanpa prioritas → teks tetap wajar',
+  strong.priorities.length === 0 &&
+    sharePerfect.topFixTitle === '' &&
+    sharePerfectText.includes('100/100') &&
+    sharePerfectText.includes('Sangat Siap Dilamar') &&
+    sharePerfectText.includes('Semua pemeriksaan lolos') &&
+    !sharePerfectText.includes('Posisi target') &&
+    sharePerfectText.includes(SITE_URL),
+  sharePerfectText.split('\n').slice(0, 2).join(' | '),
+)
+
+const sharePerfectRole = buildShareText(shareDataFromResult(strong, 'Data Analyst'))
+check(
+  'Fase 4: skor sempurna dengan peran → baris peran tampil, tanpa perbaikan utama',
+  sharePerfectRole.includes('Posisi target: Data Analyst') &&
+    sharePerfectRole.includes('Semua pemeriksaan lolos') &&
+    !sharePerfectRole.includes('Perbaikan utama saya berikutnya'),
+  'peran tampil; frasa perbaikan utama tidak tampil',
+)
+
+const wrapped = wrapText('satu dua tiga empat lima', 9)
+check(
+  'Fase 4: wrapText membungkus rapi per batas kata',
+  JSON.stringify(wrapped) === JSON.stringify(['satu dua', 'tiga', 'empat', 'lima']) &&
+    wrapped.every((l) => l.length <= 9),
+  wrapped.join(' / '),
+)
+
+const longSentence =
+  'Tambahkan hasil terukur pada setiap poin pengalaman kerja agar rekruter dan sistem ATS dapat menilai dampak pekerjaanmu secara konkret dan meyakinkan.'
+const wrappedLong = wrapText(longSentence, 30, 2)
+check(
+  'Fase 4: wrapText teks panjang dibatasi maxLines + elipsis',
+  wrappedLong.length === 2 &&
+    wrappedLong.every((l) => l.length <= 30) &&
+    wrappedLong[1].endsWith('…'),
+  wrappedLong.join(' / '),
+)
+
+const wrappedWord = wrapText('abcdefghijklmnop', 5)
+check(
+  'Fase 4: wrapText kata super-panjang dipotong keras',
+  JSON.stringify(wrappedWord) === JSON.stringify(['abcde', 'fghij', 'klmno', 'p']) &&
+    wrapText('   ', 10).length === 0,
+  wrappedWord.join(' / '),
+)
+
+const truncated = truncateText(longSentence, 60)
+check(
+  'Fase 4: truncateText memotong aman dengan elipsis',
+  truncated.endsWith('…') && truncated.length <= 61 && truncateText('pendek', 60) === 'pendek',
+  `"${truncated}" (${truncated.length} karakter)`,
+)
+
+check(
+  'Fase 4: URL intent WhatsApp/Telegram/X benar',
+  whatsappShareUrl('halo dunia') === 'https://wa.me/?text=halo%20dunia' &&
+    telegramShareUrl('tes').startsWith('https://t.me/share/url?url=https%3A%2F%2Fscreening-cv-app.vercel.app%2F&text=') &&
+    xShareUrl('tes').startsWith('https://twitter.com/intent/tweet?text='),
+  `WA: ${whatsappShareUrl('halo dunia')}`,
+)
+
+check(
+  'Fase 4: warna skor kartu termasuk ekstrem 0/100',
+  scoreColor(100) === '#16a34a' &&
+    scoreColor(73) === '#0ea5e9' &&
+    scoreColor(57) === '#f59e0b' &&
+    scoreColor(16) === '#dc2626' &&
+    scoreColor(0) === '#dc2626',
+  `100→${scoreColor(100)}, 0→${scoreColor(0)}`,
 )
 
 if (failures > 0) {

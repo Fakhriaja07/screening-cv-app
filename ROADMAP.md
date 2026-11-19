@@ -4,7 +4,8 @@ Disusun 2026-11-18 (malam) dari kondisi situs yang sudah live di
 https://screening-cv-app.vercel.app/ dan repo
 https://github.com/Fakhriaja07/screening-cv-app.
 Terakhir diperbarui 2026-11-19: Fase 0, Fase 1, dan Fase 2 selesai;
-Fase 3 (Mode HRD) dibatalkan atas keputusan pengguna.
+Fase 3 (Mode HRD) dibatalkan atas keputusan pengguna; bagian kartu
+bagikan Fase 4 selesai, testimoni & distribusi berjalan terus.
 
 ## Nilai jual yang sudah dimiliki (terverifikasi di kode)
 
@@ -33,8 +34,10 @@ Fase 3 (Mode HRD) dibatalkan atas keputusan pengguna.
 - Tidak ada mode HRD / unggah banyak CV sekaligus dan ranking.
   **Mode HRD dibatalkan** atas keputusan pengguna (2026-11-19) — target
   pasar hanya pencari kerja, bukan rekruter. Lihat Fase 3.
-- Tidak ada tombol bagikan hasil dan tidak ada bukti sosial
-  (testimoni / jumlah CV dianalisis).
+- ~~Tidak ada tombol bagikan hasil.~~
+  **Selesai di Fase 4 (2026-11-19)** — lihat catatan Fase 4 di bawah.
+  Bukti sosial (testimoni nyata) memang belum ada — menunggu pengguna
+  nyata; tidak dibuat-buat.
 
 ## Urutan yang disarankan
 
@@ -91,6 +94,15 @@ Fase 3 (Mode HRD) dibatalkan atas keputusan pengguna.
 - Bagikan ke komunitas pencari kerja, kampus, grup Telegram/WhatsApp.
 - Catatan: penghitung "CV sudah dianalisis" butuh server — jangan
   dibuat angka palsu; kalau mau, pakai testimoni nyata saja dulu.
+- **Kartu bagikan: SELESAI 2026-11-19.** Implementasi: modul
+  `src/lib/share.ts` — teks bagikan (skor, verdict, posisi target,
+  1 perbaikan utama, URL situs; tanpa isi CV/data pribadi), tombol
+  WhatsApp/Telegram/X/Salin Teks, dan unduhan kartu gambar PNG
+  1200×630 yang digambar client-side lewat Canvas API (gaya og-image
+  Versi B: latar terang, aksen teal). Uji di `scripts/run-tests.ts`.
+- Testimoni & distribusi ke komunitas: **berjalan terus** (aktivitas
+  pengguna, bukan kode) dan sengaja TANPA testimoni palsu maupun
+  penghitung palsu — ditunggu dari pengguna nyata.
 
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
