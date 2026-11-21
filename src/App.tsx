@@ -22,7 +22,18 @@ import {
   formatRupiah,
   getCredits,
   getOrCreatePendingCode,
+  isOrderClaimed,
+  markOrderClaimed,
 } from './lib/payment'
+import {
+  checkSnapTransaction,
+  createSnapTransaction,
+  fetchPaymentConfig,
+  loadSnapJs,
+  payWithSnap,
+  type PaymentConfig,
+  type TransactionCheck,
+} from './lib/midtransClient'
 import {
   buildSummaryTemplate,
   checkSkills,
@@ -192,6 +203,21 @@ export default function App() {
   const [pendingCode, setPendingCode] = useState<number>(() => getOrCreatePendingCode())
   const [payOpen, setPayOpen] = useState(false)
   const [qrisError, setQrisError] = useState(false)
+  // Pembayaran otomatis Midtrans: mode dibaca dari /api/payment-config.
+  // null = belum selesai dimuat → perlakukan sebagai "off" (manual).
+  const [payConfig, setPayConfig] = useState<PaymentConfig | null>(null)
+  // Mode sandbox hanya boleh diuji pemilik lewat ?paytest=1; pengguna
+  // biasa tetap melihat jalur manual sampai mode production aktif.
+  const [paytest] = useState<boolean>(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('paytest') === '1'
+    } catch {
+      return false
+    }
+  })
+  const [autoBusy, setAutoBusy] = useState(false)
+  const [autoMsg, setAutoMsg] = useState('')
+  const autoPollRef = useRef(false)
   const [history, setHistory] = useState<ScoreHistoryEntry[]>(() => loadHistory())
   const [prevEntry, setPrevEntry] = useState<ScoreHistoryEntry | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -213,6 +239,18 @@ export default function App() {
     const el = thinkingBodyRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [aiThinking, aiThinkingOpen])
+
+  // Mode pembayaran otomatis dibaca sekali dari server saat halaman
+  // dimuat. Gagal memuat → payConfig tetap null → jalur manual.
+  useEffect(() => {
+    let cancelled = false
+    fetchPaymentConfig().then((cfg) => {
+      if (!cancelled) setPayConfig(cfg)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   async function handleFile(file: File) {
     setError('')
@@ -289,6 +327,100 @@ export default function App() {
     clearPendingCode()
     setPendingCode(getOrCreatePendingCode())
     setPayOpen(false)
+  }
+
+  // Polling status resmi ke server situs (yang menarik status langsung
+  // ke Midtrans) setelah Snap melaporkan selesai/menunggu. Kredit hanya
+  // bertambah bila server menjawab paid — callback Snap semata TIDAK
+  // pernah menambah kredit.
+  async function pollAutoPayment(orderId: string) {
+    if (autoPollRef.current) return
+    autoPollRef.current = true
+    const deadline = Date.now() + 120_000
+    try {
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 3000))
+        let check: TransactionCheck
+        try {
+          check = await checkSnapTransaction(orderId)
+        } catch {
+          continue // Gangguan sesaat: lanjutkan polling sampai batas waktu.
+        }
+        if (check.paid) {
+          if (isOrderClaimed(orderId)) {
+            setAutoMsg(
+              'Pembayaran order ini sudah pernah diklaim di browser ini, jadi kredit tidak ditambah dua kali.',
+            )
+          } else if (markOrderClaimed(orderId)) {
+            setAiCredits(addCredit())
+            setPayOpen(false)
+            setAutoMsg(
+              'Pembayaran terkonfirmasi oleh Midtrans — kredit AI kamu bertambah 1. Centang persetujuan di bawah, lalu jalankan Analisis AI.',
+            )
+          } else {
+            setAutoMsg(
+              'Pembayaran terkonfirmasi oleh Midtrans, tetapi pencatatan klaim gagal di browser ini. Hubungi admin agar kreditmu ditambah manual.',
+            )
+          }
+          return
+        }
+        if (check.state === 'failed') {
+          setAutoMsg(
+            'Pembayaran berakhir tanpa penyelesaian (kedaluwarsa, dibatalkan, atau ditolak). Tidak ada kredit yang ditambah — silakan coba bayar lagi.',
+          )
+          return
+        }
+      }
+      setAutoMsg(
+        `Pembayaran belum terkonfirmasi dalam 2 menit. Bila kamu sudah membayar, tunggu beberapa saat — atau hubungi admin dan sebutkan kode order ${orderId}.`,
+      )
+    } finally {
+      autoPollRef.current = false
+      setAutoBusy(false)
+    }
+  }
+
+  // Alur bayar otomatis: buat transaksi di server → buka Snap → setelah
+  // Snap selesai, verifikasi lewat polling status resmi (di atas).
+  async function handleAutoPay() {
+    if (autoBusy || !payConfig || payConfig.mode === 'off' || !payConfig.clientKey) return
+    const mode = payConfig.mode
+    const clientKey = payConfig.clientKey
+    setAutoBusy(true)
+    setAutoMsg('Menyiapkan transaksi pembayaran…')
+    try {
+      const tx = await createSnapTransaction()
+      await loadSnapJs(mode, clientKey)
+      setAutoMsg('Jendela pembayaran Midtrans dibuka — selesaikan pembayaranmu di sana.')
+      payWithSnap(tx.token, {
+        onSuccess: () => {
+          void pollAutoPayment(tx.orderId)
+        },
+        onPending: () => {
+          setAutoMsg('Menunggu pembayaranmu selesai — status diperiksa otomatis ke Midtrans…')
+          void pollAutoPayment(tx.orderId)
+        },
+        onError: () => {
+          setAutoMsg(
+            'Pembayaran gagal diproses Midtrans. Tidak ada kredit yang ditambah — silakan coba lagi.',
+          )
+          setAutoBusy(false)
+        },
+        onClose: () => {
+          if (!autoPollRef.current) {
+            setAutoMsg(
+              'Jendela pembayaran ditutup sebelum pembayaran selesai. Kredit hanya bertambah setelah pembayaran terkonfirmasi oleh Midtrans.',
+            )
+            setAutoBusy(false)
+          }
+        },
+      })
+    } catch (e) {
+      setAutoMsg(
+        e instanceof Error ? e.message : 'Pembayaran otomatis gagal dimulai. Coba lagi nanti.',
+      )
+      setAutoBusy(false)
+    }
   }
 
   async function handleAiAnalyze() {
@@ -460,6 +592,48 @@ export default function App() {
       </p>
     </div>
   )
+
+  // Bagian pembayaran otomatis Midtrans. Tampil menggantikan bagian
+  // manual hanya bila: mode production aktif, ATAU mode sandbox DAN
+  // URL memuat ?paytest=1 (pengujian pemilik). Selain itu pengguna
+  // tetap melihat jalur manual yang sudah berjalan.
+  const autoMode =
+    payConfig && payConfig.mode !== 'off' && payConfig.clientKey ? payConfig.mode : null
+  const autoAvailable = autoMode !== null && (autoMode === 'production' || paytest)
+  const autoPaySection = (
+    <div className="pay-box">
+      <p className="pay-intro">
+        Analisis AI berbayar <strong>{formatRupiah(AI_PRICE)} per analisis</strong> —
+        analisis standar (skor dan saran perbaikan di atas) tetap gratis.
+        Bayar otomatis lewat <strong>QRIS</strong> (semua e-wallet &amp; m-banking),
+        GoPay, atau ShopeePay melalui <strong>Midtrans</strong>. Kredit bertambah
+        hanya setelah pembayaranmu <strong>terverifikasi otomatis oleh
+        Midtrans</strong> — tidak perlu konfirmasi manual.
+      </p>
+      {autoMode === 'sandbox' && (
+        <p className="pay-note">
+          Mode uji Midtrans (Sandbox): transaksi ini simulasi dan tidak
+          memakai uang sungguhan.
+        </p>
+      )}
+      <div className="pay-actions">
+        <button
+          className="btn btn-primary"
+          type="button"
+          onClick={handleAutoPay}
+          disabled={autoBusy}
+        >
+          {autoBusy ? 'Memproses…' : 'Bayar Otomatis via QRIS'}
+        </button>
+      </div>
+      {autoMsg && (
+        <p className="pay-note" role="status">
+          {autoMsg}
+        </p>
+      )}
+    </div>
+  )
+  const activePaySection = autoAvailable ? autoPaySection : paymentSection
 
   return (
     <div className="page">
@@ -851,7 +1025,7 @@ export default function App() {
                         {payOpen ? 'Tutup pembelian' : 'Beli kredit lagi'}
                       </button>
                     </div>
-                    {payOpen && paymentSection}
+                    {payOpen && activePaySection}
 
                     <label className="consent-row">
                       <input
@@ -881,7 +1055,7 @@ export default function App() {
                     </div>
                   </>
                 ) : (
-                  paymentSection
+                  activePaySection
                 )}
 
                 {(aiLoading || aiThinking) && (
@@ -1018,6 +1192,11 @@ export default function App() {
           atau disimpan. Satu-satunya pengecualian: fitur Analisis AI (opsional,
           berbayar) mengirim teks CV ke OpenRouter hanya bila kamu mencentang
           persetujuan, dan teks itu tidak disimpan oleh Screening CV.
+        </p>
+        <p className="footer-links">
+          <a href="/privacy.html">Kebijakan Privasi</a>
+          <span aria-hidden="true"> • </span>
+          <a href="/terms.html">Syarat &amp; Ketentuan</a>
         </p>
       </footer>
     </div>

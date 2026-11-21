@@ -286,6 +286,94 @@ gateway. Analisis standar (rule-based) tetap gratis sepenuhnya.
   gateway (QRIS dinamis per transaksi + webhook) agar pembayaran
   terverifikasi otomatis sebelum kredit diberikan.
 
+## Integrasi Midtrans — pembayaran otomatis (dibangun 2026-11-21, menunggu kunci pengguna)
+
+Menjawab tindak lanjut dari bagian monetisasi di atas: pengguna
+memutuskan naik ke payment gateway **Midtrans** agar pembayaran
+Analisis AI **terverifikasi otomatis** sebelum kredit diberikan.
+Pengguna sedang mendaftar Midtrans dan mengajukan aktivasi
+Production (perorangan, Starter Pack QRIS cukup KTP; verifikasi
+±1–3 hari kerja menurut panduan integrasi). Integrasi di bawah sudah
+dibangun dan teruji unit; ia aktif begitu pengguna memasang kunci
+env di Vercel. **Paywall QRIS manual di atas TETAP menjadi jalur
+aktif** sampai Production benar-benar live.
+
+### Arsitektur
+
+- `api/payment-config.ts` (GET) — menjawab `{ mode }` dari env
+  server: `off` (kunci belum terpasang), `sandbox`, atau
+  `production`; Client Key (publik, untuk Snap JS) ikut dibagikan
+  bila mode bukan `off`. Server Key tidak pernah keluar dari server.
+- `api/create-transaction.ts` (POST) — membuat transaksi Snap
+  (`POST {snapHost}/snap/v1/transactions`, Basic Auth Server Key)
+  dengan `order_id` unik `AICV-<base36>-<acak 6>`, nominal persis
+  `AI_PRICE` dari konstanta bersama `src/lib/payment.ts` (tidak
+  diterima dari klien), dan `enabled_payments` hanya QRIS & e-wallet:
+  `["other_qris", "gopay", "shopeepay"]` (nilai QRIS generik Snap
+  menurut dokumentasi resmi adalah `other_qris`). Mode `off` → 503.
+- `api/check-transaction.ts` (GET `?order_id=`) — **sumber kebenaran
+  pembayaran (pull-based)**: menarik status resmi dari Core API
+  Midtrans (`GET {apiHost}/v2/{order_id}/status`; host API
+  `api.sandbox.midtrans.com` / `api.midtrans.com`, berbeda dari host
+  Snap) lalu memetakannya: `settlement` atau `capture`+fraud
+  `accept` → `paid` (dengan syarat `gross_amount` persis harga);
+  `pending` → `pending`; `expire`/`cancel`/`deny` → `failed`;
+  404 Midtrans → `unknown`.
+- `api/midtrans-notification.ts` (POST) — URL notifikasi resmi:
+  memverifikasi `signature_key` terhadap SHA512(`order_id` +
+  `status_code` + `gross_amount` + Server Key); cocok → 200,
+  tidak cocok → 403, body tidak valid → 400. Sengaja **stateless**:
+  status resmi selalu ditarik lewat check-transaction, bukan dari
+  body notifikasi.
+- Frontend (`src/App.tsx`, `src/lib/midtrans.ts`,
+  `src/lib/midtransClient.ts`, klaim order di `src/lib/payment.ts`):
+  mode dibaca dari payment-config. Mode **production** → tombol
+  "Bayar Otomatis via QRIS" menggantikan bagian manual. Mode
+  **sandbox** → tombol otomatis hanya tampil dengan `?paytest=1`
+  (pengujian pemilik); pengguna biasa tetap melihat manual. Mode
+  **off** → manual seperti sekarang. Alur otomatis: buat transaksi →
+  Snap JS sesuai mode → callback Snap hanya memicu **polling**
+  check-transaction (±3 detik, maks ±2 menit); kredit ditambah
+  **hanya** setelah server menjawab `paid: true`, lalu order_id
+  dicatat sebagai claimed di localStorage agar tidak bisa diklaim
+  ulang dari browser yang sama. Callback Snap semata tidak pernah
+  menambah kredit.
+- Logika murni (mode dari env, host per mode, order_id, pemetaan
+  status, verifikasi signature, klaim order) diuji di
+  `scripts/run-tests.ts` — termasuk vektor signature lokal dengan
+  kunci dummy.
+- Halaman `public/privacy.html` dan `public/terms.html` ditambahkan
+  (Bahasa Indonesia) dan ditautkan dari footer — selain untuk
+  transparansi pengguna, kelengkapan halaman ini juga ditinjau
+  Midtrans saat aktivasi Production.
+
+### Yang dibutuhkan dari pengguna (env di Vercel)
+
+| Env var | Isi |
+| --- | --- |
+| `MIDTRANS_SERVER_KEY` | Server Key dari dashboard Midtrans (Settings → Access Keys) untuk environment yang dipakai |
+| `MIDTRANS_CLIENT_KEY` | Client Key dari dashboard yang sama |
+| `MIDTRANS_IS_PRODUCTION` | `true` hanya bila memakai kunci Production; selain itu Sandbox |
+
+URL notifikasi yang didaftarkan di dashboard Midtrans
+(Settings → Configuration → Payment Notification URL), untuk
+Sandbox maupun Production:
+`https://screening-cv-app.vercel.app/api/midtrans-notification`
+
+### Status
+
+- Kode selesai, build bersih, semua uji lolos, dan sudah ter-push.
+- Live saat ini: `/api/payment-config` menjawab `{ "mode": "off" }`
+  (kunci belum dipasang — perilaku yang benar), create-transaction
+  menjawab 503 rapi, halaman privasi/S&K live.
+- **Menunggu:** (1) pengguna memasang kunci **Sandbox** → uji
+  end-to-end Sandbox (lewat `?paytest=1`); (2) aktivasi
+  **Production** disetujui Midtrans → ganti ketiga env var ke kunci
+  Production + `MIDTRANS_IS_PRODUCTION=true` → jalur otomatis menjadi
+  jalur utama dan bagian manual tersembunyi otomatis.
+- Potongan QRIS Midtrans 0,7% per transaksi (dari Rp5.000 diterima
+  bersih ±Rp4.965).
+
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
 - Akurasi yang terasa benar: hasil cocok dengan intuisi pengguna.

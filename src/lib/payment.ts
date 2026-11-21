@@ -146,3 +146,59 @@ export function clearPendingCode(
 export function amountForCode(code: number): number {
   return AI_PRICE + code
 }
+
+// ---------- Klaim order Midtrans (pembayaran otomatis) ----------
+//
+// Saat pembayaran otomatis (Midtrans) terkonfirmasi lunas oleh server,
+// frontend menambah kredit lalu mencatat order_id-nya di sini. Catatan
+// ini mencegah order yang sama diklaim ulang dari browser yang sama
+// (mis. polling ganda atau tombol ditekan dua kali). Ini pengaman sisi
+// klien — keputusan "lunas" sendiri selalu datang dari server situs
+// yang menarik status resmi ke Midtrans, bukan dari browser.
+
+export const AI_CLAIMED_ORDERS_STORAGE_KEY = 'screening-cv:ai-claimed-orders:v1'
+const CLAIMED_ORDERS_MAX = 50
+
+function loadClaimedOrders(storage: StorageLike | null): string[] {
+  if (!storage) return []
+  try {
+    const raw = storage.getItem(AI_CLAIMED_ORDERS_STORAGE_KEY)
+    if (!raw) return []
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((v): v is string => typeof v === 'string')
+  } catch {
+    return []
+  }
+}
+
+export function isOrderClaimed(
+  orderId: string,
+  storage: StorageLike | null = defaultStorage(),
+): boolean {
+  return loadClaimedOrders(storage).includes(orderId)
+}
+
+// Catat order sebagai sudah diklaim. Mengembalikan true bila order ini
+// BARU dicatat (kredit boleh ditambah), false bila sudah pernah
+// diklaim sebelumnya (jangan tambah kredit lagi).
+export function markOrderClaimed(
+  orderId: string,
+  storage: StorageLike | null = defaultStorage(),
+): boolean {
+  if (!storage) return false
+  const orders = loadClaimedOrders(storage)
+  if (orders.includes(orderId)) return false
+  orders.push(orderId)
+  try {
+    storage.setItem(
+      AI_CLAIMED_ORDERS_STORAGE_KEY,
+      JSON.stringify(orders.slice(-CLAIMED_ORDERS_MAX)),
+    )
+  } catch {
+    // Gagal menyimpan: perlakukan sebagai belum tercatat agar tidak
+    // mengklaim berhasil secara keliru.
+    return false
+  }
+  return true
+}

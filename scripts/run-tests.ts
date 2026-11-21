@@ -16,6 +16,7 @@ import {
 } from '../src/lib/history'
 import { SAMPLE_CV } from '../src/lib/sampleCv'
 import {
+  AI_CLAIMED_ORDERS_STORAGE_KEY,
   AI_CREDITS_STORAGE_KEY,
   AI_PENDING_CODE_STORAGE_KEY,
   AI_PRICE,
@@ -26,7 +27,24 @@ import {
   formatRupiah,
   getCredits,
   getOrCreatePendingCode,
+  isOrderClaimed,
+  markOrderClaimed,
 } from '../src/lib/payment'
+import {
+  MIDTRANS_ENABLED_PAYMENTS,
+  apiHostFor,
+  buildOrderId,
+  isValidOrderId,
+  mapMidtransStatus,
+  resolveMidtransMode,
+  snapHostFor,
+  snapJsUrlFor,
+} from '../src/lib/midtrans'
+import {
+  basicAuthHeader,
+  computeNotificationSignature,
+  verifyNotificationSignature,
+} from '../api/_midtrans'
 import {
   buildSummaryTemplate,
   checkSkills,
@@ -732,6 +750,154 @@ check(
   'QRIS manual: kode unik rusak → dibuat ulang, tidak crash',
   codeFromCorrupt === 1,
   `kode ${codeFromCorrupt}`,
+)
+
+// ---------- Uji integrasi Midtrans: mode, order, status, signature (2026-11-21) ----------
+check(
+  'Midtrans: mode off bila kunci belum terpasang',
+  resolveMidtransMode({}) === 'off' &&
+    resolveMidtransMode({ serverKey: 'SB-Mid-server-x' }) === 'off' &&
+    resolveMidtransMode({ clientKey: 'SB-Mid-client-x' }) === 'off' &&
+    resolveMidtransMode({ serverKey: '  ', clientKey: 'SB-Mid-client-x' }) === 'off',
+  'kedua kunci wajib ada',
+)
+check(
+  'Midtrans: kunci terpasang tanpa production → sandbox',
+  resolveMidtransMode({ serverKey: 'SB-Mid-server-x', clientKey: 'SB-Mid-client-x' }) === 'sandbox' &&
+    resolveMidtransMode({ serverKey: 's', clientKey: 'c', isProduction: 'false' }) === 'sandbox' &&
+    resolveMidtransMode({ serverKey: 's', clientKey: 'c', isProduction: 'TRUE' }) === 'sandbox',
+  'hanya string persis "true" yang berarti production',
+)
+check(
+  'Midtrans: MIDTRANS_IS_PRODUCTION=true → production',
+  resolveMidtransMode({ serverKey: 'Mid-server-x', clientKey: 'Mid-client-x', isProduction: 'true' }) ===
+    'production',
+  'mode production',
+)
+check(
+  'Midtrans: host Snap/API/SnapJS per mode sesuai dokumentasi resmi',
+  snapHostFor('sandbox') === 'https://app.sandbox.midtrans.com' &&
+    snapHostFor('production') === 'https://app.midtrans.com' &&
+    apiHostFor('sandbox') === 'https://api.sandbox.midtrans.com' &&
+    apiHostFor('production') === 'https://api.midtrans.com' &&
+    snapJsUrlFor('sandbox') === 'https://app.sandbox.midtrans.com/snap/snap.js' &&
+    snapJsUrlFor('production') === 'https://app.midtrans.com/snap/snap.js',
+  'host sandbox & production',
+)
+check(
+  'Midtrans: metode aktif hanya QRIS generik + e-wallet',
+  JSON.stringify(MIDTRANS_ENABLED_PAYMENTS) === JSON.stringify(['other_qris', 'gopay', 'shopeepay']),
+  MIDTRANS_ENABLED_PAYMENTS.join(', '),
+)
+
+const orderA = buildOrderId(1763560000000, () => 0)
+const orderB = buildOrderId(1763560000000, () => 0.999999)
+check(
+  'Midtrans: order_id berawalan AICV-, format valid, unik per acak',
+  orderA.startsWith('AICV-') &&
+    isValidOrderId(orderA) &&
+    isValidOrderId(orderB) &&
+    orderA !== orderB &&
+    orderA.endsWith('-aaaaaa'),
+  `${orderA} vs ${orderB}`,
+)
+check(
+  'Midtrans: order_id asing ditolak validator',
+  !isValidOrderId('ORDER-123') && !isValidOrderId('AICV-') && !isValidOrderId('') && !isValidOrderId(42),
+  'hanya pola AICV-<base36>-<6 acak>',
+)
+
+check(
+  'Midtrans status: settlement → paid',
+  mapMidtransStatus({ transaction_status: 'settlement', gross_amount: '5000.00' }, AI_PRICE).paid === true,
+  'settlement lunas',
+)
+check(
+  'Midtrans status: capture + fraud accept → paid; challenge → pending; deny → failed',
+  mapMidtransStatus({ transaction_status: 'capture', fraud_status: 'accept', gross_amount: '5000.00' }, AI_PRICE)
+    .paid === true &&
+    mapMidtransStatus({ transaction_status: 'capture', fraud_status: 'challenge' }).state === 'pending' &&
+    mapMidtransStatus({ transaction_status: 'capture', fraud_status: 'deny' }).state === 'failed',
+  'aturan capture mengikuti fraud_status',
+)
+check(
+  'Midtrans status: pending → pending; expire/cancel/deny → failed',
+  mapMidtransStatus({ transaction_status: 'pending' }).state === 'pending' &&
+    mapMidtransStatus({ transaction_status: 'expire' }).state === 'failed' &&
+    mapMidtransStatus({ transaction_status: 'cancel' }).state === 'failed' &&
+    mapMidtransStatus({ transaction_status: 'deny' }).state === 'failed',
+  'status akhir tanpa pembayaran = failed',
+)
+check(
+  'Midtrans status: body tidak dikenal → unknown, tidak pernah paid',
+  mapMidtransStatus(null).state === 'unknown' &&
+    mapMidtransStatus('settlement').state === 'unknown' &&
+    mapMidtransStatus({ transaction_status: 'refund' }).state === 'unknown' &&
+    mapMidtransStatus({}).paid === false,
+  'bawaan aman: unknown',
+)
+check(
+  'Midtrans status: nominal tidak cocok → tidak paid walau settlement',
+  mapMidtransStatus({ transaction_status: 'settlement', gross_amount: '9000.00' }, AI_PRICE).paid === false &&
+    mapMidtransStatus({ transaction_status: 'settlement', gross_amount: '5000.00' }, AI_PRICE).paid === true,
+  'gross_amount wajib persis harga Analisis AI',
+)
+
+const DUMMY_SERVER_KEY = 'SB-Mid-server-DUMMYKEY'
+const NOTIF_BODY = {
+  order_id: 'AICV-m3test-abc123',
+  status_code: '200',
+  gross_amount: '5000.00',
+  transaction_status: 'settlement',
+  signature_key:
+    'f9fedec2b588856e4e2441b360fa45c9b8a3ed4b17297551c050b6b6c2d8cb4905b24bc7829c625218fa7e6d7171fbe26b2129e58891438ab8ca4a0961577d44',
+}
+check(
+  'Midtrans signature: vektor uji lokal cocok (SHA512 order+status+gross+key)',
+  computeNotificationSignature('AICV-m3test-abc123', '200', '5000.00', DUMMY_SERVER_KEY) ===
+    NOTIF_BODY.signature_key &&
+    verifyNotificationSignature(NOTIF_BODY, DUMMY_SERVER_KEY) === true,
+  'signature valid diterima',
+)
+check(
+  'Midtrans signature: nominal/signature diubah → ditolak',
+  verifyNotificationSignature({ ...NOTIF_BODY, gross_amount: '9000.00' }, DUMMY_SERVER_KEY) === false &&
+    verifyNotificationSignature({ ...NOTIF_BODY, signature_key: 'a'.repeat(128) }, DUMMY_SERVER_KEY) === false &&
+    verifyNotificationSignature({ ...NOTIF_BODY, signature_key: 'pendek' }, DUMMY_SERVER_KEY) === false &&
+    verifyNotificationSignature(NOTIF_BODY, 'SB-Mid-server-KUNCI-LAIN') === false &&
+    verifyNotificationSignature({ order_id: 'AICV-m3test-abc123' }, DUMMY_SERVER_KEY) === false &&
+    verifyNotificationSignature(null, DUMMY_SERVER_KEY) === false,
+  'semua bentuk pemalsuan ditolak',
+)
+check(
+  'Midtrans auth: Basic Auth = base64(Server Key + ":")',
+  basicAuthHeader('SB-Mid-server-x') === `Basic ${Buffer.from('SB-Mid-server-x:').toString('base64')}`,
+  'username Server Key, password kosong',
+)
+
+const claimStore = new MockStorage()
+check(
+  'Midtrans klaim: order baru bisa diklaim tepat sekali',
+  isOrderClaimed('AICV-uji-abc123', claimStore) === false &&
+    markOrderClaimed('AICV-uji-abc123', claimStore) === true &&
+    isOrderClaimed('AICV-uji-abc123', claimStore) === true &&
+    markOrderClaimed('AICV-uji-abc123', claimStore) === false &&
+    claimStore.getItem(AI_CLAIMED_ORDERS_STORAGE_KEY) === JSON.stringify(['AICV-uji-abc123']),
+  'klaim kedua untuk order sama ditolak',
+)
+check(
+  'Midtrans klaim: order berbeda tetap bisa diklaim; data rusak aman',
+  markOrderClaimed('AICV-uji-def456', claimStore) === true &&
+    isOrderClaimed('AICV-uji-abc123', claimStore) === true,
+  'daftar klaim bertambah',
+)
+const corruptClaimStore = new MockStorage()
+corruptClaimStore.setItem(AI_CLAIMED_ORDERS_STORAGE_KEY, 'rusak{{{')
+check(
+  'Midtrans klaim: data klaim rusak → dianggap kosong, tidak crash',
+  isOrderClaimed('AICV-uji-abc123', corruptClaimStore) === false &&
+    markOrderClaimed('AICV-uji-abc123', corruptClaimStore) === true,
+  'parsing defensif bekerja',
 )
 
 if (failures > 0) {
