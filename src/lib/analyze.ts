@@ -219,26 +219,60 @@ function getSection(text: string, targets: string[]): string {
 
 const BULLET_LINE = /^\s*(?:[-•*·]|\d+[.)])\s+/
 
-// Varian ekstraksi khusus bagian pengalaman: baris bullet tidak pernah
-// dianggap heading (bullet yang menyebut kata "proyek" dsb. tidak memotong
-// bagian secara keliru).
-function getExperienceSection(text: string): string {
+// Memecah teks menjadi baris beserta offset awal tiap baris di teks asli.
+function splitLinesWithOffsets(text: string): { line: string; start: number }[] {
+  const lines: { line: string; start: number }[] = []
+  let start = 0
+  for (let i = 0; i <= text.length; i++) {
+    if (i === text.length || text[i] === '\n') {
+      lines.push({ line: text.slice(start, i), start })
+      start = i + 1
+    }
+  }
+  return lines
+}
+
+// Rentang isi bagian pengalaman di teks asli: dari awal baris pertama
+// sesudah heading sampai akhir baris terakhir sebelum heading bagian
+// berikutnya. Inilah SATU-SATUNYA logika penentu batas bagian pengalaman:
+// getExperienceSection (isi bagian untuk penilaian) dan fitur penanda
+// teks (offset kemunculan di dalam bagian) sama-sama memakainya, jadi
+// tanda tidak pernah dihitung dari bagian yang berbeda dari yang dinilai.
+export interface SectionRange {
+  start: number
+  end: number
+}
+
+export function getExperienceSectionRange(text: string): SectionRange | null {
   const targets = ['pengalaman', 'experience', 'pekerjaan', 'work history', 'riwayat kerja']
-  const lines = text.split('\n')
+  const lines = splitLinesWithOffsets(text)
   let start = -1
   for (let i = 0; i < lines.length; i++) {
-    if (!BULLET_LINE.test(lines[i]) && isHeadingLine(lines[i], targets)) {
+    if (!BULLET_LINE.test(lines[i].line) && isHeadingLine(lines[i].line, targets)) {
       start = i
       break
     }
   }
-  if (start === -1) return ''
-  const collected: string[] = []
+  if (start === -1) return null
+  let last = -1
   for (let i = start + 1; i < lines.length; i++) {
-    if (!BULLET_LINE.test(lines[i]) && isHeadingLine(lines[i], ALL_HEADING_WORDS)) break
-    collected.push(lines[i])
+    if (!BULLET_LINE.test(lines[i].line) && isHeadingLine(lines[i].line, ALL_HEADING_WORDS)) break
+    last = i
   }
-  return collected.join('\n').trim()
+  if (last === -1) return null
+  return {
+    start: lines[start + 1].start,
+    end: lines[last].start + lines[last].line.length,
+  }
+}
+
+// Varian ekstraksi khusus bagian pengalaman: baris bullet tidak pernah
+// dianggap heading (bullet yang menyebut kata "proyek" dsb. tidak memotong
+// bagian secara keliru).
+function getExperienceSection(text: string): string {
+  const range = getExperienceSectionRange(text)
+  if (!range) return ''
+  return text.slice(range.start, range.end).trim()
 }
 
 // ---------- Kata kerja aksi & hasil terukur ----------
@@ -332,6 +366,12 @@ interface ExperienceBlock {
   startYear: number | null
   endYear: number | null // null bila peran masih berjalan (saat ini)
   isCurrent: boolean
+  // Indeks baris (di dalam baris-baris bagian pengalaman) yang menjadi
+  // awal entri (baris judul bila ada, jika tidak baris jangkar) dan baris
+  // isi terakhir entri. Dipakai fitur penanda teks untuk menaruh penanda
+  // di awal baris entri yang sama yang dinilai parser ini.
+  firstLine: number
+  lastLine: number
 }
 
 // Memecah bagian pengalaman menjadi entri. Jangkar entri = baris BUKAN
@@ -353,9 +393,13 @@ function parseExperienceBlocks(section: string): ExperienceBlock[] {
 
   // Judul entri pertama bisa berada pada baris tepat sebelum jangkar pertama.
   let pendingTitle = ''
+  let pendingTitleIdx = -1
   for (let i = anchors[0] - 1; i >= 0; i--) {
     if (lines[i].trim() === '') continue
-    if (!BULLET_LINE.test(lines[i])) pendingTitle = lines[i]
+    if (!BULLET_LINE.test(lines[i])) {
+      pendingTitle = lines[i]
+      pendingTitleIdx = i
+    }
     break
   }
 
@@ -365,6 +409,7 @@ function parseExperienceBlocks(section: string): ExperienceBlock[] {
     const end = k + 1 < anchors.length ? anchors[k + 1] : lines.length
     let body = lines.slice(a + 1, end)
     let nextTitle = ''
+    let nextTitleIdx = -1
     if (k + 1 < anchors.length) {
       let lastIdx = -1
       for (let i = body.length - 1; i >= 0; i--) {
@@ -375,13 +420,17 @@ function parseExperienceBlocks(section: string): ExperienceBlock[] {
       }
       if (lastIdx >= 0 && !BULLET_LINE.test(body[lastIdx])) {
         nextTitle = body[lastIdx]
+        nextTitleIdx = a + 1 + lastIdx
         body = body.slice(0, lastIdx)
       }
     }
     const contentCount = body.filter((l) => l.trim() !== '').length
     const info = parseExperienceEntry(`${pendingTitle} ${lines[a]}`)
     const anchorText = `${pendingTitle} ${lines[a]}`
+    const firstLine = pendingTitleIdx >= 0 ? pendingTitleIdx : a
+    const lastLine = a + body.length
     pendingTitle = nextTitle
+    pendingTitleIdx = nextTitleIdx
     const years = (lines[a].match(/\b(?:19|20)\d{2}\b/g) ?? []).map((y) => parseInt(y, 10))
     const isCurrent = /\b(sekarang|saat ini|present|hingga kini)\b/i.test(anchorText)
     blocks.push({
@@ -390,9 +439,81 @@ function parseExperienceBlocks(section: string): ExperienceBlock[] {
       startYear: years.length > 0 ? years[0] : null,
       endYear: isCurrent ? null : years.length > 1 ? years[years.length - 1] : (years[0] ?? null),
       isCurrent,
+      firstLine,
+      lastLine,
     })
   }
   return blocks
+}
+
+// ---------- Bukti bersama untuk fitur penanda teks ----------
+
+// Kemunculan sebuah teks di CV, sebagai rentang offset karakter di teks
+// asli. Fitur penanda (src/lib/marks.ts) hanya memakai penemu kemunculan
+// dari modul ini — yang berbagi kamus, regex, ambang, dan parser yang
+// persis sama dengan pemeriksaan — agar tanda selalu cocok dengan skor.
+export interface TextOccurrence {
+  start: number
+  end: number
+}
+
+export interface ExperienceEntrySpan {
+  // Offset awal baris pertama entri di teks asli (baris judul bila ada,
+  // jika tidak baris jangkar/periode entri).
+  start: number
+  // Teks entri: baris judul/jangkar + baris isi entri.
+  text: string
+  // true bila teks entri memuat ≥1 hasil terukur, dihitung dengan
+  // penghitung yang sama persis dengan pemeriksaan "hasil-terukur".
+  hasMeasurableResult: boolean
+}
+
+// Rentang tiap entri pengalaman di teks asli, dari parser entri yang sama
+// yang dipakai pemeriksaan kedalaman entri & linimasa.
+export function getExperienceEntrySpans(rawText: string): ExperienceEntrySpan[] {
+  const range = getExperienceSectionRange(rawText)
+  if (!range) return []
+  const rawSection = rawText.slice(range.start, range.end)
+  const lead = rawSection.length - rawSection.trimStart().length
+  const section = rawSection.trim()
+  if (!section) return []
+  const base = range.start + lead
+  const lineOffsets = splitLinesWithOffsets(section)
+  return parseExperienceBlocks(section).map((b) => {
+    const entryText = lineOffsets
+      .slice(b.firstLine, b.lastLine + 1)
+      .map((l) => l.line)
+      .join('\n')
+    return {
+      start: base + (lineOffsets[b.firstLine]?.start ?? 0),
+      text: entryText,
+      hasMeasurableResult: countMeasurableResults(entryText) > 0,
+    }
+  })
+}
+
+// Ambang kata "saya" di bagian pengalaman mulai dianggap berlebihan —
+// dipakai pemeriksaan kerapian bahasa DAN penanda teks dari sumber ini.
+export const SAYA_OVERUSE_THRESHOLD = 4
+
+// Semua kemunculan kata "saya" di bagian pengalaman, sebagai offset di
+// teks asli. Dihitung dari string bagian yang persis sama dengan yang
+// dihitung pemeriksaan kerapian bahasa (getExperienceSection), jadi
+// jumlahnya selalu sama dengan angka pada pesan pemeriksaan itu.
+export function findSayaOccurrences(rawText: string): TextOccurrence[] {
+  const range = getExperienceSectionRange(rawText)
+  if (!range) return []
+  const rawSection = rawText.slice(range.start, range.end)
+  const lead = rawSection.length - rawSection.trimStart().length
+  const section = rawSection.trim()
+  if (!section) return []
+  const base = range.start + lead
+  const out: TextOccurrence[] = []
+  for (const m of section.matchAll(/\bsaya\b/gi)) {
+    const idx = m.index ?? 0
+    out.push({ start: base + idx, end: base + idx + m[0].length })
+  }
+  return out
 }
 
 // ---------- Konsistensi format periode ----------
@@ -435,7 +556,7 @@ function extractPeriodExprs(text: string): PeriodExpr[] {
 // Frasa generik yang diklaim hampir semua pelamar tanpa bukti. Pencocokan
 // memakai frasa inti, sehingga varian "mampu/dapat/bisa bekerja …"
 // ikut tertangkap oleh frasa intinya.
-const WEAK_PHRASES: { core: string; display: string }[] = [
+export const WEAK_PHRASES: { core: string; display: string }[] = [
   { core: 'bertanggung jawab atas', display: 'bertanggung jawab atas' },
   { core: 'bertanggungjawab atas', display: 'bertanggungjawab atas' },
   { core: 'pekerja keras', display: 'pekerja keras' },
@@ -454,19 +575,40 @@ const WEAK_PHRASES: { core: string; display: string }[] = [
   },
 ]
 
-function findWeakPhrases(lowerText: string): string[] {
-  const found: string[] = []
+export interface WeakPhraseOccurrence extends TextOccurrence {
+  core: string
+  display: string
+}
+
+// Semua kemunculan frasa lemah di teks, sebagai offset di teks asli.
+// Pencariannya persis seperti pemeriksaan frasa lemah: substring frasa
+// inti di teks huruf-kecil — jadi frasa yang ditandai selalu frasa yang
+// sama yang mengurangi poin pemeriksaan itu.
+export function findWeakPhraseOccurrences(rawText: string): WeakPhraseOccurrence[] {
+  const lower = rawText.toLowerCase()
+  const out: WeakPhraseOccurrence[] = []
   for (const p of WEAK_PHRASES) {
-    if (lowerText.includes(p.core)) found.push(p.display)
+    let idx = lower.indexOf(p.core)
+    while (idx !== -1) {
+      out.push({ start: idx, end: idx + p.core.length, core: p.core, display: p.display })
+      idx = lower.indexOf(p.core, idx + p.core.length)
+    }
   }
-  return found
+  return out
+}
+
+function findWeakPhrases(lowerText: string): string[] {
+  const occurrences = findWeakPhraseOccurrences(lowerText)
+  return WEAK_PHRASES.filter((p) => occurrences.some((o) => o.core === p.core)).map(
+    (p) => p.display,
+  )
 }
 
 // ---------- Kerapian bahasa: kata yang sering salah eja ----------
 
 // Daftar kecil kata yang bentuk tidak bakunya sangat sering muncul di CV
 // (rujukan: bentuk baku KBBI). Ini BUKAN pemeriksaan tata bahasa menyeluruh.
-const TYPO_WORDS: { wrong: string; right: string }[] = [
+export const TYPO_WORDS: { wrong: string; right: string }[] = [
   { wrong: 'aktifitas', right: 'aktivitas' },
   { wrong: 'praktek', right: 'praktik' },
   { wrong: 'ijin', right: 'izin' },
@@ -487,6 +629,27 @@ const TYPO_WORDS: { wrong: string; right: string }[] = [
 
 function findTypos(lowerText: string): { wrong: string; right: string }[] {
   return TYPO_WORDS.filter((t) => new RegExp(`\\b${t.wrong}\\b`).test(lowerText))
+}
+
+export interface TypoOccurrence extends TextOccurrence {
+  wrong: string
+  right: string
+}
+
+// Semua kemunculan kata salah eja di teks, sebagai offset di teks asli.
+// Memakai kamus dan regex batas kata yang sama dengan findTypos, dicari
+// di teks huruf-kecil yang sama — kata yang ditandai selalu kata yang
+// sama yang mengurangi poin pemeriksaan kerapian bahasa.
+export function findTypoOccurrences(rawText: string): TypoOccurrence[] {
+  const lower = rawText.toLowerCase()
+  const out: TypoOccurrence[] = []
+  for (const t of TYPO_WORDS) {
+    for (const m of lower.matchAll(new RegExp(`\\b${t.wrong}\\b`, 'g'))) {
+      const idx = m.index ?? 0
+      out.push({ start: idx, end: idx + t.wrong.length, wrong: t.wrong, right: t.right })
+    }
+  }
+  return out
 }
 
 // ---------- Lokasi domisili (kelengkapan kontak) ----------
@@ -1212,10 +1375,10 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   // kata yang sering salah eja. Ini pemeriksaan dasar dari daftar kecil,
   // bukan pemeriksaan tata bahasa menyeluruh.
   const typos = findTypos(lower)
-  const sayaCount = experienceSection
-    ? (experienceSection.match(/\bsaya\b/gi) ?? []).length
-    : 0
-  const sayaOverused = sayaCount >= 4
+  // Jumlah kata "saya" diambil dari penemu kemunculan bersama — angka
+  // yang sama yang menjadi dasar tanda "saya" pada fitur penanda teks.
+  const sayaCount = findSayaOccurrences(text).length
+  const sayaOverused = sayaCount >= SAYA_OVERUSE_THRESHOLD
   const neatnessScore = Math.max(0, 2 - (typos.length > 0 ? 1 : 0) - (sayaOverused ? 1 : 0))
   const neatnessParts: string[] = []
   if (typos.length > 0) {

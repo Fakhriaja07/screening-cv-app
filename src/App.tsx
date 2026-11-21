@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { analyzeCv, countWords, type AnalysisResult, type CheckItem } from './lib/analyze'
+import { buildMarks, buildSegments, type CvMark } from './lib/marks'
 import {
   addHistoryEntry,
   aspectDeltas,
@@ -190,6 +191,12 @@ export default function App() {
   const [targetRole, setTargetRole] = useState('')
   const [jobDesc, setJobDesc] = useState('')
   const [result, setResult] = useState<AnalysisResult | null>(null)
+  // Teks persis yang dianalisis terakhir — dasar panel penanda teks, agar
+  // tanda selalu menunjuk teks yang sama dengan hasil yang ditampilkan
+  // walau pengguna mengedit kotak teks sesudahnya. Hanya di memori
+  // (state), tidak pernah disimpan ke localStorage.
+  const [analyzedText, setAnalyzedText] = useState('')
+  const [selectedMarkId, setSelectedMarkId] = useState<string | null>(null)
   // Tanggal analisis terakhir — dipakai di kepala laporan PDF unduhan.
   const [analysisDate, setAnalysisDate] = useState<Date | null>(null)
   const [fileName, setFileName] = useState('')
@@ -290,6 +297,8 @@ export default function App() {
     }
     const res = analyzeCv(cvText, { targetRole, jobDesc })
     setResult(res)
+    setAnalyzedText(cvText)
+    setSelectedMarkId(null)
     setAnalysisDate(new Date())
     // Fase 1: simpan skor ke riwayat perangkat (hanya skor — teks CV tidak
     // disimpan) dan ingat entri sebelumnya untuk perbandingan sebelum → sesudah.
@@ -317,6 +326,8 @@ export default function App() {
     setTargetRole('')
     setJobDesc('')
     setResult(null)
+    setAnalyzedText('')
+    setSelectedMarkId(null)
     setAnalysisDate(null)
     setFileName('')
     setError('')
@@ -682,6 +693,36 @@ export default function App() {
   )
   const activePaySection = autoAvailable ? autoPaySection : paymentSection
 
+  // ----- Penanda teks CV (panel "Teks CV dengan Tanda") -----
+  // Tanda dihitung dari teks yang dianalisis (analyzedText) dengan bukti
+  // yang sama dengan penilaian; tanda AI ikut muncul begitu aiResult ada.
+  // Hasil AI baru membuat pilihan tanda lama tidak berlaku lagi.
+  useEffect(() => {
+    setSelectedMarkId(null)
+  }, [aiResult])
+  const marks = useMemo(
+    () => (result ? buildMarks(analyzedText, aiResult) : []),
+    [result, analyzedText, aiResult],
+  )
+  const markSegments = useMemo(
+    () => buildSegments(analyzedText, marks),
+    [analyzedText, marks],
+  )
+  const selectedMark: CvMark | null =
+    marks.find((m) => m.id === selectedMarkId) ?? null
+  const selectedCheck: CheckItem | null =
+    selectedMark?.checkId && result
+      ? (result.aspects.flatMap((a) => a.checks).find((c) => c.id === selectedMark.checkId) ??
+        null)
+      : null
+  const selectedExample = selectedMark?.checkId
+    ? getCheckExample(selectedMark.checkId)
+    : null
+  const selectedRewrite =
+    selectedMark?.kind === 'ai' && aiResult && selectedMark.aiIndex !== undefined
+      ? (aiResult.saranPenulisanUlang[selectedMark.aiIndex] ?? null)
+      : null
+
   return (
     <div className="page">
       {/* ===== HERO ===== */}
@@ -958,6 +999,152 @@ export default function App() {
                   <ul className="check-list">
                     {result.priorities.map((c) => <PriorityRow key={c.id} check={c} />)}
                   </ul>
+                )}
+              </div>
+
+              {/* ----- TEKS CV DENGAN TANDA ----- */}
+              <div className="card marks-card">
+                <h3><Icon d={I.search} size={18} /> Teks CV dengan Tanda</h3>
+                <p>
+                  Ini teks CV yang kamu kirim, dengan tanda pada bagian yang perlu
+                  diperbaiki. Tandanya dibuat dari bukti yang sama dengan penilaian
+                  di atas — bukan perkiraan baru. Klik tanda mana pun untuk melihat
+                  penjelasannya.
+                </p>
+                <div className="marks-legend">
+                  <span className="legend-item">
+                    <span className="legend-swatch sw-weak" /> Frasa lemah &amp; klise
+                  </span>
+                  <span className="legend-item">
+                    <span className="legend-swatch sw-typo" /> Salah eja / kata “saya” berlebihan
+                  </span>
+                  <span className="legend-item">
+                    <span className="legend-flag">⚑</span> Entri pengalaman tanpa hasil terukur
+                  </span>
+                  {aiResult && (
+                    <span className="legend-item">
+                      <span className="legend-swatch sw-ai" /> Saran penulisan ulang AI
+                    </span>
+                  )}
+                </div>
+                <div className="marked-text">
+                  {markSegments.map((seg, i) => {
+                    if (seg.type === 'text') return <span key={i}>{seg.text}</span>
+                    if (seg.type === 'point') {
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          className={`entry-flag${selectedMarkId === seg.mark.id ? ' flag-selected' : ''}`}
+                          title={seg.mark.label}
+                          aria-label={seg.mark.label}
+                          onClick={() => setSelectedMarkId(seg.mark.id)}
+                        >
+                          ⚑
+                        </button>
+                      )
+                    }
+                    const kindClass =
+                      seg.mark.kind === 'frasa-lemah'
+                        ? 'mark-weak'
+                        : seg.mark.kind === 'ai'
+                          ? 'mark-ai'
+                          : 'mark-typo'
+                    return (
+                      <mark
+                        key={i}
+                        className={`${kindClass}${selectedMarkId === seg.mark.id ? ' mark-selected' : ''}`}
+                        title={seg.mark.label}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setSelectedMarkId(seg.mark.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            setSelectedMarkId(seg.mark.id)
+                          }
+                        }}
+                      >
+                        {seg.text}
+                      </mark>
+                    )
+                  })}
+                </div>
+                {marks.length === 0 && (
+                  <p className="ai-note">
+                    Tidak ditemukan frasa lemah, kata salah eja dari daftar periksa,
+                    kata “saya” yang berlebihan, atau entri pengalaman tanpa angka
+                    pada teks ini.
+                  </p>
+                )}
+                {selectedMark && (
+                  <div className="mark-explain">
+                    <div className="mark-explain-head">
+                      <strong>
+                        {selectedMark.kind === 'ai'
+                          ? 'Saran penulisan ulang AI'
+                          : (selectedCheck?.title ?? selectedMark.label)}
+                      </strong>
+                      <button
+                        type="button"
+                        className="btn btn-plain mark-explain-close"
+                        onClick={() => setSelectedMarkId(null)}
+                      >
+                        Tutup
+                      </button>
+                    </div>
+                    {selectedMark.kind === 'frasa-lemah' && (
+                      <p>
+                        Frasa yang ditandai: “{analyzedText.slice(selectedMark.start, selectedMark.end)}”
+                        — frasa generik yang diklaim hampir semua pelamar tanpa bukti.
+                      </p>
+                    )}
+                    {selectedMark.kind === 'salah-eja' && selectedMark.correction && (
+                      <p>
+                        “{selectedMark.label}” adalah bentuk tidak baku. Bentuk bakunya:{' '}
+                        <strong>“{selectedMark.correction}”</strong>.
+                      </p>
+                    )}
+                    {selectedMark.kind === 'saya' && (
+                      <p>
+                        Kata “saya” yang ditandai ini adalah salah satu kemunculannya di
+                        bagian pengalaman — jumlah keseluruhannya dinilai berlebihan oleh
+                        pemeriksaan di bawah ini.
+                      </p>
+                    )}
+                    {selectedMark.kind === 'entri' && (
+                      <p>
+                        Baris berpenanda ⚑ ini adalah awal entri pengalaman yang isinya
+                        belum memuat satu pun hasil terukur (angka pencapaian). Yang kurang
+                        adalah angka yang belum ditulis, jadi tandanya berupa penanda baris,
+                        bukan sorotan teks.
+                      </p>
+                    )}
+                    {selectedCheck && <p>{selectedCheck.message}</p>}
+                    {selectedRewrite && (
+                      <div className="example-box">
+                        <p className="example-before">
+                          <span className="example-tag">Asli:</span> {selectedRewrite.asli}
+                        </p>
+                        <p className="example-after">
+                          <span className="example-tag">Saran AI:</span> {selectedRewrite.saran}
+                        </p>
+                        <p className="example-note">{selectedRewrite.alasan}</p>
+                      </div>
+                    )}
+                    {selectedExample && !selectedRewrite && (
+                      <div className="example-box">
+                        <span className="example-label">Contoh:</span>
+                        <p className="example-before">
+                          <span className="example-tag">Sebelum:</span> {selectedExample.sebelum}
+                        </p>
+                        <p className="example-after">
+                          <span className="example-tag">Sesudah:</span> {selectedExample.sesudah}
+                        </p>
+                        <p className="example-note">{selectedExample.catatan}</p>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 

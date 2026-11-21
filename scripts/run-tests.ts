@@ -1,6 +1,24 @@
 // Uji logika penilaian: 3 CV (kuat/menengah/lemah) + deteksi HP.
 // Jalankan: npx tsx scripts/run-tests.ts
-import { analyzeCv, detectPhone, findPortfolio } from '../src/lib/analyze'
+import {
+  SAYA_OVERUSE_THRESHOLD,
+  TYPO_WORDS,
+  WEAK_PHRASES,
+  analyzeCv,
+  detectPhone,
+  findPortfolio,
+  findSayaOccurrences,
+  findTypoOccurrences,
+  findWeakPhraseOccurrences,
+  getExperienceEntrySpans,
+} from '../src/lib/analyze'
+import {
+  buildAiMarks,
+  buildMarks,
+  buildSegments,
+  buildStandardMarks,
+  findAiQuoteRange,
+} from '../src/lib/marks'
 import {
   addHistoryEntry,
   aspectDeltas,
@@ -1187,6 +1205,216 @@ check(
     !appTsxText.includes('copiedTemplate') &&
     appTsxText.includes('template-box'),
   'tidak ada lagi tombol/handler salin template; kotak teks template tetap tampil',
+)
+
+// ---------- Uji penanda teks CV (2026-11-21) ----------
+// Prinsip yang diuji: tanda berasal dari bukti yang SAMA dengan penilaian
+// (kamus/parser/ambang bersama di analyze.ts), offset-nya persis, dan
+// patokan skor tidak berubah oleh penambahan fitur ini.
+check(
+  'Penanda: patokan skor persis tidak berubah (96/61/16, fresh graduate 53)',
+  strong.total === 96 && medium.total === 61 && weak.total === 16 && fresh.total === 53,
+  `kuat ${strong.total}, menengah ${medium.total}, lemah ${weak.total}, fresh ${fresh.total}`,
+)
+
+const MARKED_CV = `Rina Wijaya
+rina.wijaya@gmail.com | 0812-3456-7890 | linkedin.com/in/rinawijaya | Jakarta
+
+Ringkasan
+Saya pekerja keras, mampu bekerja di bawah tekanan, dan bertanggung jawab atas kebersihan toko selama bekerja.
+
+Pengalaman
+Kasir — Toko Berkah (2023–2024)
+- Saya melayani pembeli setiap hari di kasir.
+- Saya merubah jadwal piket kasir setiap minggu.
+- Saya melakukan aktifitas pencatatan stok barang.
+- Saya mengecek uang kas setiap malam.
+
+Staf Administrasi — PT Sinar Abadi (2024–Sekarang)
+- Meningkatkan penjualan sebesar 30% dalam 6 bulan.
+- Mengelola 15 orang anggota tim gudang.
+
+Pendidikan
+SMA Negeri 1 Jakarta (2019–2022)
+
+Keahlian
+Microsoft Word, Microsoft Excel, Kasir, Komunikasi`
+
+const markedResult = analyzeCv(MARKED_CV)
+const markedCheck = (id: string) =>
+  markedResult.aspects.flatMap((a) => a.checks).find((c) => c.id === id)
+const stdMarks = buildStandardMarks(MARKED_CV)
+
+// Frasa lemah: offset persis menunjuk frasa inti kamus bersama, dan
+// jumlahnya sama dengan bukti pemeriksaan frasa-lemah (skor 0/3).
+const weakMarks = stdMarks.filter((m) => m.kind === 'frasa-lemah')
+const weakOccurrences = findWeakPhraseOccurrences(MARKED_CV)
+check(
+  'Penanda: frasa lemah ditemukan dengan offset yang benar',
+  weakMarks.length === 3 &&
+    weakOccurrences.length === 3 &&
+    weakMarks.every((m) =>
+      WEAK_PHRASES.some((p) => p.core === MARKED_CV.slice(m.start, m.end).toLowerCase()),
+    ) &&
+    markedCheck('frasa-lemah')?.score === 0,
+  `${weakMarks.length} tanda frasa; teks pada rentang: ${weakMarks
+    .map((m) => `"${MARKED_CV.slice(m.start, m.end)}"`)
+    .join(', ')}; skor frasa-lemah ${markedCheck('frasa-lemah')?.score}/3`,
+)
+
+// Salah eja: offset persis menunjuk kata tidak baku kamus bersama,
+// lengkap dengan bentuk bakunya.
+const typoMarks = stdMarks.filter((m) => m.kind === 'salah-eja')
+check(
+  'Penanda: salah eja ditemukan dengan offset yang benar + bentuk baku',
+  typoMarks.length === 2 &&
+    findTypoOccurrences(MARKED_CV).length === 2 &&
+    typoMarks.every((m) =>
+      TYPO_WORDS.some(
+        (t) =>
+          t.wrong === MARKED_CV.slice(m.start, m.end).toLowerCase() &&
+          t.right === m.correction,
+      ),
+    ) &&
+    typoMarks.some((m) => m.correction === 'aktivitas') &&
+    typoMarks.some((m) => m.correction === 'mengubah'),
+  `${typoMarks.length} tanda salah eja: ${typoMarks
+    .map((m) => `"${MARKED_CV.slice(m.start, m.end)}"→"${m.correction}"`)
+    .join(', ')}`,
+)
+
+// Kata "saya": hanya kemunculan di bagian pengalaman yang dihitung
+// (kata "Saya" di ringkasan tidak ikut), dan ditandai hanya karena
+// jumlahnya mencapai ambang berlebihan yang sama dengan pemeriksaan.
+const sayaMarks = stdMarks.filter((m) => m.kind === 'saya')
+check(
+  'Penanda: kata "saya" ditandai hanya saat berlebihan (ambang bersama)',
+  findSayaOccurrences(MARKED_CV).length === 4 &&
+    findSayaOccurrences(MARKED_CV).length >= SAYA_OVERUSE_THRESHOLD &&
+    sayaMarks.length === 4 &&
+    sayaMarks.every((m) => MARKED_CV.slice(m.start, m.end).toLowerCase() === 'saya') &&
+    markedCheck('kerapian-bahasa')?.score === 0,
+  `${sayaMarks.length} tanda "saya" dari ${findSayaOccurrences(MARKED_CV).length} kemunculan di bagian pengalaman; skor kerapian ${markedCheck('kerapian-bahasa')?.score}/2`,
+)
+const FEW_SAYA_CV = `Pengalaman
+Kasir — Toko Berkah (2023–2024)
+- Saya melayani pembeli setiap hari.
+- Saya menutup kasir setiap malam.`
+check(
+  'Penanda: kata "saya" wajar (di bawah ambang) tidak ditandai',
+  findSayaOccurrences(FEW_SAYA_CV).length === 2 &&
+    buildStandardMarks(FEW_SAYA_CV).filter((m) => m.kind === 'saya').length === 0,
+  `2 kemunculan < ambang ${SAYA_OVERUSE_THRESHOLD} → 0 tanda`,
+)
+
+// Penanda baris entri: entri tanpa angka hasil ditandai di awal baris
+// judulnya; entri berangka (30%, 15 orang) tidak ditandai. Entri yang
+// sama yang diurai parser penilaian (getExperienceEntrySpans).
+const entrySpans = getExperienceEntrySpans(MARKED_CV)
+const entryMarks = stdMarks.filter((m) => m.kind === 'entri')
+check(
+  'Penanda: entri pengalaman tanpa hasil terukur ditandai di awal barisnya',
+  entrySpans.length === 2 &&
+    entrySpans[0].hasMeasurableResult === false &&
+    entrySpans[1].hasMeasurableResult === true &&
+    entryMarks.length === 1 &&
+    entryMarks[0].start === entrySpans[0].start &&
+    entryMarks[0].start === entryMarks[0].end &&
+    MARKED_CV.startsWith('Kasir — Toko Berkah', entryMarks[0].start) &&
+    MARKED_CV[entryMarks[0].start - 1] === '\n',
+  `penanda di offset ${entryMarks[0]?.start} (awal baris "${entrySpans[0]?.text.split('\n')[0]}"); entri berangka tidak ditandai`,
+)
+
+// Tanda AI: kutipan persis ketemu, kutipan beda huruf/spasi ketemu lewat
+// pencocokan ternormalisasi, kutipan yang tidak ada dilewati diam-diam.
+const MARKED_AI: AiAnalysis = {
+  ringkasan: 'Ringkasan uji.',
+  saranPenulisanUlang: [
+    {
+      asli: 'Saya melayani pembeli setiap hari di kasir.',
+      saran: 'Melayani [50+] pembeli per hari di kasir.',
+      alasan: 'Awali dengan kata kerja dan tambahkan angka.',
+    },
+    {
+      asli: 'saya   MENGECEK uang kas setiap malam',
+      saran: 'Mengecek dan mencocokkan uang kas setiap malam.',
+      alasan: 'Lebih spesifik.',
+    },
+    {
+      asli: 'Kalimat ini tidak ada di CV sama sekali.',
+      saran: 'Tidak dipakai.',
+      alasan: 'Tidak dipakai.',
+    },
+  ],
+  kekurangan: [],
+  saranRingkasan: '',
+}
+const aiMarks = buildAiMarks(MARKED_CV, MARKED_AI)
+check(
+  'Penanda AI: persis + ternormalisasi ketemu, tidak ditemukan dilewati',
+  aiMarks.length === 2 &&
+    aiMarks[0].aiIndex === 0 &&
+    MARKED_CV.slice(aiMarks[0].start, aiMarks[0].end) ===
+      'Saya melayani pembeli setiap hari di kasir.' &&
+    aiMarks[1].aiIndex === 1 &&
+    MARKED_CV.slice(aiMarks[1].start, aiMarks[1].end) ===
+      'Saya mengecek uang kas setiap malam' &&
+    findAiQuoteRange(MARKED_CV, 'Kalimat ini tidak ada di CV sama sekali.') === null &&
+    findAiQuoteRange(MARKED_CV, '   ') === null,
+  `${aiMarks.length} dari 3 kutipan tertandai (1 memang tidak ada di CV)`,
+)
+
+// Resolusi tumpang tindih: sorotan AI menang atas tanda "saya" di
+// dalamnya; tidak ada dua sorotan rentang yang tumpang tindih.
+const allMarks = buildMarks(MARKED_CV, MARKED_AI)
+const rangeMarks = allMarks
+  .filter((m) => m.end > m.start)
+  .sort((a, b) => a.start - b.start)
+check(
+  'Penanda: tumpang tindih terselesaikan deterministik (AI > eja > frasa > saya)',
+  allMarks.filter((m) => m.kind === 'ai').length === 2 &&
+    allMarks.filter((m) => m.kind === 'saya').length === 2 &&
+    rangeMarks.every(
+      (m, i) => i === 0 || m.start >= rangeMarks[i - 1].end,
+    ),
+  `total ${allMarks.length} tanda; "saya" tersisa ${allMarks.filter((m) => m.kind === 'saya').length} (2 tertutup sorotan AI)`,
+)
+
+// Segmen render: gabungan teks segmen persis teks asli, teks segmen
+// bertanda persis potongan pada rentang tandanya.
+const segments = buildSegments(MARKED_CV, buildMarks(MARKED_CV, null))
+check(
+  'Penanda: segmen render menyusun ulang teks asli persis',
+  segments.map((s) => (s.type === 'point' ? '' : s.text)).join('') === MARKED_CV &&
+    segments
+      .filter((s) => s.type === 'mark')
+      .every(
+        (s) =>
+          s.type === 'mark' &&
+          s.text === MARKED_CV.slice(s.mark.start, s.mark.end),
+      ) &&
+    segments.filter((s) => s.type === 'point').length === 1,
+  `${segments.length} segmen, ${segments.filter((s) => s.type === 'point').length} penanda titik`,
+)
+
+// Pengawatan UI: panel ada di App.tsx dan memakai modul marks.
+check(
+  'Penanda: panel "Teks CV dengan Tanda" terpasang di App.tsx',
+  appTsxText.includes('Teks CV dengan Tanda') &&
+    appTsxText.includes("from './lib/marks'") &&
+    appTsxText.includes('buildMarks') &&
+    appTsxText.includes('markSegments') &&
+    appTsxText.includes('analyzedText'),
+  'panel dirender dari analyzedText + buildMarks/buildSegments',
+)
+check(
+  'Penanda: gaya sorotan ada di App.css',
+  appCssText.includes('.marked-text') &&
+    appCssText.includes('.mark-weak') &&
+    appCssText.includes('.mark-typo') &&
+    appCssText.includes('.mark-ai') &&
+    appCssText.includes('.entry-flag'),
+  'kelas .marked-text/.mark-weak/.mark-typo/.mark-ai/.entry-flag tersedia',
 )
 
 if (failures > 0) {

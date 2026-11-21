@@ -504,6 +504,39 @@ Tiga perubahan atas perintah pengguna di hari yang sama:
   selesai." Alasan pengguna: laporan diunduh untuk menyimpan kalimat
   hasil AI, jadi unduhan hanya relevan setelah AI selesai.
 
+## Penanda teks CV — "Teks CV dengan Tanda" (2026-11-21)
+
+Fitur atas persetujuan pengguna: panel baru di bawah hasil analisis
+standar yang menampilkan teks CV yang dikirim pengguna dengan tanda
+langsung pada bagian yang perlu diperbaiki:
+
+- **Frasa lemah & klise** disorot kuning.
+- **Kata yang sering salah eja** dan **kata "saya" yang berlebihan**
+  disorot merah muda. Kata "saya" hanya ditandai bila jumlahnya di
+  bagian pengalaman mencapai ambang berlebihan yang dipakai
+  pemeriksaan kerapian bahasa — pemakaian wajar tidak ditandai.
+- **Entri pengalaman tanpa hasil terukur** diberi penanda ⚑ di awal
+  barisnya (yang kurang adalah angka yang belum ditulis, jadi tidak
+  ada teks yang bisa disorot).
+- Setelah Analisis AI selesai, **kalimat "asli" dari saran penulisan
+  ulang AI** ikut ditandai biru; mengkliknya menampilkan saran +
+  alasan AI. Kutipan dicocokkan persis, lalu ternormalisasi (abaikan
+  huruf besar/kecil & spasi/baris-baru); yang tetap tidak ditemukan
+  dilewati diam-diam — tidak ada tanda yang dipaksakan.
+- Mengklik tanda mana pun membuka kotak penjelasan: pesan pemeriksaan
+  terkait + contoh perbaikan sebelum → sesudah dari `examples.ts`.
+
+Prinsip kejujuran teknisnya: modul penanda (`src/lib/marks.ts`) tidak
+punya kamus/logika penilaian kedua. Semua buktinya berasal dari
+penemu bersama di `src/lib/analyze.ts` — kamus frasa lemah, kamus
+salah eja, ambang & penghitung "saya", parser entri pengalaman, dan
+penghitung hasil terukur yang sama persis dengan pemeriksaan —
+sehingga tanda tidak mungkin berbeda dari skor. Tumpang tindih
+sorotan diselesaikan deterministik (AI > salah eja > frasa lemah >
+"saya"). Panel dirender murni dari state teks yang dianalisis; tidak
+ada teks CV yang disimpan ke localStorage. Patokan skor tidak
+berubah (96/61/16; mode lowongan 89/79 & 60/48; fresh graduate 53).
+
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
 - Akurasi yang terasa benar: hasil cocok dengan intuisi pengguna.
