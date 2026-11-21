@@ -30,11 +30,27 @@ import { TOKEN_CODE_HASHES } from './tokenCodes'
 // diganti bila harga berubah.
 export const AI_PRICE = 5000
 
-// Tautan kontak admin (mis. WhatsApp) untuk meminta kode token setelah
+// Tautan kontak admin (WhatsApp) untuk meminta kode token setelah
 // membayar. Kosong = belum diisi: UI menampilkan langkah menghubungi
-// admin sebagai teks instruksi biasa, tanpa tautan. Isi nanti dengan
-// tautan admin, mis. "https://wa.me/62...".
-export const ADMIN_CONTACT_URL = ''
+// admin sebagai teks instruksi biasa, tanpa tautan. Nomor ini memang
+// untuk dipasang publik di situs bagi pembeli (diberikan pemilik
+// 2026-11-21, format tautan wa.me).
+export const ADMIN_CONTACT_URL = 'https://wa.me/62895613048006'
+
+// Bangun tautan WhatsApp admin dengan teks awal terisi: nominal tepat
+// berkode unik milik pengunjung (agar admin mudah mencocokkan di
+// riwayat merchant) + permintaan kode token. Bila kode unik tidak
+// tersedia, teksnya umum tanpa nominal. Mengembalikan '' bila kontak
+// admin belum diisi.
+export function adminContactHref(code?: number | null): string {
+  if (!ADMIN_CONTACT_URL) return ''
+  const text =
+    typeof code === 'number' && Number.isFinite(code)
+      ? `Halo, saya sudah membayar Analisis AI sebesar ${formatRupiah(amountForCode(code))} di situs Screening CV. Mohon kode token saya.`
+      : 'Halo, saya sudah membayar Analisis AI di situs Screening CV. Mohon kode token saya.'
+  const sep = ADMIN_CONTACT_URL.includes('?') ? '&' : '?'
+  return `${ADMIN_CONTACT_URL}${sep}text=${encodeURIComponent(text)}`
+}
 
 // Kunci storage saldo TIDAK diganti walau istilahnya kini "token"
 // (sebelumnya "kredit"), agar saldo pengguna lama tidak hilang.

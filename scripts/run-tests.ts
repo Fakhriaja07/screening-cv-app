@@ -23,6 +23,7 @@ import {
   AI_PRICE,
   REDEEMED_CODES_STORAGE_KEY,
   addCredit,
+  adminContactHref,
   amountForCode,
   clearPendingCode,
   consumeCredit,
@@ -774,6 +775,22 @@ check(
   'Token: kontak admin berupa string (kosong = UI tanpa tautan)',
   typeof ADMIN_CONTACT_URL === 'string',
   `ADMIN_CONTACT_URL = "${ADMIN_CONTACT_URL}"`,
+)
+check(
+  'Token: tautan WhatsApp admin = wa.me pemilik + teks awal berisi nominal tepat berkode unik',
+  ADMIN_CONTACT_URL === 'https://wa.me/62895613048006' &&
+    adminContactHref(37).startsWith(`${ADMIN_CONTACT_URL}?text=`) &&
+    decodeURIComponent(adminContactHref(37).split('?text=')[1]).includes(
+      `sebesar ${formatRupiah(amountForCode(37))}`,
+    ) &&
+    decodeURIComponent(adminContactHref(37).split('?text=')[1]).includes('kode token'),
+  `href kode 37 → ${adminContactHref(37).slice(0, 80)}…`,
+)
+check(
+  'Token: tautan WhatsApp tanpa kode unik → teks umum tanpa nominal',
+  decodeURIComponent(adminContactHref().split('?text=')[1]).includes('kode token') &&
+    !decodeURIComponent(adminContactHref().split('?text=')[1]).includes('sebesar'),
+  'teks umum dipakai bila nominal belum tersedia',
 )
 
 // Kode asli batch #1 dibaca dari daftar pemilik di LUAR repo

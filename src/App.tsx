@@ -17,6 +17,7 @@ import {
   ADMIN_CONTACT_URL,
   AI_PRICE,
   addCredit,
+  adminContactHref,
   amountForCode,
   clearPendingCode,
   consumeCredit,
@@ -621,8 +622,12 @@ export default function App() {
           {ADMIN_CONTACT_URL ? (
             <>
               {' '}
-              <a href={ADMIN_CONTACT_URL} target="_blank" rel="noreferrer">
-                Hubungi admin di sini
+              <a
+                href={adminContactHref(pendingCode)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Minta Kode Token via WhatsApp
               </a>
               .
             </>
