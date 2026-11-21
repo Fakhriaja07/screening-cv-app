@@ -433,7 +433,7 @@ export default function App() {
       ) : (
         <img
           className="qris-img"
-          src="/qris.jpg"
+          src="/QRIS.jpeg"
           alt="Kode QRIS GoPay Merchant FAKHRI, DIGITAL & KREATIF untuk pembayaran Analisis AI"
           onError={() => setQrisError(true)}
         />

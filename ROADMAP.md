@@ -271,7 +271,7 @@ gateway. Analisis standar (rule-based) tetap gratis sepenuhnya.
   AI yang **berhasil** mengonsumsi 1 kredit, yang gagal/error tidak
   mengurangi kredit.
 - Alur bayar: kartu Analisis AI menampilkan gambar QRIS
-  (`public/qris.jpg` — file biner, diunggah manual pengguna ke GitHub
+  (`public/QRIS.jpeg` — file biner, diunggah manual pengguna ke GitHub
   karena push connector hanya menerima teks), nominal persis yang harus
   dibayar = harga + **kode unik 2 digit** (Rp5.0xx; kode membantu admin
   mencocokkan pembayaran di riwayat merchant dan tidak dibulatkan),
