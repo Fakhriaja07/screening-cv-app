@@ -15,9 +15,9 @@ import {
   verifyNotificationSignature,
   type MidtransApiRequest,
   type MidtransApiResponse,
-} from './_midtrans'
+} from './_midtrans.js'
 
-export default function handler(req: MidtransApiRequest, res: MidtransApiResponse): void {
+export default async function handler(req: MidtransApiRequest, res: MidtransApiResponse): void {
   res.setHeader('Content-Type', 'application/json; charset=utf-8')
   res.setHeader('Cache-Control', 'no-store')
 

@@ -14,14 +14,14 @@ import {
   readMidtransConfig,
   type MidtransApiRequest,
   type MidtransApiResponse,
-} from './_midtrans'
+} from './_midtrans.js'
 import {
   MIDTRANS_ENABLED_PAYMENTS,
   MIDTRANS_ITEM_ID,
   MIDTRANS_ITEM_NAME,
   buildOrderId,
-} from '../src/lib/midtrans'
-import { AI_PRICE } from '../src/lib/payment'
+} from '../src/lib/midtrans.js'
+import { AI_PRICE } from '../src/lib/payment.js'
 
 const UPSTREAM_TIMEOUT_MS = 15_000
 

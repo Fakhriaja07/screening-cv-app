@@ -16,9 +16,9 @@ import {
   readMidtransConfig,
   type MidtransApiRequest,
   type MidtransApiResponse,
-} from './_midtrans'
-import { isValidOrderId, mapMidtransStatus } from '../src/lib/midtrans'
-import { AI_PRICE } from '../src/lib/payment'
+} from './_midtrans.js'
+import { isValidOrderId, mapMidtransStatus } from '../src/lib/midtrans.js'
+import { AI_PRICE } from '../src/lib/payment.js'
 
 const UPSTREAM_TIMEOUT_MS = 15_000
 

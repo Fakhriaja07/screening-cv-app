@@ -44,7 +44,7 @@ import {
   basicAuthHeader,
   computeNotificationSignature,
   verifyNotificationSignature,
-} from '../api/_midtrans'
+} from '../api/_midtrans.js'
 import {
   buildSummaryTemplate,
   checkSkills,

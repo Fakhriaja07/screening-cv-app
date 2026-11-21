@@ -13,7 +13,7 @@ import {
   resolveMidtransMode,
   snapHostFor,
   type MidtransMode,
-} from '../src/lib/midtrans'
+} from '../src/lib/midtrans.js'
 
 export interface MidtransApiRequest {
   method?: string
