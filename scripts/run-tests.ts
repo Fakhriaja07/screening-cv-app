@@ -1087,6 +1087,13 @@ check(
     appTsxText.includes('className="print-report"'),
   'kedua tombol dan bagian cetak ada di App.tsx',
 )
+check(
+  'Laporan: tombol Unduh Laporan (PDF) juga terpasang di kartu Analisis AI',
+  (appTsxText.match(/Unduh Laporan \(PDF\)/g) ?? []).length >= 2 &&
+    (appTsxText.match(/onClick=\{handlePrintReport\}/g) ?? []).length >= 2 &&
+    appTsxText.includes('ai-report-actions'),
+  'tombol PDF kedua di kartu AI memakai handler cetak yang sama',
+)
 
 if (failures > 0) {
   console.error(`\n${failures} uji GAGAL`)

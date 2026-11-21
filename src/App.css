@@ -541,6 +541,10 @@
   flex-wrap: wrap;
   margin-top: 14px;
 }
+.ai-report-actions {
+  align-items: center;
+  margin-top: 14px;
+}
 .btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;

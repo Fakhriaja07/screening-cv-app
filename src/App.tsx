@@ -1169,6 +1169,19 @@ export default function App() {
                   activePaySection
                 )}
 
+                {/* Unduh laporan juga dari kartu AI — pengguna berbayar
+                    mencari tombolnya di sini setelah hasil AI keluar.
+                    Handler & laporan gabungan yang sama persis dengan
+                    tombol PDF di kartu hasil di atas (handlePrintReport). */}
+                <div className="report-actions ai-report-actions">
+                  <button className="btn btn-secondary" type="button" onClick={handlePrintReport}>
+                    <Icon d={I.print} size={16} /> Unduh Laporan (PDF)
+                  </button>
+                  <span className="ai-hint">
+                    Laporan mencakup skor standar dan, bila sudah dijalankan, hasil Analisis AI.
+                  </span>
+                </div>
+
                 {(aiLoading || aiThinking) && (
                   <div className="thinking-panel">
                     {aiLoading ? (
