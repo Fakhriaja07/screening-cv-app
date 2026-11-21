@@ -535,6 +535,96 @@
   color: #94a3b8;
 }
 
+/* ===== Pembayaran QRIS manual (kredit Analisis AI) ===== */
+.credit-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.credit-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.credit-buy {
+  font-size: 13.5px;
+  padding: 5px 10px;
+}
+.pay-box {
+  margin-top: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 16px;
+}
+.pay-intro {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: #334155;
+}
+.qris-img {
+  display: block;
+  width: 100%;
+  max-width: 280px;
+  margin: 14px auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+}
+.qris-fallback {
+  margin: 14px 0;
+  padding: 12px 14px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #64748b;
+  text-align: center;
+}
+.pay-amount {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: #0f172a;
+  text-align: center;
+}
+.pay-amount span {
+  display: block;
+  margin-top: 4px;
+  font-size: 13.5px;
+  font-weight: 400;
+  color: #475569;
+}
+.pay-steps {
+  margin: 14px 0;
+  padding-left: 20px;
+  color: #475569;
+  font-size: 14.5px;
+  line-height: 1.65;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pay-steps li::marker {
+  color: #155eef;
+  font-weight: 700;
+}
+.pay-note {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #64748b;
+}
+
 /* ===== Panel proses berpikir AI (streaming) ===== */
 .thinking-panel {
   margin-top: 14px;

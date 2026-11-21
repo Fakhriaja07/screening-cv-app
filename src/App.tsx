@@ -14,6 +14,16 @@ import {
 } from './lib/history'
 import { requestAiAnalysis, requestAiAnalysisStreaming, type AiAnalysis } from './lib/ai'
 import {
+  AI_PRICE,
+  addCredit,
+  amountForCode,
+  clearPendingCode,
+  consumeCredit,
+  formatRupiah,
+  getCredits,
+  getOrCreatePendingCode,
+} from './lib/payment'
+import {
   buildSummaryTemplate,
   checkSkills,
   getCheckExample,
@@ -178,6 +188,10 @@ export default function App() {
   const [aiThinkingOpen, setAiThinkingOpen] = useState(false)
   const [aiElapsed, setAiElapsed] = useState(0)
   const [aiDuration, setAiDuration] = useState<number | null>(null)
+  const [aiCredits, setAiCredits] = useState<number>(() => getCredits())
+  const [pendingCode, setPendingCode] = useState<number>(() => getOrCreatePendingCode())
+  const [payOpen, setPayOpen] = useState(false)
+  const [qrisError, setQrisError] = useState(false)
   const [history, setHistory] = useState<ScoreHistoryEntry[]>(() => loadHistory())
   const [prevEntry, setPrevEntry] = useState<ScoreHistoryEntry | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -266,8 +280,23 @@ export default function App() {
     setPrevEntry(null)
   }
 
+  // QRIS manual: pengguna menyatakan sudah membayar → kredit bertambah 1,
+  // kode unik percobaan ini dibersihkan agar pembelian berikutnya mendapat
+  // kode baru. Tidak ada verifikasi otomatis (QRIS statis tidak mengirim
+  // notifikasi ke situs); pembayaran tercatat di riwayat merchant.
+  function handleConfirmPaid() {
+    setAiCredits(addCredit())
+    clearPendingCode()
+    setPendingCode(getOrCreatePendingCode())
+    setPayOpen(false)
+  }
+
   async function handleAiAnalyze() {
     if (!aiConsent || aiLoading) return
+    if (getCredits() <= 0) {
+      setAiError('Kredit AI kamu habis. Bayar lewat QRIS di atas untuk menambah kredit.')
+      return
+    }
     if (cvText.trim().length < 50) {
       setAiError('Teks CV terlalu pendek untuk dianalisis AI. Lengkapi dulu teks CV-nya.')
       return
@@ -281,6 +310,7 @@ export default function App() {
     aiStartRef.current = Date.now()
     const input = { cvText, targetRole, jobDesc }
     let receivedEvent = false
+    let succeeded = false
     try {
       const data = await requestAiAnalysisStreaming(input, {
         onActivity: () => {
@@ -295,6 +325,7 @@ export default function App() {
         },
       })
       setAiResult(data)
+      succeeded = true
     } catch (streamErr) {
       if (!receivedEvent) {
         // Streaming gagal sebelum event pertama (jaringan/HTTP error):
@@ -302,6 +333,7 @@ export default function App() {
         try {
           const data = await requestAiAnalysis(input)
           setAiResult(data)
+          succeeded = true
         } catch (fallbackErr) {
           setAiError(
             fallbackErr instanceof Error ? fallbackErr.message : 'Analisis AI gagal. Coba lagi nanti.',
@@ -311,6 +343,12 @@ export default function App() {
         setAiError(streamErr instanceof Error ? streamErr.message : 'Analisis AI gagal. Coba lagi nanti.')
       }
     } finally {
+      // Kredit hanya terpotong bila hasil berhasil diterima — tepat satu
+      // kali per analisis, termasuk bila jalur streaming sempat gagal dan
+      // cadangan non-streaming yang berhasil (atau sebaliknya).
+      if (succeeded && consumeCredit()) {
+        setAiCredits(getCredits())
+      }
       setAiDuration(Math.max(1, Math.round((Date.now() - aiStartRef.current) / 1000)))
       setAiLoading(false)
     }
@@ -376,6 +414,53 @@ export default function App() {
     window.setTimeout(() => setCopiedTemplate(false), 2000)
   }
 
+  // Bagian pembayaran QRIS manual: tampil saat kredit habis, atau saat
+  // pengguna memilih "Beli kredit lagi". Nominal selalu harga + kode unik
+  // yang sedang berlaku untuk pengguna ini.
+  const paymentSection = (
+    <div className="pay-box">
+      <p className="pay-intro">
+        Analisis AI berbayar <strong>{formatRupiah(AI_PRICE)} per analisis</strong> —
+        analisis standar (skor dan saran perbaikan di atas) tetap gratis.
+        Bayar dengan memindai QRIS berikut dari aplikasi pembayaran apa pun
+        (GoPay, OVO, DANA, m-banking, dan lainnya). Pastikan nama merchant yang
+        muncul adalah <strong>FAKHRI, DIGITAL &amp; KREATIF</strong>.
+      </p>
+      {qrisError ? (
+        <p className="qris-fallback">
+          Gambar QRIS belum tersedia. Coba muat ulang halaman ini beberapa saat lagi.
+        </p>
+      ) : (
+        <img
+          className="qris-img"
+          src="/qris.jpg"
+          alt="Kode QRIS GoPay Merchant FAKHRI, DIGITAL & KREATIF untuk pembayaran Analisis AI"
+          onError={() => setQrisError(true)}
+        />
+      )}
+      <p className="pay-amount">
+        Bayar tepat <strong>{formatRupiah(amountForCode(pendingCode))}</strong>
+        <span>
+          Nominal sudah termasuk kode unik <strong>{pendingCode}</strong> di dua
+          digit terakhir — kode unik membantu admin mencocokkan pembayaranmu di
+          riwayat merchant, jadi jangan dibulatkan.
+        </span>
+      </p>
+      <ol className="pay-steps">
+        <li>Pindai kode QRIS di atas dengan aplikasi pembayaranmu.</li>
+        <li>Masukkan nominal tepat {formatRupiah(amountForCode(pendingCode))}, lalu selesaikan pembayaran.</li>
+        <li>Tekan tombol di bawah ini — kredit AI kamu langsung aktif.</li>
+      </ol>
+      <button className="btn btn-primary" type="button" onClick={handleConfirmPaid}>
+        Saya Sudah Membayar
+      </button>
+      <p className="pay-note">
+        Kredit aktif seketika setelah kamu menekan tombol ini; pembayaranmu
+        tercatat di riwayat merchant kami.
+      </p>
+    </div>
+  )
+
   return (
     <div className="page">
       {/* ===== HERO ===== */}
@@ -389,7 +474,7 @@ export default function App() {
             menempel deskripsi lowongan, kecocokan CV-mu dengan lowongan itu
             ikut menjadi aspek penilaian tersendiri. Analisis standar
             berjalan 100% di browser — file CV tidak diunggah ke server mana pun.
-            Ada juga Analisis AI opsional untuk saran penulisan ulang.
+            Ada juga Analisis AI opsional (berbayar) untuk saran penulisan ulang.
           </p>
           <div className="hero-actions">
             <a className="btn btn-primary" href="#analisis"><Icon d={I.chart} size={18} /> Mulai Analisis</a>
@@ -750,34 +835,54 @@ export default function App() {
                   CV-mu secara kualitatif: menulis ulang poin pengalamanmu, menunjukkan
                   kekurangan terhadap lowongan, dan memberi contoh ringkasan profil.
                   Bagian ini terpisah dan <strong>tidak mengubah skor utama</strong>.
+                  Analisis AI berbayar <strong>{formatRupiah(AI_PRICE)} per analisis</strong> lewat
+                  QRIS — analisis standar di atas tetap gratis.
                 </p>
 
-                <label className="consent-row">
-                  <input
-                    type="checkbox"
-                    checked={aiConsent}
-                    onChange={(e) => setAiConsent(e.target.checked)}
-                  />
-                  <span>
-                    Saya setuju teks CV dikirim ke OpenRouter untuk dianalisis.
-                    Teks tidak disimpan oleh Screening CV.
-                  </span>
-                </label>
+                {aiCredits > 0 ? (
+                  <>
+                    <div className="credit-row">
+                      <span className="credit-badge">Kredit AI: {aiCredits} analisis</span>
+                      <button
+                        className="btn btn-plain credit-buy"
+                        type="button"
+                        onClick={() => setPayOpen((o) => !o)}
+                      >
+                        {payOpen ? 'Tutup pembelian' : 'Beli kredit lagi'}
+                      </button>
+                    </div>
+                    {payOpen && paymentSection}
 
-                <div className="ai-actions">
-                  <button
-                    className="btn btn-primary"
-                    type="button"
-                    onClick={handleAiAnalyze}
-                    disabled={!aiConsent || aiLoading || cvText.trim().length < 50}
-                  >
-                    <Icon d={I.spark} size={16} />
-                    {aiLoading ? 'Menganalisis dengan AI…' : aiResult ? 'Analisis Ulang dengan AI' : 'Analisis dengan AI'}
-                  </button>
-                  {cvText.trim().length < 50 && (
-                    <span className="ai-hint">Teks CV minimal 50 karakter untuk analisis AI.</span>
-                  )}
-                </div>
+                    <label className="consent-row">
+                      <input
+                        type="checkbox"
+                        checked={aiConsent}
+                        onChange={(e) => setAiConsent(e.target.checked)}
+                      />
+                      <span>
+                        Saya setuju teks CV dikirim ke OpenRouter untuk dianalisis.
+                        Teks tidak disimpan oleh Screening CV.
+                      </span>
+                    </label>
+
+                    <div className="ai-actions">
+                      <button
+                        className="btn btn-primary"
+                        type="button"
+                        onClick={handleAiAnalyze}
+                        disabled={!aiConsent || aiLoading || cvText.trim().length < 50}
+                      >
+                        <Icon d={I.spark} size={16} />
+                        {aiLoading ? 'Menganalisis dengan AI…' : aiResult ? 'Analisis Ulang dengan AI' : 'Analisis dengan AI'}
+                      </button>
+                      {cvText.trim().length < 50 && (
+                        <span className="ai-hint">Teks CV minimal 50 karakter untuk analisis AI.</span>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  paymentSection
+                )}
 
                 {(aiLoading || aiThinking) && (
                   <div className="thinking-panel">
@@ -910,9 +1015,9 @@ export default function App() {
         <p>
           Penilaian standar berbasis aturan (rule-based) dan berjalan sepenuhnya di
           browser kamu — bukan keputusan rekruter, dan tidak ada data yang diunggah
-          atau disimpan. Satu-satunya pengecualian: fitur Analisis AI (opsional)
-          mengirim teks CV ke OpenRouter hanya bila kamu mencentang persetujuan,
-          dan teks itu tidak disimpan oleh Screening CV.
+          atau disimpan. Satu-satunya pengecualian: fitur Analisis AI (opsional,
+          berbayar) mengirim teks CV ke OpenRouter hanya bila kamu mencentang
+          persetujuan, dan teks itu tidak disimpan oleh Screening CV.
         </p>
       </footer>
     </div>

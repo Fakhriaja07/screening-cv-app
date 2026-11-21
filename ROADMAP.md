@@ -259,6 +259,33 @@ yang cocok = **60** vs + lowongan marketing = **48**. CV fresh graduate
 yang hanya punya proyek beruraian kini mendapat Pengalaman 10/28
 (bukan nyaris nol).
 
+## Monetisasi: Analisis AI berbayar via QRIS manual (2026-11-21)
+
+Keputusan pengguna (2026-11-21): Analisis AI menjadi berbayar lewat QRIS
+GoPay Merchant milik pengguna — jalur **manual** dulu, bukan payment
+gateway. Analisis standar (rule-based) tetap gratis sepenuhnya.
+
+- Harga **Rp5.000 per Analisis AI** — konstanta tunggal `AI_PRICE` di
+  `src/lib/payment.ts`, mudah diganti. Kredit disimpan di localStorage
+  perangkat pengguna (kunci `screening-cv:ai-credits:v1`); setiap analisis
+  AI yang **berhasil** mengonsumsi 1 kredit, yang gagal/error tidak
+  mengurangi kredit.
+- Alur bayar: kartu Analisis AI menampilkan gambar QRIS
+  (`public/qris.jpg` — file biner, diunggah manual pengguna ke GitHub
+  karena push connector hanya menerima teks), nominal persis yang harus
+  dibayar = harga + **kode unik 2 digit** (Rp5.0xx; kode membantu admin
+  mencocokkan pembayaran di riwayat merchant dan tidak dibulatkan),
+  langkah 1–2–3, lalu tombol "Saya Sudah Membayar" yang menambah kredit.
+- **Sifatnya kepercayaan/manual, dan teks situs tidak mengklaim
+  sebaliknya:** QRIS statis tidak mengirim notifikasi pembayaran ke
+  situs, jadi tidak ada verifikasi otomatis — kredit aktif begitu
+  pengguna menekan tombol konfirmasi, dan pembayaran yang sesungguhnya
+  tercatat di riwayat merchant. Backend `api/analyze-ai.ts` tidak diubah;
+  paywall ini murni sisi klien.
+- Langkah lanjutan bila volume transaksi naik: migrasi ke payment
+  gateway (QRIS dinamis per transaksi + webhook) agar pembayaran
+  terverifikasi otomatis sebelum kredit diberikan.
+
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
 - Akurasi yang terasa benar: hasil cocok dengan intuisi pengguna.

@@ -16,6 +16,18 @@ import {
 } from '../src/lib/history'
 import { SAMPLE_CV } from '../src/lib/sampleCv'
 import {
+  AI_CREDITS_STORAGE_KEY,
+  AI_PENDING_CODE_STORAGE_KEY,
+  AI_PRICE,
+  addCredit,
+  amountForCode,
+  clearPendingCode,
+  consumeCredit,
+  formatRupiah,
+  getCredits,
+  getOrCreatePendingCode,
+} from '../src/lib/payment'
+import {
   buildSummaryTemplate,
   checkSkills,
   getCheckExample,
@@ -626,6 +638,100 @@ check(
   ['kecocokan-lowongan', 'linimasa', 'relevansi-pengalaman', 'lokasi', 'proyek']
     .map((id) => `${id}: ${getCheckExample(id) ? 'ada' : 'TIDAK ADA'}`)
     .join(' | '),
+)
+
+// ---------- Uji pembayaran QRIS manual: kredit AI (2026-11-21) ----------
+check('QRIS manual: harga satu Analisis AI', AI_PRICE === 5000, `AI_PRICE = ${AI_PRICE}`)
+check(
+  'QRIS manual: format Rupiah id-ID',
+  formatRupiah(5000) === 'Rp5.000' && formatRupiah(5037) === 'Rp5.037' && formatRupiah(0) === 'Rp0',
+  `${formatRupiah(5000)} | ${formatRupiah(5037)}`,
+)
+
+const payStore = new MockStorage()
+check('QRIS manual: saldo awal 0', getCredits(payStore) === 0, `saldo ${getCredits(payStore)}`)
+check(
+  'QRIS manual: pakai kredit saat saldo 0 gagal & saldo tetap 0',
+  consumeCredit(payStore) === false && getCredits(payStore) === 0,
+  `saldo ${getCredits(payStore)}`,
+)
+check(
+  'QRIS manual: tambah kredit 1 → saldo 1, tambah lagi → saldo 2',
+  addCredit(payStore) === 1 && addCredit(payStore) === 2 && getCredits(payStore) === 2,
+  `saldo ${getCredits(payStore)}`,
+)
+check(
+  'QRIS manual: pakai kredit mengurangi tepat 1',
+  consumeCredit(payStore) === true && getCredits(payStore) === 1,
+  `saldo ${getCredits(payStore)}`,
+)
+check(
+  'QRIS manual: kunci storage kredit sesuai kontrak',
+  payStore.getItem(AI_CREDITS_STORAGE_KEY) === '1',
+  `isi storage: ${payStore.getItem(AI_CREDITS_STORAGE_KEY)}`,
+)
+
+const corruptStore = new MockStorage()
+corruptStore.setItem(AI_CREDITS_STORAGE_KEY, 'bukan-json{{{')
+let payCorruptOk = false
+try {
+  payCorruptOk =
+    getCredits(corruptStore) === 0 &&
+    consumeCredit(corruptStore) === false &&
+    addCredit(corruptStore) === 1
+} catch {
+  payCorruptOk = false
+}
+check('QRIS manual: data kredit rusak → 0, tidak crash, bisa pulih', payCorruptOk, 'parsing defensif bekerja')
+
+const negativeStore = new MockStorage()
+negativeStore.setItem(AI_CREDITS_STORAGE_KEY, '-5')
+check(
+  'QRIS manual: saldo negatif tersimpan diperlakukan 0',
+  getCredits(negativeStore) === 0 && consumeCredit(negativeStore) === false,
+  `saldo terbaca ${getCredits(negativeStore)}`,
+)
+check(
+  'QRIS manual: storage null aman (0 & tidak crash)',
+  getCredits(null) === 0 && consumeCredit(null) === false,
+  'tanpa localStorage tetap aman',
+)
+
+const codeStore = new MockStorage()
+const codeMin = getOrCreatePendingCode(codeStore, () => 0)
+const codeMaxStore = new MockStorage()
+const codeMax = getOrCreatePendingCode(codeMaxStore, () => 0.999999)
+check(
+  'QRIS manual: kode unik selalu dalam rentang 1–99',
+  codeMin === 1 && codeMax === 99 && codeMin >= 1 && codeMax <= 99,
+  `rng 0 → ${codeMin}, rng ~1 → ${codeMax}`,
+)
+check(
+  'QRIS manual: kode unik stabil selama belum dikonfirmasi (tersimpan)',
+  getOrCreatePendingCode(codeStore, () => 0.5) === codeMin &&
+    codeStore.getItem(AI_PENDING_CODE_STORAGE_KEY) === String(codeMin),
+  `kode tetap ${codeMin} walau rng berubah`,
+)
+check(
+  'QRIS manual: nominal bayar = harga + kode unik',
+  amountForCode(37) === 5037 && amountForCode(codeMin) === AI_PRICE + codeMin,
+  `kode 37 → ${formatRupiah(amountForCode(37))}`,
+)
+clearPendingCode(codeStore)
+const codeAfterClear = getOrCreatePendingCode(codeStore, () => 0.5)
+check(
+  'QRIS manual: setelah dibersihkan, kode baru dibuat dari rng',
+  codeAfterClear === 1 + Math.floor(0.5 * 99),
+  `kode baru ${codeAfterClear}`,
+)
+
+const corruptCodeStore = new MockStorage()
+corruptCodeStore.setItem(AI_PENDING_CODE_STORAGE_KEY, 'rusak{{{')
+const codeFromCorrupt = getOrCreatePendingCode(corruptCodeStore, () => 0)
+check(
+  'QRIS manual: kode unik rusak → dibuat ulang, tidak crash',
+  codeFromCorrupt === 1,
+  `kode ${codeFromCorrupt}`,
 )
 
 if (failures > 0) {
