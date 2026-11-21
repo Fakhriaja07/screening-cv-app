@@ -227,13 +227,17 @@ export interface RoleSkills {
   label: string
   keywords: string[]
   skills: string[]
+  /** true bila label berasal dari posisi target pengguna yang tidak ada
+   *  di kamus — daftar skill-nya memakai daftar umum, dan UI harus
+   *  menyatakannya sebagai saran umum untuk posisi itu. */
+  posisiKustom?: boolean
 }
 
 export const ROLE_SKILLS: RoleSkills[] = [
   {
     id: 'data-analyst',
     label: 'Data Analyst',
-    keywords: ['data analyst', 'analis data', 'data scientist', 'data science', 'business intelligence'],
+    keywords: ['data analyst', 'analis data', 'data scientist', 'data science', 'business intelligence', 'analyst', 'analis', 'data'],
     skills: [
       'SQL', 'Python', 'Microsoft Excel', 'Tableau', 'Power BI',
       'Google Sheets', 'Statistik', 'Visualisasi Data', 'PivotTable', 'Looker Studio',
@@ -242,7 +246,7 @@ export const ROLE_SKILLS: RoleSkills[] = [
   {
     id: 'administrasi',
     label: 'Administrasi / Admin Kantor',
-    keywords: ['administrasi', 'admin', 'data entry', 'sekretaris', 'sekretariat', 'back office', 'staff kantor'],
+    keywords: ['administrasi', 'admin', 'data entry', 'sekretaris', 'sekretariat', 'back office', 'staff kantor', 'staf administrasi', 'staf admin', 'admin kantor', 'admin operasional', 'administrasi perkantoran', 'clerk'],
     skills: [
       'Microsoft Word', 'Microsoft Excel', 'Google Workspace', 'Input Data', 'Pengarsipan',
       'Korespondensi', 'Mengetik Cepat', 'Manajemen Jadwal', 'Administrasi Perkantoran', 'Komunikasi',
@@ -251,7 +255,7 @@ export const ROLE_SKILLS: RoleSkills[] = [
   {
     id: 'marketing',
     label: 'Marketing / Digital Marketing',
-    keywords: ['marketing', 'digital marketing', 'social media', 'sosial media', 'content', 'seo', 'brand'],
+    keywords: ['marketing', 'digital marketing', 'digital marketer', 'marketing communication', 'marcom', 'social media', 'sosial media', 'content', 'seo', 'brand'],
     skills: [
       'Media Sosial', 'Copywriting', 'SEO', 'Google Ads', 'Meta Ads',
       'Canva', 'Content Planning', 'Email Marketing', 'Analisis Data', 'TikTok',
@@ -260,7 +264,7 @@ export const ROLE_SKILLS: RoleSkills[] = [
   {
     id: 'customer-service',
     label: 'Customer Service',
-    keywords: ['customer service', 'customer support', 'layanan pelanggan', 'call center', 'helpdesk pelanggan'],
+    keywords: ['customer service', 'customer support', 'customer care', 'layanan pelanggan', 'call center', 'helpdesk pelanggan', 'cs'],
     skills: [
       'Komunikasi Verbal', 'Komunikasi Tertulis', 'Penanganan Komplain', 'WhatsApp Business', 'CRM',
       'Microsoft Office', 'Bahasa Inggris', 'Pengetahuan Produk', 'Live Chat', 'Telepon',
@@ -269,7 +273,7 @@ export const ROLE_SKILLS: RoleSkills[] = [
   {
     id: 'akuntansi',
     label: 'Akuntansi / Finance',
-    keywords: ['akuntansi', 'accounting', 'finance', 'keuangan', 'accountant', 'staff keuangan', 'treasury'],
+    keywords: ['akuntansi', 'accounting', 'finance', 'keuangan', 'accountant', 'staff keuangan', 'staff pajak', 'bendahara', 'treasury'],
     skills: [
       'Microsoft Excel', 'Jurnal Umum', 'Pembukuan', 'Rekonsiliasi Bank', 'Accurate',
       'MYOB', 'Perpajakan', 'Laporan Keuangan', 'Faktur', 'Kas Kecil',
@@ -278,7 +282,7 @@ export const ROLE_SKILLS: RoleSkills[] = [
   {
     id: 'it-support',
     label: 'IT Support',
-    keywords: ['it support', 'teknisi komputer', 'helpdesk', 'technical support', 'network', 'jaringan'],
+    keywords: ['it support', 'teknisi komputer', 'teknisi jaringan', 'helpdesk', 'technical support', 'network', 'jaringan', 'staff it'],
     skills: [
       'Troubleshooting', 'Instalasi Windows', 'Jaringan LAN', 'Hardware PC', 'Microsoft Office',
       'Remote Desktop', 'Helpdesk', 'Linux', 'Backup Data', 'Komunikasi',
@@ -287,7 +291,7 @@ export const ROLE_SKILLS: RoleSkills[] = [
   {
     id: 'sales',
     label: 'Sales',
-    keywords: ['sales', 'penjualan', 'account executive', 'marketing executive', 'business development'],
+    keywords: ['sales', 'penjualan', 'account executive', 'marketing executive', 'business development', 'spg', 'spb', 'pramuniaga', 'merchandiser', 'sales representative', 'sales assistant', 'tenaga penjualan'],
     skills: [
       'Negosiasi', 'Komunikasi', 'Presentasi', 'Pencarian Prospek', 'CRM',
       'Pengetahuan Produk', 'Target Penjualan', 'Follow-up', 'Microsoft Excel', 'Bahasa Inggris',
@@ -296,10 +300,100 @@ export const ROLE_SKILLS: RoleSkills[] = [
   {
     id: 'desain-grafis',
     label: 'Desain Grafis',
-    keywords: ['desain', 'designer', 'grafis', 'graphic', 'ui/ux', 'ui ux'],
+    keywords: ['desain', 'designer', 'desainer', 'grafis', 'graphic', 'ui/ux', 'ui ux'],
     skills: [
       'Adobe Photoshop', 'Adobe Illustrator', 'Canva', 'Figma', 'CorelDRAW',
       'Tipografi', 'Teori Warna', 'Layout', 'Branding', 'Media Sosial',
+    ],
+  },
+  {
+    id: 'kasir',
+    label: 'Kasir',
+    keywords: ['kasir', 'cashier'],
+    skills: [
+      'Mesin Kasir (POS)', 'QRIS & E-Wallet', 'Perhitungan Uang Tunai', 'Microsoft Excel', 'Ketelitian',
+      'Komunikasi', 'Penanganan Komplain', 'Laporan Penjualan Harian', 'Stok Opname', 'Bahasa Inggris',
+    ],
+  },
+  {
+    id: 'operator-produksi',
+    label: 'Operator Produksi',
+    keywords: ['operator produksi', 'operator mesin', 'produksi', 'pabrik', 'quality control', 'qc inspector'],
+    skills: [
+      'Pengoperasian Mesin Produksi', 'K3 (Keselamatan Kerja)', 'Quality Control', 'Kerja Shift', '5S',
+      'Membaca Instruksi Kerja', 'Ketelitian', 'Kerja Tim', 'Target Produksi', 'Microsoft Excel',
+    ],
+  },
+  {
+    id: 'guru',
+    label: 'Guru / Pendidikan',
+    keywords: ['guru', 'pengajar', 'pendidik', 'teacher', 'tutor', 'dosen', 'instruktur'],
+    skills: [
+      'Rencana Pembelajaran (RPP)', 'Manajemen Kelas', 'Kurikulum Merdeka', 'Google Classroom', 'Microsoft Office',
+      'Penilaian & Evaluasi Siswa', 'Komunikasi dengan Orang Tua', 'Media Pembelajaran Digital', 'Bahasa Inggris', 'Public Speaking',
+    ],
+  },
+  {
+    id: 'perawat',
+    label: 'Perawat / Tenaga Kesehatan',
+    keywords: ['perawat', 'nurse', 'kesehatan', 'medis', 'bidan', 'apoteker', 'farmasi', 'analis kesehatan', 'radiografer', 'fisioterapi', 'tenaga kesehatan', 'nakes'],
+    skills: [
+      'Asuhan Keperawatan', 'Pengukuran Tanda Vital', 'Pemberian Obat', 'Rekam Medis', 'Penanganan Gawat Darurat',
+      'Komunikasi', 'Kerja Tim', 'Microsoft Office', 'Bahasa Inggris', 'Empati & Kesabaran',
+    ],
+  },
+  {
+    id: 'teknisi',
+    label: 'Teknisi / Mekanik',
+    keywords: ['teknisi', 'mekanik', 'mechanic', 'technician', 'maintenance', 'elektrik', 'listrik', 'otomotif', 'bengkel'],
+    skills: [
+      'Troubleshooting', 'Preventive Maintenance', 'Membaca Gambar Teknik', 'Kelistrikan', 'Pengelasan Dasar',
+      'K3 (Keselamatan Kerja)', 'Penggunaan Alat Ukur', 'Perawatan Mesin & Kendaraan', 'Kerja Tim', 'Laporan Perawatan',
+    ],
+  },
+  {
+    id: 'barista-fnb',
+    label: 'Barista / F&B Service',
+    keywords: ['barista', 'bartender', 'f&b', 'food and beverage', 'pelayan', 'waiter', 'waitress', 'pramusaji', 'koki', 'cook', 'chef', 'kitchen', 'restoran'],
+    skills: [
+      'Meracik Kopi (Espresso)', 'Latte Art', 'Mesin Kasir (POS)', 'Food Safety & Hygiene', 'Komunikasi',
+      'Bahasa Inggris', 'Upselling', 'Kerja Tim', 'Stok Bahan', 'Pelayanan Pelanggan',
+    ],
+  },
+  {
+    id: 'security',
+    label: 'Security / Satpam',
+    keywords: ['security', 'satpam', 'pengamanan', 'guard'],
+    skills: [
+      'Pengamanan Area', 'Patroli Keamanan', 'Pengawasan CCTV', 'K3 (Keselamatan Kerja)', 'Komunikasi',
+      'Penanganan Keadaan Darurat', 'Laporan Kejadian', 'Kedisiplinan', 'Kondisi Fisik Prima', 'Bela Diri Dasar',
+    ],
+  },
+  {
+    id: 'driver',
+    label: 'Driver / Sopir',
+    keywords: ['driver', 'sopir', 'supir', 'kurir', 'pengemudi'],
+    skills: [
+      'SIM A', 'SIM B', 'Google Maps & Navigasi', 'Defensive Driving', 'Perawatan Kendaraan Dasar',
+      'Ketepatan Waktu', 'Komunikasi', 'Dokumen Pengiriman', 'Keselamatan Berkendara', 'Bahasa Inggris',
+    ],
+  },
+  {
+    id: 'content-creator',
+    label: 'Content Creator / Sosial Media',
+    keywords: ['content creator', 'kreator konten', 'social media specialist', 'sosial media', 'influencer', 'videografer', 'video editor', 'editor video'],
+    skills: [
+      'Videografi', 'Editing Video', 'Copywriting', 'Fotografi', 'TikTok',
+      'Instagram Reels', 'Content Planning', 'Canva', 'Analisis Insight', 'SEO Media Sosial',
+    ],
+  },
+  {
+    id: 'developer',
+    label: 'Software Developer / Programmer',
+    keywords: ['programmer', 'programer', 'software developer', 'developer', 'software engineer', 'web developer', 'full stack', 'fullstack', 'frontend', 'backend', 'mobile developer'],
+    skills: [
+      'JavaScript', 'TypeScript', 'React', 'Node.js', 'Git & GitHub',
+      'REST API', 'SQL', 'HTML & CSS', 'Testing & Debugging', 'Bahasa Inggris',
     ],
   },
 ]
@@ -314,15 +408,56 @@ export const FALLBACK_ROLE_SKILLS: RoleSkills = {
   ],
 }
 
-// Cocokkan posisi target ke kamus peran (frasa spesifik, case-insensitive).
-// Peran tidak dikenal / posisi kosong → fallback Umum / Fresh Graduate.
+// Normalisasi teks posisi/kata kunci: huruf kecil, tanda baca menjadi
+// spasi, spasi berlebih dirapikan — supaya "ADMIN", "Admin Kantor", dan
+// "admin-kantor" tercocokkan dengan cara yang sama.
+function normalizeRoleText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+// Kata kunci cocok bila muncul sebagai kata/frasa utuh (dibatasi spasi
+// atau awal/akhir teks), bukan sekadar potongan di tengah kata lain.
+function keywordMatches(roleNorm: string, keyword: string): boolean {
+  const k = normalizeRoleText(keyword)
+  if (!k) return false
+  const escaped = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(^|\\s)${escaped}(?=\\s|$)`).test(roleNorm)
+}
+
+// Cocokkan posisi target (teks bebas) ke kamus peran. Di antara semua
+// kata kunci yang cocok, yang TERPANJANG menang — frasa spesifik seperti
+// "teknisi komputer" atau "content creator" mengalahkan kata umum
+// seperti "teknisi" atau "content".
+// - Posisi kosong → fallback "Umum / Fresh Graduate".
+// - Posisi terisi tapi tidak ada di kamus → entri kustom berlabel nama
+//   posisi pengguna sendiri, dengan daftar skill umum (posisiKustom).
 export function getRoleSkills(targetRole: string): RoleSkills {
-  const role = targetRole.trim().toLowerCase()
-  if (!role) return FALLBACK_ROLE_SKILLS
+  const raw = targetRole.trim()
+  if (!raw) return FALLBACK_ROLE_SKILLS
+  const role = normalizeRoleText(raw)
+  let best: RoleSkills | null = null
+  let bestLen = 0
   for (const entry of ROLE_SKILLS) {
-    if (entry.keywords.some((k) => role.includes(k))) return entry
+    for (const keyword of entry.keywords) {
+      const len = normalizeRoleText(keyword).length
+      if (len > bestLen && keywordMatches(role, keyword)) {
+        best = entry
+        bestLen = len
+      }
+    }
   }
-  return FALLBACK_ROLE_SKILLS
+  if (best) return best
+  return {
+    id: 'kustom',
+    label: raw,
+    keywords: [],
+    skills: FALLBACK_ROLE_SKILLS.skills,
+    posisiKustom: true,
+  }
 }
 
 export interface SkillPresence {

@@ -474,6 +474,36 @@ disimpan dan dilihat terus** — sebelumnya hasil hanya tampil di halaman
   tombol unduh harus langsung menghasilkan berkas, dan letaknya cukup
   satu di dekat tombol Analisis AI tempat pengguna berbayar berada.
 
+## Penyesuaian UI & kamus skill (2026-11-21)
+
+Tiga perubahan atas perintah pengguna di hari yang sama:
+
+- **Daftar Skill menyesuaikan posisi yang dilamar.** Pencocokan peran
+  di `src/lib/examples.ts` diperkuat: teks bebas posisi target
+  dinormalisasi lalu dicocokkan per kata/frasa utuh dengan sinonim
+  (mis. "ADMIN"/"admin kantor" → Administrasi, "SPG"/"sales
+  executive" → Sales, "barista"/"pelayan" → Barista/F&B), dan di
+  antara kata kunci yang cocok, frasa terpanjang menang supaya frasa
+  spesifik ("teknisi komputer", "content creator") tidak tertelan
+  kata umum. Kamus diperluas dari 8 menjadi **18 peran**: ditambah
+  Kasir, Operator Produksi, Guru/Pendidikan, Perawat/Tenaga
+  Kesehatan, Teknisi/Mekanik, Barista/F&B Service, Security/Satpam,
+  Driver/Sopir, Content Creator/Sosial Media, dan Software
+  Developer/Programmer (masing-masing 10 skill, tetap ditandai saran
+  umum). Bila posisi terisi tetapi tidak ada di kamus, judul kartu
+  kini memakai **nama posisi pengguna sendiri** ("Daftar Skill —
+  <Posisi>") dengan daftar skill umum dan catatan jujur bahwa belum
+  ada kamus khusus untuk posisi itu — label "Umum / Fresh Graduate"
+  hanya tampil bila posisi memang kosong.
+- **Tombol "Salin Template" dihapus** dari kartu Template Ringkasan
+  & Daftar Skill (beserta handler salinnya). Teks template ringkasan
+  tetap tampil seperti sebelumnya.
+- **Tombol "Unduh Laporan (PDF)" hanya muncul setelah Analisis AI
+  selesai.** Sebelum hasil AI ada, di tempat yang sama tampil
+  petunjuk "Tombol unduh laporan akan muncul setelah Analisis AI
+  selesai." Alasan pengguna: laporan diunduh untuk menyimpan kalimat
+  hasil AI, jadi unduhan hanya relevan setelah AI selesai.
+
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
 - Akurasi yang terasa benar: hasil cocok dengan intuisi pengguna.

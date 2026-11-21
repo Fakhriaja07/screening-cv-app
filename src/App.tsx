@@ -196,7 +196,6 @@ export default function App() {
   const [error, setError] = useState('')
   const [loadingFile, setLoadingFile] = useState(false)
   const [dragging, setDragging] = useState(false)
-  const [copiedTemplate, setCopiedTemplate] = useState(false)
   const [aiConsent, setAiConsent] = useState(false)
   const [aiLoading, setAiLoading] = useState(false)
   const [aiResult, setAiResult] = useState<AiAnalysis | null>(null)
@@ -321,7 +320,6 @@ export default function App() {
     setAnalysisDate(null)
     setFileName('')
     setError('')
-    setCopiedTemplate(false)
     setAiConsent(false)
     setAiResult(null)
     setAiError('')
@@ -540,22 +538,6 @@ export default function App() {
     a.click()
     document.body.removeChild(a)
     window.setTimeout(() => URL.revokeObjectURL(url), 1000)
-  }
-
-  async function handleCopyTemplate() {
-    const text = buildSummaryTemplate(targetRole)
-    try {
-      await navigator.clipboard.writeText(text)
-    } catch {
-      const ta = document.createElement('textarea')
-      ta.value = text
-      document.body.appendChild(ta)
-      ta.select()
-      document.execCommand('copy')
-      document.body.removeChild(ta)
-    }
-    setCopiedTemplate(true)
-    window.setTimeout(() => setCopiedTemplate(false), 2000)
   }
 
   // Bagian pembayaran QRIS manual + kode token: tampil saat token habis,
@@ -985,13 +967,10 @@ export default function App() {
 
                 <h4 className="subhead">Template Ringkasan</h4>
                 <p>
-                  Salin template ini, lalu ganti semua bagian dalam [kurung siku]
+                  Pakai template ini, lalu ganti semua bagian dalam [kurung siku]
                   dengan datamu sendiri.
                 </p>
                 <div className="template-box">{buildSummaryTemplate(targetRole)}</div>
-                <button className="btn btn-secondary" type="button" onClick={handleCopyTemplate}>
-                  <Icon d={I.copy} size={16} /> {copiedTemplate ? 'Template tersalin!' : 'Salin Template'}
-                </button>
 
                 {(() => {
                   const roleSkills = getRoleSkills(targetRole)
@@ -1001,9 +980,14 @@ export default function App() {
                     <>
                       <h4 className="subhead">Daftar Skill — {roleSkills.label}</h4>
                       <p>
-                        {presentCount} dari {skillStatus.length} skill yang umum dicari untuk
-                        peran ini sudah terbaca di CV-mu. Ini saran umum — hanya centang yang
-                        benar-benar kamu kuasai; jangan mencantumkan skill yang tidak kamu miliki.
+                        {presentCount} dari {skillStatus.length} skill yang umum dicari untuk{' '}
+                        {roleSkills.posisiKustom ? `posisi ${roleSkills.label}` : 'peran ini'} sudah
+                        terbaca di CV-mu. Ini saran umum
+                        {roleSkills.posisiKustom
+                          ? ' — belum ada kamus skill khusus untuk posisi ini, jadi daftarnya memakai skill umum yang relevan'
+                          : ''}{' '}
+                        — hanya centang yang benar-benar kamu kuasai; jangan mencantumkan skill
+                        yang tidak kamu miliki.
                       </p>
                       <ul className="skill-list">
                         {skillStatus.map((s) => (
@@ -1123,16 +1107,27 @@ export default function App() {
                 {/* Unduh laporan dari kartu AI — satu-satunya tombol
                     laporan (keputusan pengguna 2026-11-21): berkas PDF
                     sungguhan langsung terunduh, bukan dialog cetak.
-                    Laporan mencakup bagian Analisis AI bila sudah ada. */}
-                <div className="report-actions ai-report-actions">
-                  <button className="btn btn-secondary" type="button" onClick={handleDownloadPdf}>
-                    <Icon d={I.download} size={16} /> Unduh Laporan (PDF)
-                  </button>
-                  <span className="ai-hint">
-                    Laporan langsung terunduh sebagai berkas PDF — mencakup skor standar
-                    dan, bila sudah dijalankan, hasil Analisis AI.
-                  </span>
-                </div>
+                    Tombolnya hanya muncul SETELAH Analisis AI selesai
+                    (keputusan pengguna 2026-11-21) karena laporan diunduh
+                    untuk menyimpan kalimat hasil AI; sebelum itu tampil
+                    petunjuk pengganti di tempat yang sama. */}
+                {aiResult ? (
+                  <div className="report-actions ai-report-actions">
+                    <button className="btn btn-secondary" type="button" onClick={handleDownloadPdf}>
+                      <Icon d={I.download} size={16} /> Unduh Laporan (PDF)
+                    </button>
+                    <span className="ai-hint">
+                      Laporan langsung terunduh sebagai berkas PDF — mencakup skor standar
+                      dan hasil Analisis AI.
+                    </span>
+                  </div>
+                ) : (
+                  <div className="report-actions ai-report-actions">
+                    <span className="ai-hint">
+                      Tombol unduh laporan akan muncul setelah Analisis AI selesai.
+                    </span>
+                  </div>
+                )}
 
                 {(aiLoading || aiThinking) && (
                   <div className="thinking-panel">

@@ -57,6 +57,7 @@ import {
   verifyNotificationSignature,
 } from '../api/_midtrans.js'
 import {
+  ROLE_SKILLS,
   buildSummaryTemplate,
   checkSkills,
   getCheckExample,
@@ -470,9 +471,65 @@ check(
     getRoleSkills('Staff Administrasi').id === 'administrasi' &&
     getRoleSkills('Digital Marketing').id === 'marketing' &&
     getRoleSkills('Desainer Grafis').id === 'desain-grafis' &&
-    getRoleSkills('').id === 'umum' &&
-    getRoleSkills('Petani').id === 'umum',
-  `Data Analyst→${getRoleSkills('Data Analyst').id}, Administrasi→${getRoleSkills('Staff Administrasi').id}, tak dikenal→${getRoleSkills('Petani').id}`,
+    getRoleSkills('').id === 'umum',
+  `Data Analyst→${getRoleSkills('Data Analyst').id}, Administrasi→${getRoleSkills('Staff Administrasi').id}, kosong→${getRoleSkills('').id}`,
+)
+
+// Pencocokan peran diperkuat (2026-11-21): teks bebas posisi target
+// dicocokkan per kata/frasa dengan sinonim; frasa spesifik terpanjang
+// menang atas kata umum; peran-peran umum baru tersedia di kamus.
+const roleCases: Array<[string, string]> = [
+  ['ADMIN', 'administrasi'],
+  ['admin kantor', 'administrasi'],
+  ['Data Entry', 'administrasi'],
+  ['Sales Executive', 'sales'],
+  ['SPG', 'sales'],
+  ['Pramuniaga Toko', 'sales'],
+  ['Kasir', 'kasir'],
+  ['Operator Produksi', 'operator-produksi'],
+  ['Guru SD', 'guru'],
+  ['Perawat', 'perawat'],
+  ['Bidan', 'perawat'],
+  ['Teknisi Mesin', 'teknisi'],
+  ['Teknisi Komputer', 'it-support'],
+  ['Mekanik Bengkel', 'teknisi'],
+  ['Barista', 'barista-fnb'],
+  ['Pelayan Kafe', 'barista-fnb'],
+  ['Satpam', 'security'],
+  ['Security Mall', 'security'],
+  ['Sopir Pribadi', 'driver'],
+  ['Kurir', 'driver'],
+  ['Content Creator', 'content-creator'],
+  ['Social Media Specialist', 'content-creator'],
+  ['Programmer', 'developer'],
+  ['Web Developer', 'developer'],
+  ['Customer Service', 'customer-service'],
+  ['Staff Accounting', 'akuntansi'],
+]
+const roleMisses = roleCases.filter(([input, expected]) => getRoleSkills(input).id !== expected)
+check(
+  'Peran: sinonim & peran baru tercocokkan dari teks bebas',
+  roleMisses.length === 0,
+  roleMisses.length === 0
+    ? `${roleCases.length} contoh posisi semua cocok (termasuk 10 peran baru)`
+    : `gagal: ${roleMisses.map(([i, e]) => `${i}→${getRoleSkills(i).id} (harusnya ${e})`).join('; ')}`,
+)
+
+check(
+  'Peran: posisi terisi tapi tak dikenal → label memakai nama posisi pengguna',
+  getRoleSkills('Petani').id === 'kustom' &&
+    getRoleSkills('Petani').label === 'Petani' &&
+    getRoleSkills('Petani').posisiKustom === true &&
+    getRoleSkills('Petani').skills.length >= 8 &&
+    getRoleSkills('  ').id === 'umum',
+  `Petani→${getRoleSkills('Petani').id} "${getRoleSkills('Petani').label}", kosong→${getRoleSkills('  ').id}`,
+)
+
+check(
+  'Peran: semua entri kamus berisi 8–12 skill',
+  ROLE_SKILLS.every((r) => r.skills.length >= 8 && r.skills.length <= 12) &&
+    ROLE_SKILLS.length >= 18,
+  `${ROLE_SKILLS.length} peran di kamus, masing-masing 8–12 skill`,
 )
 
 const presence = checkSkills('Saya bisa SQL dan Microsoft Excel, sedang belajar Python.', [
@@ -1116,6 +1173,20 @@ check(
     appTsxText.includes('onClick={handleDownloadPdf}') &&
     appTsxText.includes("await import('./lib/pdf')"),
   'tombol PDF di kartu AI memakai handler unduh PDF langsung (jsPDF)',
+)
+check(
+  'Laporan: tombol unduh hanya muncul setelah Analisis AI selesai',
+  appTsxText.includes('Tombol unduh laporan akan muncul setelah Analisis AI selesai.') &&
+    /aiResult \? \([\s\S]{0,400}Unduh Laporan \(PDF\)/.test(appTsxText),
+  'blok .ai-report-actions dirender kondisional pada aiResult; sebelum itu tampil petunjuk pengganti',
+)
+check(
+  'Template: tombol Salin Template sudah dihapus (keputusan 2026-11-21)',
+  !appTsxText.includes('Salin Template') &&
+    !appTsxText.includes('handleCopyTemplate') &&
+    !appTsxText.includes('copiedTemplate') &&
+    appTsxText.includes('template-box'),
+  'tidak ada lagi tombol/handler salin template; kotak teks template tetap tampil',
 )
 
 if (failures > 0) {
