@@ -35,6 +35,12 @@ export function reportFileName(date: Date): string {
   return `laporan-cv-${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}.pdf`
 }
 
+// Nama berkas unduhan PDF teks CV bertanda: teks-cv-bertanda-2026-11-21.pdf.
+export function markedTextFileName(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `teks-cv-bertanda-${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}.pdf`
+}
+
 export function buildReportText(result: AnalysisResult, opts: ReportOptions = {}): string {
   const lines: string[] = ['HASIL SCREENING CV']
   if (opts.date) lines.push(`Tanggal analisis: ${formatReportDate(opts.date)}`)

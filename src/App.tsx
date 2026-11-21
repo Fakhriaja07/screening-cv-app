@@ -529,6 +529,19 @@ export default function App() {
     }
   }
 
+  // Pola unduh berkas yang sama untuk semua tombol unduh: Blob +
+  // object URL + klik jangkar sementara.
+  function downloadBlob(blob: Blob, fileName: string) {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = fileName
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
   // "Unduh Laporan (PDF)": berkas PDF sungguhan dibuat di browser oleh
   // lib/pdf.ts (jsPDF, dimuat dinamis agar bundel awal tetap ringan) lalu
   // langsung terunduh — tanpa dialog cetak. Isinya laporan gabungan:
@@ -541,14 +554,23 @@ export default function App() {
       targetRole,
       date: analysisDate ?? new Date(),
     })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = fileName
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    downloadBlob(blob, fileName)
+  }
+
+  // "Unduh Teks Bertanda (PDF)": teks CV yang dianalisis dengan sorotan
+  // warna yang sama seperti panel "Teks CV dengan Tanda" + keterangan
+  // setiap tanda, sebagai berkas PDF sungguhan (lib/pdf.ts, dimuat
+  // dinamis). Tersedia selama panel tampil — dari tanda standar saja
+  // pun bisa, tanpa menunggu hasil AI.
+  async function handleDownloadMarkedPdf() {
+    if (!result) return
+    const { buildMarkedTextPdf } = await import('./lib/pdf')
+    const { blob, fileName } = buildMarkedTextPdf(result, analyzedText, {
+      ai: aiResult,
+      targetRole,
+      date: analysisDate ?? new Date(),
+    })
+    downloadBlob(blob, fileName)
   }
 
   // Bagian pembayaran QRIS manual + kode token: tampil saat token habis,
@@ -1026,6 +1048,15 @@ export default function App() {
                       <span className="legend-swatch sw-ai" /> Saran penulisan ulang AI
                     </span>
                   )}
+                </div>
+                <div className="report-actions marks-actions">
+                  <button className="btn btn-secondary" type="button" onClick={handleDownloadMarkedPdf}>
+                    <Icon d={I.download} size={16} /> Unduh Teks Bertanda (PDF)
+                  </button>
+                  <span className="ai-hint">
+                    PDF memuat teks CV dengan sorotan warna yang sama seperti panel
+                    ini, plus keterangan setiap tanda.
+                  </span>
                 </div>
                 <div className="marked-text">
                   {markSegments.map((seg, i) => {

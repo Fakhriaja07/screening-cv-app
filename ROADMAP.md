@@ -537,6 +537,38 @@ sorotan diselesaikan deterministik (AI > salah eja > frasa lemah >
 ada teks CV yang disimpan ke localStorage. Patokan skor tidak
 berubah (96/61/16; mode lowongan 89/79 & 60/48; fresh graduate 53).
 
+## Unduhan PDF teks bertanda (2026-11-21)
+
+Permintaan pengguna: hasil panel "Teks CV dengan Tanda" bisa diunduh
+sebagai PDF, seperti unduhan PDF laporan Analisis AI. Panel kini
+punya tombol **"Unduh Teks Bertanda (PDF)"** di bawah legenda (selalu
+tersedia selama panel tampil) yang membuat berkas
+`teks-cv-bertanda-<tanggal>.pdf` sungguhan dengan jsPDF
+(`buildMarkedTextPdf` di `src/lib/pdf.ts`), langsung terunduh sekali
+klik:
+
+- Kepala dokumen: judul "Teks CV dengan Tanda", tanggal analisis,
+  posisi target bila ada, dan legenda warna yang sama dengan panel.
+- Teks CV lengkap dari teks yang dianalisis, dengan sorotan warna
+  yang sama (kuning frasa lemah, merah muda salah eja/"saya"
+  berlebihan, biru saran AI) digambar sebagai persegi latar di balik
+  rentang bertanda, mengalir kata per kata dengan pembungkusan baris
+  dan halaman lanjut otomatis. Rentangnya memakai hasil
+  `buildMarks`/`buildSegments` dari `marks.ts` — tidak ada logika
+  tanda atau kamus baru. Penanda entri digambar sebagai token tebal
+  merah "[!]" (glif aman WinAnsi) di awal baris entri, dijelaskan di
+  legenda.
+- Bagian **"Keterangan Tanda"** sesudah teks: semua tanda yang
+  tergambar, terurut sesuai urutan dokumen — kutipan teks yang
+  ditandai, jenis tandanya, dan penjelasannya (pesan pemeriksaan
+  terkait; bentuk baku untuk salah eja; saran + alasan untuk tanda
+  AI; entri berbendera dicantumkan dengan baris awal entrinya).
+- Tanpa hasil AI pun PDF tetap bisa dibuat dari tanda standar saja.
+  Logika skor, penanda, paywall, dan unduhan laporan AI tidak
+  berubah. Berbeda dari laporan, dokumen ini memang memuat teks CV
+  pengguna — dibuat hanya saat pengguna menekan tombol unduhnya dan
+  tidak disimpan ke mana pun.
+
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
 - Akurasi yang terasa benar: hasil cocok dengan intuisi pengguna.

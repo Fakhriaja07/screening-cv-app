@@ -84,9 +84,13 @@ import {
 import {
   buildReportText,
   formatReportDate,
+  markedTextFileName,
   reportFileName,
 } from '../src/lib/report'
 import {
+  buildMarkedTextPdf,
+  buildMarkedTextPdfBytes,
+  buildMarkedTextPdfDoc,
   buildReportPdf,
   buildReportPdfBytes,
 } from '../src/lib/pdf'
@@ -1415,6 +1419,63 @@ check(
     appCssText.includes('.mark-ai') &&
     appCssText.includes('.entry-flag'),
   'kelas .marked-text/.mark-weak/.mark-typo/.mark-ai/.entry-flag tersedia',
+)
+
+// ---------- Uji unduhan PDF teks bertanda (2026-11-21) ----------
+// Permintaan pengguna: hasil panel "Teks CV dengan Tanda" bisa diunduh
+// sebagai PDF seperti laporan Analisis AI. PDF-nya digambar dari
+// buildMarks/buildSegments yang sama — tidak ada logika tanda baru.
+const markedPdfBytes = buildMarkedTextPdfBytes(markedResult, MARKED_CV, {
+  ai: MARKED_AI,
+  targetRole: 'Kasir',
+  date: REPORT_DATE,
+})
+check(
+  'Teks Bertanda PDF: berkas sungguhan berawalan %PDF dan berukuran wajar',
+  new TextDecoder().decode(markedPdfBytes.slice(0, 4)) === '%PDF' &&
+    markedPdfBytes.length > 2000 &&
+    markedPdfBytes.length < 500_000,
+  `${markedPdfBytes.length} byte (dengan tanda AI)`,
+)
+const markedPdfStdBytes = buildMarkedTextPdfBytes(markedResult, MARKED_CV, {
+  date: REPORT_DATE,
+})
+check(
+  'Teks Bertanda PDF: tetap terbuat dari tanda standar saja tanpa hasil AI',
+  new TextDecoder().decode(markedPdfStdBytes.slice(0, 4)) === '%PDF' &&
+    markedPdfStdBytes.length > 1500 &&
+    markedPdfStdBytes.length < 500_000,
+  `${markedPdfStdBytes.length} byte (tanpa AI)`,
+)
+const markedPdfFile = buildMarkedTextPdf(markedResult, MARKED_CV, {
+  ai: MARKED_AI,
+  date: REPORT_DATE,
+})
+check(
+  'Teks Bertanda PDF: Blob application/pdf + nama berkas teks-cv-bertanda-<tanggal>.pdf',
+  markedPdfFile.blob.type === 'application/pdf' &&
+    markedPdfFile.fileName === 'teks-cv-bertanda-2026-11-21.pdf' &&
+    markedTextFileName(REPORT_DATE) === 'teks-cv-bertanda-2026-11-21.pdf' &&
+    markedTextFileName(new Date(2026, 0, 5)) === 'teks-cv-bertanda-2026-01-05.pdf',
+  `${markedPdfFile.blob.type}, ${markedPdfFile.fileName}`,
+)
+const longMarkedDoc = buildMarkedTextPdfDoc(
+  analyzeCv(SAMPLE_CV),
+  `${MARKED_CV}\n\n${SAMPLE_CV}\n\n${MARKED_CV}`,
+  { date: REPORT_DATE },
+)
+check(
+  'Teks Bertanda PDF: teks panjang mengalir ke halaman lanjut otomatis',
+  longMarkedDoc.getNumberOfPages() >= 2,
+  `${longMarkedDoc.getNumberOfPages()} halaman`,
+)
+check(
+  'Teks Bertanda PDF: tombol + handler terpasang di panel penanda App.tsx',
+  appTsxText.includes('Unduh Teks Bertanda (PDF)') &&
+    appTsxText.includes('onClick={handleDownloadMarkedPdf}') &&
+    appTsxText.includes('buildMarkedTextPdf') &&
+    appTsxText.includes('marks-actions'),
+  'tombol di panel "Teks CV dengan Tanda" mengunduh PDF teks bertanda langsung (jsPDF)',
 )
 
 if (failures > 0) {
