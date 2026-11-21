@@ -45,7 +45,7 @@ import {
 } from './lib/examples'
 import { SAMPLE_CV } from './lib/sampleCv'
 import { extractTextFromFile } from './lib/readFile'
-import { buildReportText, formatReportDate, reportFileName } from './lib/report'
+
 
 // ---------- Ikon SVG inline ----------
 function Icon({ d, size = 20 }: { d: string; size?: number }) {
@@ -64,7 +64,6 @@ const I = {
   alert: 'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01',
   copy: 'M8 8h14v14H8zM4 4h14v14H4z',
   download: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
-  print: 'M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z',
   refresh: 'M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15',
   target: 'M12 12h.01M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zM12 6a6 6 0 1 0 6 6 6 6 0 0 0-6-6z',
   list: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01',
@@ -191,13 +190,12 @@ export default function App() {
   const [targetRole, setTargetRole] = useState('')
   const [jobDesc, setJobDesc] = useState('')
   const [result, setResult] = useState<AnalysisResult | null>(null)
-  // Tanggal analisis terakhir — tampil di kepala laporan cetak/unduhan.
+  // Tanggal analisis terakhir — dipakai di kepala laporan PDF unduhan.
   const [analysisDate, setAnalysisDate] = useState<Date | null>(null)
   const [fileName, setFileName] = useState('')
   const [error, setError] = useState('')
   const [loadingFile, setLoadingFile] = useState(false)
   const [dragging, setDragging] = useState(false)
-  const [copied, setCopied] = useState(false)
   const [copiedTemplate, setCopiedTemplate] = useState(false)
   const [aiConsent, setAiConsent] = useState(false)
   const [aiLoading, setAiLoading] = useState(false)
@@ -323,7 +321,6 @@ export default function App() {
     setAnalysisDate(null)
     setFileName('')
     setError('')
-    setCopied(false)
     setCopiedTemplate(false)
     setAiConsent(false)
     setAiResult(null)
@@ -523,56 +520,26 @@ export default function App() {
     }
   }
 
-  // Teks laporan dibangun oleh satu pembangun bersama (lib/report.ts)
-  // untuk tombol Salin, Unduh .txt, dan isinya sama dengan laporan cetak.
-  function currentReportText(): string {
-    if (!result) return ''
-    return buildReportText(result, {
+  // "Unduh Laporan (PDF)": berkas PDF sungguhan dibuat di browser oleh
+  // lib/pdf.ts (jsPDF, dimuat dinamis agar bundel awal tetap ringan) lalu
+  // langsung terunduh — tanpa dialog cetak. Isinya laporan gabungan:
+  // skor standar + bagian Analisis AI bila hasil AI sudah dibuat.
+  async function handleDownloadPdf() {
+    if (!result) return
+    const { buildReportPdf } = await import('./lib/pdf')
+    const { blob, fileName } = buildReportPdf(result, {
       ai: aiResult,
       targetRole,
       date: analysisDate ?? new Date(),
     })
-  }
-
-  async function handleCopyReport() {
-    if (!result) return
-    const text = currentReportText()
-    try {
-      await navigator.clipboard.writeText(text)
-    } catch {
-      const ta = document.createElement('textarea')
-      ta.value = text
-      document.body.appendChild(ta)
-      ta.select()
-      document.execCommand('copy')
-      document.body.removeChild(ta)
-    }
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 2000)
-  }
-
-  // Unduh laporan sebagai berkas .txt agar bisa disimpan dan dibuka
-  // lagi kapan pun (hasil di halaman hilang bila tab ditutup).
-  function handleDownloadTxt() {
-    if (!result) return
-    const when = analysisDate ?? new Date()
-    const blob = new Blob([currentReportText()], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = reportFileName(when)
+    a.download = fileName
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
     window.setTimeout(() => URL.revokeObjectURL(url), 1000)
-  }
-
-  // "Unduh Laporan (PDF)": dialog cetak browser — pengguna memilih
-  // "Simpan sebagai PDF". Stylesheet @media print di App.css menyembunyikan
-  // seluruh UI aplikasi dan hanya mencetak bagian .print-report.
-  function handlePrintReport() {
-    if (!result) return
-    window.print()
   }
 
   async function handleCopyTemplate() {
@@ -896,22 +863,6 @@ export default function App() {
                       CV berisi {result.wordCount} kata. Skor dihitung dari bukti isi yang
                       benar-benar ada — bagian yang kosong poinnya 0.
                     </p>
-                    <div className="report-actions">
-                      <button className="btn btn-secondary" type="button" onClick={handleCopyReport}>
-                        <Icon d={I.copy} size={16} /> {copied ? 'Laporan tersalin!' : 'Salin Laporan'}
-                      </button>
-                      <button className="btn btn-secondary" type="button" onClick={handleDownloadTxt}>
-                        <Icon d={I.download} size={16} /> Unduh .txt
-                      </button>
-                      <button className="btn btn-secondary" type="button" onClick={handlePrintReport}>
-                        <Icon d={I.print} size={16} /> Unduh Laporan (PDF)
-                      </button>
-                    </div>
-                    <p className="report-hint">
-                      Simpan laporan ini agar bisa dilihat lagi kapan pun — hasil di
-                      halaman hilang bila tab ditutup. Tombol PDF membuka dialog
-                      cetak; pilih &ldquo;Simpan sebagai PDF&rdquo;.
-                    </p>
                   </div>
                 </div>
 
@@ -1169,16 +1120,17 @@ export default function App() {
                   activePaySection
                 )}
 
-                {/* Unduh laporan juga dari kartu AI — pengguna berbayar
-                    mencari tombolnya di sini setelah hasil AI keluar.
-                    Handler & laporan gabungan yang sama persis dengan
-                    tombol PDF di kartu hasil di atas (handlePrintReport). */}
+                {/* Unduh laporan dari kartu AI — satu-satunya tombol
+                    laporan (keputusan pengguna 2026-11-21): berkas PDF
+                    sungguhan langsung terunduh, bukan dialog cetak.
+                    Laporan mencakup bagian Analisis AI bila sudah ada. */}
                 <div className="report-actions ai-report-actions">
-                  <button className="btn btn-secondary" type="button" onClick={handlePrintReport}>
-                    <Icon d={I.print} size={16} /> Unduh Laporan (PDF)
+                  <button className="btn btn-secondary" type="button" onClick={handleDownloadPdf}>
+                    <Icon d={I.download} size={16} /> Unduh Laporan (PDF)
                   </button>
                   <span className="ai-hint">
-                    Laporan mencakup skor standar dan, bila sudah dijalankan, hasil Analisis AI.
+                    Laporan langsung terunduh sebagai berkas PDF — mencakup skor standar
+                    dan, bila sudah dijalankan, hasil Analisis AI.
                   </span>
                 </div>
 
@@ -1323,136 +1275,6 @@ export default function App() {
           <a href="/terms.html">Syarat &amp; Ketentuan</a>
         </p>
       </footer>
-
-      {/* ===== LAPORAN CETAK (hanya tampil saat window.print) =====
-          Di layar bagian ini display:none (App.css); stylesheet
-          @media print menyembunyikan seluruh UI aplikasi dan hanya
-          mencetak bagian ini. Isinya dibangun dari state hasil saat
-          ini — sama dengan isi unduhan .txt (lib/report.ts). */}
-      {result && (
-        <div className="print-report" aria-hidden="true">
-          <h1>Screening CV — Laporan Hasil Analisis</h1>
-          <p className="pr-meta">
-            Tanggal analisis: {formatReportDate(analysisDate ?? new Date())}
-            {targetRole.trim() && <> • Posisi target: {targetRole.trim()}</>}
-            {' '}• CV berisi {result.wordCount} kata
-          </p>
-
-          <div className="pr-score">
-            <span className="pr-score-num">{result.total}/100</span>
-            <span className="pr-score-label">{result.label}</span>
-          </div>
-
-          <h2>Skor per Aspek</h2>
-          <table className="pr-table">
-            <tbody>
-              {result.aspects.map((a) => (
-                <tr key={a.name}>
-                  <td>{a.name}</td>
-                  <td className="pr-num">{a.score}/{a.max}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {result.roleWarning && (
-            <p className="pr-note"><strong>Catatan posisi:</strong> {result.roleWarning}</p>
-          )}
-
-          <h2>Kekuatan</h2>
-          {result.strengths.length > 0 ? (
-            <ul className="pr-list">
-              {result.strengths.map((c) => (
-                <li key={c.id}>
-                  <strong>{c.title}:</strong> {c.message}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p>(Belum ada kekuatan yang menonjol.)</p>
-          )}
-
-          <h2>Prioritas Perbaikan</h2>
-          {result.priorities.length > 0 ? (
-            <ul className="pr-list">
-              {result.priorities.map((c) => (
-                <li key={c.id}>
-                  <strong>{c.title}</strong> ({c.aspect} • {c.score}/{c.max} poin)
-                  <br />{c.message}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p>Tidak ada — semua pemeriksaan lolos dengan poin penuh.</p>
-          )}
-
-          {result.keywords && (
-            <>
-              <h2>Kecocokan Kata Kunci Lowongan</h2>
-              <p>
-                <strong>{result.keywords.percent}%</strong> dari {result.keywords.total} kata
-                kunci teratas lowongan ditemukan di CV.
-                {result.jobMatchApplied
-                  ? ' Kecocokan ini masuk skor utama sebagai aspek "Kecocokan dengan Lowongan" (20 poin).'
-                  : ' Kecocokan ini tidak memengaruhi skor kali ini.'}
-              </p>
-              <p><strong>Sudah ada:</strong> {result.keywords.found.join(', ') || '—'}</p>
-              <p><strong>Belum ada:</strong> {result.keywords.missing.join(', ') || '—'}</p>
-            </>
-          )}
-
-          {aiResult && (
-            <>
-              <h2>Analisis AI</h2>
-              {aiResult.ringkasan && (
-                <>
-                  <h3>Ringkasan Penilaian AI</h3>
-                  <p>{aiResult.ringkasan}</p>
-                </>
-              )}
-              {aiResult.saranPenulisanUlang.length > 0 && (
-                <>
-                  <h3>Saran Penulisan Ulang</h3>
-                  <ul className="pr-list">
-                    {aiResult.saranPenulisanUlang.map((r, i) => (
-                      <li key={i}>
-                        <strong>Asli:</strong> {r.asli}
-                        <br /><strong>Saran:</strong> {r.saran}
-                        {r.alasan && <><br /><em>{r.alasan}</em></>}
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="pr-note">
-                    Saran di atas adalah contoh — sesuaikan angka dan fakta dengan
-                    pengalaman aslimu. Jangan memakai angka yang tidak benar.
-                  </p>
-                </>
-              )}
-              {aiResult.kekurangan.length > 0 && (
-                <>
-                  <h3>Kekurangan Menurut AI</h3>
-                  <ul className="pr-list">
-                    {aiResult.kekurangan.map((k, i) => <li key={i}>{k}</li>)}
-                  </ul>
-                </>
-              )}
-              {aiResult.saranRingkasan && (
-                <>
-                  <h3>Contoh Ringkasan Profil</h3>
-                  <p>{aiResult.saranRingkasan}</p>
-                </>
-              )}
-            </>
-          )}
-
-          <p className="pr-foot">
-            Laporan dibuat oleh Screening CV (screening-cv-app.vercel.app). Penilaian
-            standar berbasis aturan (rule-based) dan bersifat saran — bukan keputusan
-            rekruter. Bagian Analisis AI dibuat oleh model AI lewat OpenRouter dan
-            tidak mengubah skor utama.
-          </p>
-        </div>
-      )}
     </div>
   )
 }

@@ -462,6 +462,17 @@ disimpan dan dilihat terus** — sebelumnya hasil hanya tampil di halaman
 - **Privasi tidak berubah:** laporan hanya berisi hasil analisis (tanpa
   teks CV), dibuat di browser saat tombol ditekan, dan tidak disimpan ke
   localStorage/server — riwayat tetap hanya menyimpan skor.
+- **Revisi di hari yang sama (keputusan pengguna, 2026-11-21):** baris
+  tombol di kartu hasil (Salin Laporan, Unduh .txt, Unduh Laporan (PDF)
+  versi cetak) **dihapus seluruhnya**, begitu pula bagian `.print-report`
+  dan stylesheet `@media print` — mode cetak ditinggalkan. Satu-satunya
+  tombol laporan kini adalah **"Unduh Laporan (PDF)" di kartu Analisis
+  AI**, dan tombol itu kini mengunduh **berkas PDF sungguhan secara
+  langsung** (dibuat di browser dengan jsPDF lewat modul
+  `src/lib/pdf.ts` dari isi `buildReportText` yang sama, nama berkas
+  `laporan-cv-<tanggal>.pdf`) — bukan lagi dialog cetak. Alasan pengguna:
+  tombol unduh harus langsung menghasilkan berkas, dan letaknya cukup
+  satu di dekat tombol Analisis AI tempat pengguna berbayar berada.
 
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 

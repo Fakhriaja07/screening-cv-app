@@ -1,6 +1,7 @@
-// Pembangun teks laporan hasil analisis — dipakai bersama oleh tombol
-// "Salin Laporan" dan tombol "Unduh .txt" di App.tsx agar isi keduanya
-// selalu sama persis (satu sumber logika, tidak diduplikasi).
+// Pembangun teks laporan hasil analisis — sumber isi tunggal untuk
+// berkas PDF yang dibuat src/lib/pdf.ts (tombol "Unduh Laporan (PDF)"
+// di kartu Analisis AI). Baris-baris teksnya ditata ulang menjadi
+// dokumen PDF A4 oleh modul itu.
 //
 // Laporan hanya berisi HASIL analisis (skor, aspek, kekuatan, prioritas
 // perbaikan, kata kunci, dan hasil AI bila ada) — tidak pernah memuat
@@ -28,10 +29,10 @@ export function formatReportDate(date: Date): string {
   }).format(date)
 }
 
-// Nama berkas unduhan .txt: laporan-cv-2026-11-21.txt (tanggal lokal).
+// Nama berkas unduhan PDF: laporan-cv-2026-11-21.pdf (tanggal lokal).
 export function reportFileName(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')
-  return `laporan-cv-${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}.txt`
+  return `laporan-cv-${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}.pdf`
 }
 
 export function buildReportText(result: AnalysisResult, opts: ReportOptions = {}): string {

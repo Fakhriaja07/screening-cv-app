@@ -67,6 +67,10 @@ import {
   formatReportDate,
   reportFileName,
 } from '../src/lib/report'
+import {
+  buildReportPdf,
+  buildReportPdfBytes,
+} from '../src/lib/pdf'
 import type { AiAnalysis } from '../src/lib/ai'
 const MEDIUM_CV = `Budi Santoso
 budi.santoso@gmail.com | 0812-9876-5432 | linkedin.com/in/budisantoso
@@ -1005,7 +1009,7 @@ check(
   'parsing defensif bekerja',
 )
 
-// ---------- Uji laporan unduhan (.txt & cetak PDF) ----------
+// ---------- Uji laporan unduhan (PDF langsung, jsPDF) ----------
 const REPORT_DATE = new Date(2026, 10, 21, 21, 47)
 const reportBase = buildReportText(analyzeCv(SAMPLE_CV, { jobDesc: JOB_DATA }), {
   targetRole: 'Data Analyst',
@@ -1059,40 +1063,59 @@ check(
   'ringkasan, saran penulisan ulang, kekurangan & contoh ringkasan tercantum',
 )
 check(
-  'Laporan: nama berkas unduhan berpola laporan-cv-<tanggal>.txt',
-  reportFileName(REPORT_DATE) === 'laporan-cv-2026-11-21.txt' &&
-    reportFileName(new Date(2026, 0, 5)) === 'laporan-cv-2026-01-05.txt',
+  'Laporan: nama berkas unduhan berpola laporan-cv-<tanggal>.pdf',
+  reportFileName(REPORT_DATE) === 'laporan-cv-2026-11-21.pdf' &&
+    reportFileName(new Date(2026, 0, 5)) === 'laporan-cv-2026-01-05.pdf',
   reportFileName(REPORT_DATE),
+)
+const pdfBytes = buildReportPdfBytes(analyzeCv(SAMPLE_CV, { jobDesc: JOB_DATA }), {
+  ai: FAKE_AI,
+  targetRole: 'Data Analyst',
+  date: REPORT_DATE,
+})
+check(
+  'Laporan PDF: berkas sungguhan berawalan %PDF dan berukuran wajar',
+  new TextDecoder().decode(pdfBytes.slice(0, 4)) === '%PDF' &&
+    pdfBytes.length > 2000 &&
+    pdfBytes.length < 500_000,
+  `${pdfBytes.length} byte`,
+)
+const pdfFile = buildReportPdf(analyzeCv(SAMPLE_CV), { date: REPORT_DATE })
+check(
+  'Laporan PDF: Blob bertipe application/pdf + nama berkas .pdf',
+  pdfFile.blob.type === 'application/pdf' &&
+    pdfFile.fileName === 'laporan-cv-2026-11-21.pdf',
+  `${pdfFile.blob.type}, ${pdfFile.fileName}`,
 )
 const appCssText = readFileSync(
   resolve(dirname(fileURLToPath(import.meta.url)), '../src/App.css'),
   'utf8',
 )
 check(
-  'Laporan cetak: stylesheet @media print & .print-report ada di App.css',
-  appCssText.includes('@media print') &&
-    appCssText.includes('.print-report') &&
-    appCssText.includes('.page > :not(.print-report)'),
-  'UI aplikasi disembunyikan saat mencetak, hanya laporan yang tampil',
+  'Laporan: mode cetak sudah dihapus dari App.css (keputusan 2026-11-21)',
+  !appCssText.includes('@media print') && !appCssText.includes('.print-report'),
+  'tidak ada lagi stylesheet cetak / bagian laporan cetak',
 )
 const appTsxText = readFileSync(
   resolve(dirname(fileURLToPath(import.meta.url)), '../src/App.tsx'),
   'utf8',
 )
 check(
-  'Laporan: tombol Unduh .txt & Unduh Laporan (PDF) terpasang di hasil',
-  appTsxText.includes('Unduh .txt') &&
-    appTsxText.includes('Unduh Laporan (PDF)') &&
-    appTsxText.includes('window.print()') &&
-    appTsxText.includes('className="print-report"'),
-  'kedua tombol dan bagian cetak ada di App.tsx',
+  'Laporan: baris tombol kartu hasil dihapus (Salin/.txt/print hilang)',
+  !appTsxText.includes('Salin Laporan') &&
+    !appTsxText.includes('Unduh .txt') &&
+    !appTsxText.includes('window.print()') &&
+    !appTsxText.includes('print-report') &&
+    !appTsxText.includes('handlePrintReport'),
+  'tidak ada lagi tombol salin, unduh .txt, atau handler cetak di App.tsx',
 )
 check(
-  'Laporan: tombol Unduh Laporan (PDF) juga terpasang di kartu Analisis AI',
-  (appTsxText.match(/Unduh Laporan \(PDF\)/g) ?? []).length >= 2 &&
-    (appTsxText.match(/onClick=\{handlePrintReport\}/g) ?? []).length >= 2 &&
-    appTsxText.includes('ai-report-actions'),
-  'tombol PDF kedua di kartu AI memakai handler cetak yang sama',
+  'Laporan: satu tombol Unduh Laporan (PDF) di kartu AI, unduh langsung',
+  appTsxText.includes('Unduh Laporan (PDF)') &&
+    appTsxText.includes('ai-report-actions') &&
+    appTsxText.includes('onClick={handleDownloadPdf}') &&
+    appTsxText.includes("await import('./lib/pdf')"),
+  'tombol PDF di kartu AI memakai handler unduh PDF langsung (jsPDF)',
 )
 
 if (failures > 0) {
