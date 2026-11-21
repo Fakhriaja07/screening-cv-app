@@ -624,6 +624,37 @@ const PROJECT_HEADING_WORDS = [
   'relawan', 'kegiatan',
 ]
 
+// Ekstraktor khusus bagian proyek/magang. Berbeda dari getSection umum:
+// baris yang tampak seperti entri (bullet, atau mengandung tahun
+// 19xx/20xx) TIDAK PERNAH dianggap batas bagian — mengikuti guard
+// BULLET_LINE di getExperienceSection, ditambah guard tahun. Tanpa ini,
+// judul entri seperti "Dashboard Harga Bahan Pokok — Proyek Kuliah
+// (2025)" mengandung kata heading "proyek" sehingga bagian terpotong
+// menjadi kosong dan fresh graduate yang memakai judul umum "Proyek
+// Kuliah / Proyek Akhir / Proyek Pribadi" kehilangan poin proyek
+// (bug 2026-11-21), padahal CV yang sama berjudul "Tugas Akhir" lolos.
+function getProjectSection(text: string): string {
+  const lines = text.split('\n')
+  const isEntryLine = (l: string) =>
+    BULLET_LINE.test(l) || /\b(?:19|20)\d{2}\b/.test(l)
+  const isBoundary = (l: string) =>
+    !isEntryLine(l) && isHeadingLine(l, ALL_HEADING_WORDS)
+  let start = -1
+  for (let i = 0; i < lines.length; i++) {
+    if (!isEntryLine(lines[i]) && isHeadingLine(lines[i], PROJECT_HEADING_WORDS)) {
+      start = i
+      break
+    }
+  }
+  if (start === -1) return ''
+  const collected: string[] = []
+  for (let i = start + 1; i < lines.length; i++) {
+    if (isBoundary(lines[i])) break
+    collected.push(lines[i])
+  }
+  return collected.join('\n').trim()
+}
+
 interface ProjectAssessment {
   score: number // skala maks 2
   message: string
@@ -634,7 +665,7 @@ interface ProjectAssessment {
 // pengalaman yang sah. Bila pengalaman kerja formal sudah ada, bagian
 // proyek hanya penguat — ketiadaannya netral, tidak menghukum.
 function assessProjects(text: string, formalEntryCount: number): ProjectAssessment {
-  const section = getSection(text, PROJECT_HEADING_WORDS)
+  const section = getProjectSection(text)
   const lines = section ? section.split('\n').filter((l) => l.trim() !== '') : []
   const words = section ? countWords(section) : 0
   const substantive = lines.length >= 2 || words >= 15

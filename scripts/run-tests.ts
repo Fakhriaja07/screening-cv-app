@@ -517,6 +517,37 @@ check(
   `fresh (hanya proyek) proyek ${checkOf(fresh, 'proyek')?.score}/2 & Pengalaman total ${fresh.aspects.find((a) => a.name === 'Pengalaman')?.score}/28, lemah proyek ${weakCheck('proyek')?.score}/2, menengah (formal ada, tanpa bagian proyek → netral) ${mediumCheck('proyek')?.score}/2`,
 )
 
+// --- Regresi bug 2026-11-21: judul entri "Proyek Kuliah / Proyek Akhir /
+// Proyek Pribadi" mengandung kata heading "proyek" sehingga ekstraksi
+// bagian Proyek terpotong kosong dan nilai proyek 0/2 — padahal CV yang
+// sama berjudul "Tugas Akhir" mendapat 2/2. Ekstraktor khusus
+// getProjectSection mengabaikan baris entri (bullet/tahun) sebagai batas.
+const PROYEK_KULIAH_CV = `Sinta Dewi
+sinta.dewi@gmail.com | 0813-7777-8888 | Bandung
+
+Ringkasan
+Lulusan baru SMK yang aktif berorganisasi dan pernah mengerjakan proyek sekolah.
+
+Proyek
+Dashboard Harga Bahan Pokok — Proyek Kuliah (2025)
+- Membangun dashboard harga bahan pokok Indonesia yang diperbarui setiap hari.
+- Mengolah data survei harga dari 30 pasar tradisional.
+
+Pendidikan
+SMK Negeri 2 Bandung — Jurusan Administrasi Perkantoran (2021 - 2024)
+
+Keahlian
+Microsoft Word, Microsoft Excel, Google Workspace, Canva, Input Data, Pengarsipan, Komunikasi, Kerja Tim`
+const proyekKuliah = analyzeCv(PROYEK_KULIAH_CV)
+check(
+  'Regresi 2026-11-21: entri "Proyek Kuliah (2025)" tidak memotong bagian Proyek → proyek 2/2',
+  checkOf(proyekKuliah, 'proyek')?.score === 2 &&
+    checkOf(analyzeCv(PROYEK_KULIAH_CV.replace('Proyek Kuliah', 'Proyek Akhir')), 'proyek')?.score === 2 &&
+    checkOf(analyzeCv(PROYEK_KULIAH_CV.replace('Proyek Kuliah', 'Proyek Pribadi')), 'proyek')?.score === 2 &&
+    checkOf(analyzeCv(PROYEK_KULIAH_CV.replace('Dashboard Harga Bahan Pokok — Proyek Kuliah (2025)', 'Tugas Akhir (2025)')), 'proyek')?.score === 2,
+  `"Proyek Kuliah" ${checkOf(proyekKuliah, 'proyek')?.score}/2, "Proyek Akhir" ${checkOf(analyzeCv(PROYEK_KULIAH_CV.replace('Proyek Kuliah', 'Proyek Akhir')), 'proyek')?.score}/2, "Proyek Pribadi" ${checkOf(analyzeCv(PROYEK_KULIAH_CV.replace('Proyek Kuliah', 'Proyek Pribadi')), 'proyek')?.score}/2, "Tugas Akhir" ${checkOf(analyzeCv(PROYEK_KULIAH_CV.replace('Dashboard Harga Bahan Pokok — Proyek Kuliah (2025)', 'Tugas Akhir (2025)')), 'proyek')?.score}/2`,
+)
+
 // --- Relevansi pengalaman terhadap posisi target ---
 check(
   'Standar 2026-11-21: relevansi pengalaman — jabatan menyebut bidang target (positif) vs tak berkaitan (negatif)',
