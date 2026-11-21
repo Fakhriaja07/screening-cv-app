@@ -440,6 +440,29 @@ meneliti gateway cadangan di luar ekosistem GoTo; hasilnya:
   endpoint iPaymu → uji sandbox → live. Midtrans tetap bisa menyusul
   kapan pun role-nya beres (integrasinya sudah jadi).
 
+## Unduh laporan hasil analisis (2026-11-21)
+
+Atas permintaan pengguna: hasil analisis kini bisa **diunduh agar bisa
+disimpan dan dilihat terus** — sebelumnya hasil hanya tampil di halaman
+(ditambah tombol salin teks) dan rinciannya hilang begitu tab ditutup.
+
+- **Tombol "Unduh Laporan (PDF)"** di kartu hasil: memicu `window.print()`
+  dengan stylesheet `@media print` khusus di `src/App.css` — seluruh UI
+  aplikasi disembunyikan dan yang dicetak hanya bagian `.print-report`
+  (anak langsung `.page`, `display:none` di layar): nama situs, tanggal
+  analisis, posisi target (bila ada), skor total + label, skor per aspek,
+  kekuatan, prioritas perbaikan dengan rincian tiap pemeriksaan, hasil
+  cek kata kunci lowongan (bila ada), dan bagian Analisis AI bila hasil
+  AI sudah dibuat. Pengguna memilih "Simpan sebagai PDF" di dialog cetak.
+- **Tombol "Unduh .txt"**: mengunduh berkas `laporan-cv-<tanggal>.txt`
+  (Blob + object URL). Isinya dibangun oleh pembangun bersama
+  `buildReportText` di `src/lib/report.ts` — sumber logika yang sama
+  dengan tombol "Salin Laporan" (yang kini juga memakai pembangun itu),
+  termasuk bagian AI bila ada.
+- **Privasi tidak berubah:** laporan hanya berisi hasil analisis (tanpa
+  teks CV), dibuat di browser saat tombol ditekan, dan tidak disimpan ke
+  localStorage/server — riwayat tetap hanya menyimpan skor.
+
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
 - Akurasi yang terasa benar: hasil cocok dengan intuisi pengguna.

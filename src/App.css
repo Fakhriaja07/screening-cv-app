@@ -321,6 +321,22 @@
   margin-bottom: 14px;
   max-width: 380px;
 }
+.report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.result-summary .report-hint {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+/* ===== Laporan cetak: tidak tampil di layar ===== */
+.print-report {
+  display: none;
+}
 .ring-wrap {
   position: relative;
   flex-shrink: 0;
@@ -1078,5 +1094,98 @@
   }
   .bar-row {
     grid-template-columns: 92px 1fr 48px;
+  }
+}
+
+/* ===== Cetak laporan (tombol "Unduh Laporan (PDF)" → window.print) =====
+   Seluruh UI aplikasi disembunyikan; hanya .print-report yang dicetak,
+   hitam di atas putih, tanpa elemen interaktif. */
+@media print {
+  @page {
+    margin: 16mm;
+  }
+  body {
+    background: #fff !important;
+    color: #000;
+  }
+  .page > :not(.print-report) {
+    display: none !important;
+  }
+  .print-report {
+    display: block !important;
+    color: #000;
+    font-size: 12.5pt;
+    line-height: 1.55;
+  }
+  .print-report h1 {
+    font-size: 19pt;
+    margin: 0 0 4px;
+  }
+  .print-report h2 {
+    font-size: 14pt;
+    margin: 20px 0 8px;
+    border-bottom: 1.5px solid #000;
+    padding-bottom: 3px;
+    break-after: avoid;
+  }
+  .print-report h3 {
+    font-size: 12.5pt;
+    margin: 14px 0 5px;
+    break-after: avoid;
+  }
+  .print-report p {
+    margin: 0 0 8px;
+  }
+  .pr-meta {
+    color: #333;
+    font-size: 11pt;
+  }
+  .pr-score {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin: 14px 0 4px;
+    break-inside: avoid;
+  }
+  .pr-score-num {
+    font-size: 30pt;
+    font-weight: 700;
+  }
+  .pr-score-label {
+    font-size: 14pt;
+    font-weight: 600;
+  }
+  .pr-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 6px;
+  }
+  .pr-table td {
+    border: 1px solid #666;
+    padding: 5px 9px;
+  }
+  .pr-table .pr-num {
+    text-align: right;
+    width: 90px;
+    font-weight: 600;
+  }
+  .pr-list {
+    margin: 0 0 8px;
+    padding-left: 20px;
+  }
+  .pr-list li {
+    margin-bottom: 7px;
+    break-inside: avoid;
+  }
+  .pr-note {
+    font-size: 11pt;
+    color: #333;
+  }
+  .pr-foot {
+    margin-top: 24px;
+    padding-top: 8px;
+    border-top: 1px solid #999;
+    font-size: 10pt;
+    color: #444;
   }
 }

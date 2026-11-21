@@ -62,6 +62,12 @@ import {
   getCheckExample,
   getRoleSkills,
 } from '../src/lib/examples'
+import {
+  buildReportText,
+  formatReportDate,
+  reportFileName,
+} from '../src/lib/report'
+import type { AiAnalysis } from '../src/lib/ai'
 const MEDIUM_CV = `Budi Santoso
 budi.santoso@gmail.com | 0812-9876-5432 | linkedin.com/in/budisantoso
 
@@ -997,6 +1003,89 @@ check(
   isOrderClaimed('AICV-uji-abc123', corruptClaimStore) === false &&
     markOrderClaimed('AICV-uji-abc123', corruptClaimStore) === true,
   'parsing defensif bekerja',
+)
+
+// ---------- Uji laporan unduhan (.txt & cetak PDF) ----------
+const REPORT_DATE = new Date(2026, 10, 21, 21, 47)
+const reportBase = buildReportText(analyzeCv(SAMPLE_CV, { jobDesc: JOB_DATA }), {
+  targetRole: 'Data Analyst',
+  date: REPORT_DATE,
+})
+check(
+  'Laporan: kepala memuat tanggal, posisi target, skor & label',
+  reportBase.startsWith('HASIL SCREENING CV') &&
+    reportBase.includes(`Tanggal analisis: ${formatReportDate(REPORT_DATE)}`) &&
+    reportBase.includes('Posisi target: Data Analyst') &&
+    reportBase.includes(`/100 — `) &&
+    reportBase.includes('Total kata:'),
+  'kepala laporan lengkap',
+)
+check(
+  'Laporan: memuat skor per aspek, kekuatan & prioritas perbaikan',
+  reportBase.includes('SKOR PER ASPEK:') &&
+    reportBase.includes('- Kontak:') &&
+    reportBase.includes('- Pengalaman:') &&
+    reportBase.includes('KEKUATAN:') &&
+    reportBase.includes('PRIORITAS PERBAIKAN:') &&
+    reportBase.includes('KECOCOKAN KATA KUNCI LOWONGAN:'),
+  'bagian inti laporan lengkap termasuk kata kunci lowongan',
+)
+check(
+  'Laporan: tanpa hasil AI tidak ada bagian Analisis AI',
+  !reportBase.includes('ANALISIS AI:'),
+  'bagian AI hanya muncul bila hasil AI ada',
+)
+const FAKE_AI: AiAnalysis = {
+  ringkasan: 'CV cukup kuat untuk posisi data analyst pemula.',
+  saranPenulisanUlang: [
+    {
+      asli: 'Membuat laporan penjualan',
+      saran: 'Menyusun laporan penjualan mingguan untuk 3 cabang dengan Excel',
+      alasan: 'Tambahkan frekuensi dan alat yang dipakai.',
+    },
+  ],
+  kekurangan: ['Belum ada sertifikasi pendukung.'],
+  saranRingkasan: 'Data analyst pemula yang terbiasa mengolah data penjualan.',
+}
+const reportAi = buildReportText(analyzeCv(SAMPLE_CV), { ai: FAKE_AI, date: REPORT_DATE })
+check(
+  'Laporan: bagian AI lengkap bila hasil AI ada',
+  reportAi.includes('ANALISIS AI:') &&
+    reportAi.includes('Ringkasan: CV cukup kuat untuk posisi data analyst pemula.') &&
+    reportAi.includes('Asli: Membuat laporan penjualan') &&
+    reportAi.includes('Saran: Menyusun laporan penjualan mingguan') &&
+    reportAi.includes('- Belum ada sertifikasi pendukung.') &&
+    reportAi.includes('Contoh Ringkasan Profil: Data analyst pemula'),
+  'ringkasan, saran penulisan ulang, kekurangan & contoh ringkasan tercantum',
+)
+check(
+  'Laporan: nama berkas unduhan berpola laporan-cv-<tanggal>.txt',
+  reportFileName(REPORT_DATE) === 'laporan-cv-2026-11-21.txt' &&
+    reportFileName(new Date(2026, 0, 5)) === 'laporan-cv-2026-01-05.txt',
+  reportFileName(REPORT_DATE),
+)
+const appCssText = readFileSync(
+  resolve(dirname(fileURLToPath(import.meta.url)), '../src/App.css'),
+  'utf8',
+)
+check(
+  'Laporan cetak: stylesheet @media print & .print-report ada di App.css',
+  appCssText.includes('@media print') &&
+    appCssText.includes('.print-report') &&
+    appCssText.includes('.page > :not(.print-report)'),
+  'UI aplikasi disembunyikan saat mencetak, hanya laporan yang tampil',
+)
+const appTsxText = readFileSync(
+  resolve(dirname(fileURLToPath(import.meta.url)), '../src/App.tsx'),
+  'utf8',
+)
+check(
+  'Laporan: tombol Unduh .txt & Unduh Laporan (PDF) terpasang di hasil',
+  appTsxText.includes('Unduh .txt') &&
+    appTsxText.includes('Unduh Laporan (PDF)') &&
+    appTsxText.includes('window.print()') &&
+    appTsxText.includes('className="print-report"'),
+  'kedua tombol dan bagian cetak ada di App.tsx',
 )
 
 if (failures > 0) {
