@@ -204,6 +204,61 @@ sertifikasi/bahasa/IPK/portofolio). CV lemah tetap **16**: aspek baru
 tidak memberinya poin cuma-cuma. Angka tidak direkayasa mengejar
 target — keketatan terjelaskan oleh aspek baru yang gagal dipenuhi.
 
+## Peningkatan standar berbasis aspek (2026-11-21)
+
+Menjawab pertanyaan pengguna apakah standar penilaian terlalu rendah:
+standar dinaikkan lagi — tetap lewat **aspek yang dinilai**, bukan
+menaikkan kuota angka (prinsip koreksi pengguna 2026-11-19 dipertahankan;
+ambang pemeriksaan lama tidak diubah, bobot di dalam aspek dibagi ulang).
+
+Dimensi baru yang kini dinilai — hal-hal yang paling menentukan di mata
+perekrut, yang sebelumnya tidak dinilai sama sekali:
+
+- **Kecocokan dengan Lowongan (aspek kondisional, maks 20):** kata kunci
+  lowongan yang semula hanya ditampilkan terpisah kini **masuk skor**,
+  hanya bila pengguna menempel deskripsi lowongan. Aspek dasar diskalakan
+  proporsional (×0,8) sehingga total tetap 100; tanpa deskripsi lowongan
+  komposisi skor tidak berubah. UI menyatakan ini secara transparan.
+- **Relevansi pengalaman terhadap posisi target (3, Pengalaman —
+  kondisional):** jabatan dan isi pengalaman dinilai keterkaitannya
+  dengan bidang posisi yang dituju (sebelumnya hanya ringkasan yang
+  dinilai relevansinya). Kata kerja aksi 5→4, hasil terukur 6→5, dan
+  linimasa 3→2 memberi ruangnya bila posisi target diisi.
+- **Linimasa pengalaman (3, Pengalaman):** kesenjangan ≥3 tahun
+  antar-entri tanpa penjelasan dan peran terakhir yang berakhir ≥4 tahun
+  lalu tanpa peran saat ini menurunkan poin. Tahun yang terbaca disebut
+  apa adanya di pesan hasil; periode yang tidak terbaca menghasilkan
+  skor 0 dengan penjelasan jujur bahwa linimasa belum bisa dinilai —
+  bukan penilaian membabi buta.
+- **Lokasi domisili (1, Kontak):** kota domisili di area kontak dinilai
+  sebagai kelengkapan kontak (perekrut menyaring berdasarkan domisili);
+  1 poin diambil dari link portofolio (3→2), total Kontak tetap 20.
+- **Proyek/magang sebagai bukti pengalaman (2, Pengalaman):** bagian
+  Proyek/Magang/Organisasi/PKL yang diuraikan isinya memberi nilai
+  pengalaman — keadilan bagi fresh graduate, pasar utama situs ini.
+  Bila pengalaman formal sudah ada, ketiadaan proyek netral (tetap 2),
+  tidak menghukum pekerja berpengalaman. Bobot Pengalaman dibagi ulang:
+  heading 6→5, kata kerja 6→5, hasil terukur 8→6, kedalaman 5→4.
+
+Total pemeriksaan kini 23 + 2 kondisional (relevansi ringkasan,
+relevansi pengalaman) + 1 aspek kondisional (kecocokan lowongan).
+Riwayat skor menangani perbedaan komposisi antar-entri dengan catatan
+perkiraan (total tetap dibandingkan). Contoh sebelum→sesudah ditambah
+untuk kelima pemeriksaan/aspek baru.
+
+**Kalibrasi hasil peningkatan (terkunci di uji):** tanpa lowongan —
+CV kuat tetap **96** (portofolio −1 tertutup lokasi +1; kehilangan poin
+tetap hanya dari sertifikasi & bahasa), CV menengah 58 → **61** (linimasa
+magangnya bersih 3/3 dan aturan netral proyek +2, dikurangi pembagian
+ulang heading/kedalaman −2; kelemahan dasarnya — hasil terukur 0, skill
+sedikit — tetap terlihat), CV lemah tetap **16**. Dengan lowongan —
+CV kuat + lowongan data yang cocok (kecocokan 61%) = **89**, CV yang sama
++ lowongan marketing yang tidak cocok (11%) = **79**: penurunan murni
+terjelaskan aspek kecocokan 2/20. CV menengah + lowongan administrasi
+yang cocok = **60** vs + lowongan marketing = **48**. CV fresh graduate
+yang hanya punya proyek beruraian kini mendapat Pengalaman 10/28
+(bukan nyaris nol).
+
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
 - Akurasi yang terasa benar: hasil cocok dengan intuisi pengguna.

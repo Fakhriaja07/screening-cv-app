@@ -144,6 +144,43 @@ export const CHECK_EXAMPLES: Record<string, CheckExample> = {
     catatan:
       'Tulis bulan/tahun mulai dan selesai untuk tiap pekerjaan dan pendidikan agar urutan perjalananmu jelas bagi rekruter.',
   },
+  lokasi: {
+    sebelum: 'Kontak: andi.pratama@gmail.com | 0812-3456-7890 (tanpa kota domisili)',
+    sesudah: 'Kontak: andi.pratama@gmail.com | 0812-3456-7890 | Domisili: Bandung',
+    catatan:
+      'Banyak rekruter menyaring kandidat berdasarkan domisili sebelum membaca isi CV. Cukup tulis kota tempat tinggalmu saat ini di baris kontak — tidak perlu alamat lengkap.',
+  },
+  linimasa: {
+    sebelum:
+      'Pengalaman\nKasir — Toko Berkah (2015–2016)\nStaf Gudang — PT Logistik Jaya (2021–2022)\n(ada jeda 2017–2020 yang tidak dijelaskan, dan tidak ada peran setelah 2022)',
+    sesudah:
+      'Pengalaman\nStaf Gudang — PT Logistik Jaya (2021–2022)\nKasir — Toko Berkah (2015–2016)\n2017–2020: Mengelola toko online keluarga dan mengikuti pelatihan komputer',
+    catatan:
+      'Kesenjangan bukan otomatis buruk — yang membuat rekruter ragu adalah kesenjangan TANPA penjelasan. Satu baris aktivitas pengisi (kuliah, wirausaha, keluarga, kursus) menutup pertanyaan itu. Cantumkan juga peran terkinimu bila masih berjalan ("2023–Sekarang").',
+  },
+  proyek: {
+    sebelum: '(tidak ada bagian proyek/magang — CV fresh graduate hanya berisi pendidikan dan skill)',
+    sesudah:
+      'Proyek & Magang\n• Magang input data di [nama tempat] ([tahun]): menginput [500+] data pelanggan ke Excel\n• Proyek sekolah: membuat sistem arsip digital perpustakaan dengan Google Drive, dipakai [300] siswa',
+    catatan:
+      'Bagi fresh graduate, proyek, magang, PKL, dan pengalaman organisasi yang diuraikan tugas + hasilnya adalah bukti pengalaman utama. Tulis seperti entri pengalaman kerja: tempat, periode, tugas, dan hasil.',
+  },
+  'relevansi-pengalaman': {
+    sebelum:
+      'Pengalaman (untuk melamar posisi Data Analyst)\nKasir — Toko Berkah (2022–2023)\n• Melayani pembayaran dan mencatat kas harian',
+    sesudah:
+      'Pengalaman (untuk melamar posisi Data Analyst)\nKasir — Toko Berkah (2022–2023)\n• Merekap data penjualan harian ke Excel dan membuat laporan tren mingguan untuk pemilik toko\n• Menganalisis produk terlaris dari data transaksi untuk menentukan stok',
+    catatan:
+      'Rekruter menilai apakah pengalamanmu berkaitan dengan bidang yang dituju. Tonjolkan tugas yang memakai kata kunci bidang target (di contoh ini: data, laporan, analisis) — hanya yang benar-benar kamu kerjakan.',
+  },
+  'kecocokan-lowongan': {
+    sebelum:
+      'Keahlian: Microsoft Excel, komunikasi, kerja tim. (Lowongan meminta: SQL, Python, dashboard, visualisasi data — tidak satu pun tercantum di CV)',
+    sesudah:
+      'Keahlian: Microsoft Excel (PivotTable, VLOOKUP), SQL dasar, Python untuk olah data, Power BI untuk dashboard dan visualisasi data.',
+    catatan:
+      'Baca deskripsi lowongan, temukan kata kunci skill/tugas utamanya, lalu cerminkan kata yang SAMA di CV — hanya untuk hal yang benar-benar kamu kuasai. Sistem ATS dan rekruter sama-sama mencari kata kunci persis itu; memasukkan kata kunci yang tidak kamu kuasai akan terbongkar saat wawancara.',
+  },
   'pengalaman-heading': {
     sebelum: '(riwayat kerja ditulis menyatu dalam satu paragraf tanpa judul bagian)',
     sesudah: 'Pengalaman\nKasir — Toko Berkah (2022–2023)\n• Melayani pembayaran tunai dan QRIS…',

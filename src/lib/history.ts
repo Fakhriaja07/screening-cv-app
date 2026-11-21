@@ -193,6 +193,24 @@ export function aspectDeltas(
   })
 }
 
+// Komposisi aspek bisa berbeda antar-entri: sejak 2026-11-21 ada aspek
+// kondisional "Kecocokan dengan Lowongan" (maks total aspek dasar pun
+// berubah karena penskalaan), dan posisi target mengubah maks beberapa
+// aspek. Fungsi ini mendeteksi perbedaan itu agar UI bisa memberi catatan
+// bahwa selisih per aspek hanya perkiraan — total tetap dibandingkan.
+export function compositionDiffers(
+  a: ScoreHistoryEntry,
+  b: ScoreHistoryEntry,
+): boolean {
+  const ma = new Map(a.aspects.map((x) => [x.name, x.max]))
+  const mb = new Map(b.aspects.map((x) => [x.name, x.max]))
+  if (ma.size !== mb.size) return true
+  for (const [name, max] of ma) {
+    if (mb.get(name) !== max) return true
+  }
+  return false
+}
+
 export function formatHistoryDate(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso

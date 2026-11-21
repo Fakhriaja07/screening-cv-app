@@ -1,6 +1,9 @@
 // Logika penilaian CV berbasis aturan (rule-based), 100% berjalan di browser.
-// Total 100 poin, 6 aspek, 20 pemeriksaan — ditambah 1 pemeriksaan
-// kondisional (relevansi ringkasan, hanya bila posisi target diisi).
+// Total selalu 100 poin. Komposisi dasar: 6 aspek, 23 pemeriksaan —
+// ditambah 2 pemeriksaan kondisional (relevansi ringkasan dan relevansi
+// pengalaman, hanya bila posisi target diisi) dan 1 aspek kondisional
+// (Kecocokan dengan Lowongan, hanya bila deskripsi lowongan diisi; aspek
+// lain diskalakan proporsional ×0,8 sehingga total tetap 100).
 //
 // Riwayat pendekatan: pengetatan berbasis kuota angka (2026-11-19 pagi)
 // DIBATALKAN atas koreksi pengguna. Kekuatan penilaian kini datang dari
@@ -10,6 +13,16 @@
 // kerapian bahasa, dan relevansi ringkasan terhadap posisi target.
 // Kuota pemeriksaan dasar tetap memakai ambang v1 (kata kerja aksi ≥5,
 // angka pencapaian ≥3, skill ≥8, panjang ideal 220–900 kata, label ≥85).
+//
+// Peningkatan standar 2026-11-21 (tetap berbasis aspek, BUKAN kuota):
+// dimensi yang paling menentukan di mata perekrut kini ikut dinilai —
+// kecocokan kata kunci lowongan masuk skor (aspek kondisional di atas),
+// relevansi pengalaman terhadap posisi target, linimasa pengalaman
+// (kesenjangan panjang & kebaruan peran terakhir), lokasi domisili pada
+// aspek Kontak, dan proyek/magang/organisasi sebagai bukti pengalaman
+// (keadilan bagi fresh graduate). Ambang pemeriksaan lama tidak diubah;
+// bobot di dalam aspek Pengalaman & Kontak dibagi ulang untuk memberi
+// ruang bagi dimensi baru, total aspek tetap sama.
 
 export type CheckStatus = 'baik' | 'kurang' | 'buruk'
 
@@ -44,6 +57,9 @@ export interface AnalysisResult {
   strengths: CheckItem[]
   priorities: CheckItem[]
   keywords: KeywordResult | null
+  // true bila deskripsi lowongan diisi DAN menghasilkan kata kunci,
+  // sehingga aspek "Kecocokan dengan Lowongan" ikut menentukan skor.
+  jobMatchApplied: boolean
   roleWarning: string | null
   portfolioUrl: string | null
   wordCount: number
@@ -314,6 +330,8 @@ interface ExperienceBlock {
   complete: boolean
   hasContent: boolean
   startYear: number | null
+  endYear: number | null // null bila peran masih berjalan (saat ini)
+  isCurrent: boolean
 }
 
 // Memecah bagian pengalaman menjadi entri. Jangkar entri = baris BUKAN
@@ -362,12 +380,16 @@ function parseExperienceBlocks(section: string): ExperienceBlock[] {
     }
     const contentCount = body.filter((l) => l.trim() !== '').length
     const info = parseExperienceEntry(`${pendingTitle} ${lines[a]}`)
+    const anchorText = `${pendingTitle} ${lines[a]}`
     pendingTitle = nextTitle
-    const yearMatch = lines[a].match(/\b(19|20)\d{2}\b/)
+    const years = (lines[a].match(/\b(?:19|20)\d{2}\b/g) ?? []).map((y) => parseInt(y, 10))
+    const isCurrent = /\b(sekarang|saat ini|present|hingga kini)\b/i.test(anchorText)
     blocks.push({
       complete: info.hasTitle && info.hasCompany && info.hasPeriod && contentCount >= 1,
       hasContent: contentCount >= 1,
-      startYear: yearMatch ? parseInt(yearMatch[0], 10) : null,
+      startYear: years.length > 0 ? years[0] : null,
+      endYear: isCurrent ? null : years.length > 1 ? years[years.length - 1] : (years[0] ?? null),
+      isCurrent,
     })
   }
   return blocks
@@ -467,6 +489,216 @@ function findTypos(lowerText: string): { wrong: string; right: string }[] {
   return TYPO_WORDS.filter((t) => new RegExp(`\\b${t.wrong}\\b`).test(lowerText))
 }
 
+// ---------- Lokasi domisili (kelengkapan kontak) ----------
+
+// Kota-kota yang umum menjadi domisili pencari kerja di Indonesia.
+// Perekrut menyaring kandidat berdasarkan domisili, jadi kota yang
+// tertera di area kontak adalah kelengkapan kontak yang nyata.
+const CITY_NAMES = [
+  'banda aceh', 'lhokseumawe', 'medan', 'binjai', 'padang sidempuan',
+  'pekanbaru', 'dumai', 'batam', 'tanjungpinang', 'padang', 'bukittinggi',
+  'payakumbuh', 'jambi', 'palembang', 'lubuklinggau', 'prabumulih',
+  'bengkulu', 'bandar lampung', 'metro', 'pangkalpinang', 'serang',
+  'cilegon', 'tangerang selatan', 'tangerang', 'jakarta', 'bogor', 'depok',
+  'bekasi', 'karawang', 'cikarang', 'purwakarta', 'bandung', 'cimahi',
+  'cirebon', 'sukabumi', 'tasikmalaya', 'garut', 'cianjur', 'indramayu',
+  'semarang', 'salatiga', 'magelang', 'surakarta', 'solo', 'tegal',
+  'pekalongan', 'purwokerto', 'cilacap', 'klaten', 'kudus', 'jepara',
+  'yogyakarta', 'jogja', 'sleman', 'bantul', 'surabaya', 'sidoarjo',
+  'gresik', 'malang', 'batu', 'kediri', 'blitar', 'mojokerto', 'pasuruan',
+  'probolinggo', 'jember', 'banyuwangi', 'madiun', 'tulungagung',
+  'tuban', 'lamongan', 'jombang', 'nganjuk', 'ponorogo', 'denpasar',
+  'badung', 'gianyar', 'singaraja', 'mataram', 'bima', 'kupang',
+  'pontianak', 'singkawang', 'palangkaraya', 'banjarmasin', 'banjarbaru',
+  'balikpapan', 'samarinda', 'bontang', 'tarakan', 'manado', 'bitung',
+  'tomohon', 'gorontalo', 'palu', 'makassar', 'parepare', 'palopo',
+  'kendari', 'bau-bau', 'ambon', 'ternate', 'tidore', 'jayapura', 'sorong',
+  'manokwari', 'merauke', 'timika',
+]
+
+const CITY_PATTERN = new RegExp(
+  `\\b(${[...CITY_NAMES]
+    .sort((a, b) => b.length - a.length)
+    .map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')})\\b`,
+  'i',
+)
+
+// Lokasi dicari di (1) baris berlabel domisili/alamat, lalu (2) blok
+// header — baris-baris sebelum heading bagian pertama (area kontak).
+// Kota yang hanya muncul di riwayat sekolah/kantor lama tidak dihitung,
+// karena yang dinilai adalah domisili yang tertera sebagai kontak.
+export function findLocation(text: string): string | null {
+  const lines = text.split('\n')
+  for (const line of lines) {
+    if (/(domisili|alamat|berdomisili)/i.test(line) && !line.includes('@')) {
+      const m = line.match(CITY_PATTERN)
+      if (m) return m[0]
+      const rest = line
+        .replace(/.*?(domisili|alamat|berdomisili)\s*[:\-]?\s*/i, '')
+        .trim()
+      if (/[A-Za-z]{3,}/.test(rest)) return rest.split(/[|,]/)[0].trim()
+    }
+  }
+  for (const line of lines) {
+    if (isHeadingLine(line, ALL_HEADING_WORDS)) break
+    const m = line.match(CITY_PATTERN)
+    if (m) return m[0]
+  }
+  return null
+}
+
+// ---------- Linimasa pengalaman ----------
+
+interface TimelineAssessment {
+  // Skor pada skala maks 3: komponen kesenjangan (0/2) + kebaruan (0/1).
+  score3: number
+  message: string
+}
+
+// Menilai linimasa dari periode entri yang TERBACA: (a) kesenjangan
+// panjang antar-entri tanpa penjelasan, (b) kebaruan — peran terakhir
+// sudah lama berakhir dan tidak ada peran saat ini. Bila tidak ada
+// entri berperiode yang terbaca, pemeriksaan tidak mengarang nilai:
+// skor 0 dengan pesan bahwa linimasa belum bisa dinilai.
+function assessTimeline(blocks: ExperienceBlock[], currentYear: number): TimelineAssessment {
+  const dated = blocks.filter((b) => b.startYear !== null)
+  if (dated.length === 0) {
+    return {
+      score3: 0,
+      message:
+        'Periode tiap entri pengalaman tidak terbaca tahunnya, sehingga linimasa (kesenjangan antarpekerjaan dan kebaruan peran terakhir) belum bisa dinilai. Tulis periode yang jelas pada tiap entri, misalnya (2022–2024) atau (2022–Sekarang).',
+    }
+  }
+  const sorted = [...dated].sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0))
+  const gapIssues: string[] = []
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1]
+    if (prev.isCurrent) continue
+    const prevEnd = prev.endYear ?? prev.startYear ?? 0
+    const gap = (sorted[i].startYear ?? 0) - prevEnd
+    if (gap >= 3) {
+      gapIssues.push(
+        `ada kesenjangan sekitar ${gap} tahun (antara ±${prevEnd} dan ±${sorted[i].startYear}) tanpa penjelasan di CV`,
+      )
+    }
+  }
+  const hasCurrent = dated.some((b) => b.isCurrent)
+  const latestEnd = Math.max(
+    ...dated.map((b) => (b.isCurrent ? currentYear : (b.endYear ?? b.startYear ?? 0))),
+  )
+  const yearsSinceEnd = currentYear - latestEnd
+  const stale = !hasCurrent && yearsSinceEnd >= 4
+
+  const gapScore = gapIssues.length > 0 ? 0 : 2
+  const recencyScore = stale ? 0 : 1
+  const parts: string[] = []
+  if (gapIssues.length > 0) {
+    parts.push(`Linimasa terbaca: ${gapIssues.join('; ')}.`)
+    parts.push(
+      'Kesenjangan bukan otomatis buruk (kuliah, keluarga, wirausaha, merawat orang tua), tetapi tanpa penjelasan rekruter akan bertanya-tanya — tambahkan satu baris aktivitas pengisi pada periode itu.',
+    )
+  }
+  if (stale) {
+    parts.push(
+      `Pengalaman terakhir yang terbaca berakhir sekitar ${latestEnd} (${yearsSinceEnd} tahun lalu) dan tidak ada peran saat ini yang tercantum. Bila kamu masih bekerja/berkegiatan, cantumkan peran terkinimu; bila memang ada jeda, jelaskan singkat aktivitasmu pada periode itu.`,
+    )
+  }
+  if (parts.length === 0) {
+    parts.push(
+      `Linimasa pengalaman terbaca rapi dari ${dated.length} entri berperiode: tidak ada kesenjangan panjang antar-entri${
+        hasCurrent
+          ? ', dan ada peran yang masih berjalan saat ini.'
+          : `, dan peran terakhir berakhir sekitar ${latestEnd} (belum lama).`
+      }`,
+    )
+  }
+  return { score3: gapScore + recencyScore, message: parts.join(' ') }
+}
+
+// ---------- Proyek / magang / organisasi sebagai bukti pengalaman ----------
+
+const PROJECT_HEADING_WORDS = [
+  'proyek', 'project', 'magang', 'internship', 'pengalaman organisasi',
+  'organisasi', 'kepanitiaan', 'praktik kerja', 'pkl', 'volunteer',
+  'relawan', 'kegiatan',
+]
+
+interface ProjectAssessment {
+  score: number // skala maks 2
+  message: string
+}
+
+// Keadilan untuk fresh graduate (pasar utama situs ini): proyek, magang,
+// PKL, dan pengalaman organisasi yang DIURAIKAN isinya adalah bukti
+// pengalaman yang sah. Bila pengalaman kerja formal sudah ada, bagian
+// proyek hanya penguat — ketiadaannya netral, tidak menghukum.
+function assessProjects(text: string, formalEntryCount: number): ProjectAssessment {
+  const section = getSection(text, PROJECT_HEADING_WORDS)
+  const lines = section ? section.split('\n').filter((l) => l.trim() !== '') : []
+  const words = section ? countWords(section) : 0
+  const substantive = lines.length >= 2 || words >= 15
+  if (section && substantive) {
+    return {
+      score: 2,
+      message: `Bagian proyek/magang/organisasi ditemukan dengan uraian isi (${lines.length} baris). Bagi perekrut, proyek dan magang yang diuraikan tugas serta hasilnya adalah bukti pengalaman yang sah — terutama bagi fresh graduate yang belum punya pekerjaan formal.`,
+    }
+  }
+  if (section) {
+    return {
+      score: 1,
+      message:
+        'Bagian proyek/magang/organisasi ditemukan, tetapi isinya sangat singkat (baru judul). Uraikan tugas, tools, dan hasilmu di dalamnya agar terbaca sebagai pengalaman betulan, bukan sekadar daftar nama kegiatan.',
+    }
+  }
+  if (formalEntryCount >= 1) {
+    return {
+      score: 2,
+      message:
+        'Tidak ada bagian proyek/magang/organisasi terpisah, tetapi pengalaman kerja formalmu sudah tercantum sebagai bukti pengalaman utama — pemeriksaan ini netral untukmu; proyek hanya menjadi penguat tambahan bila ada.',
+    }
+  }
+  return {
+    score: 0,
+    message:
+      'Tidak ditemukan pengalaman kerja formal maupun bagian proyek/magang/organisasi. Bagi fresh graduate, proyek kuliah/sekolah, magang, PKL, kepanitiaan, atau kegiatan organisasi yang diuraikan isinya adalah bukti pengalaman utama — tambahkan bagian "Proyek" atau "Magang" berisi tugas dan hasilmu.',
+  }
+}
+
+// ---------- Penskalaan aspek untuk mode lowongan ----------
+
+// Dalam mode lowongan, aspek dasar diskalakan proporsional (faktor 0,8)
+// agar aspek "Kecocokan dengan Lowongan" (maks 20) muat dan total tetap
+// 100. Skor tiap pemeriksaan diskalakan dengan rasio yang sama; selisih
+// pembulatan maks diserap pemeriksaan terbesar di aspeknya.
+function scaleAspect(aspect: AspectResult, factor: number): AspectResult {
+  const targetMax = Math.round(aspect.max * factor)
+  const maxes = aspect.checks.map((c) => Math.max(1, Math.round(c.max * factor)))
+  let diff = targetMax - maxes.reduce((s, x) => s + x, 0)
+  if (aspect.checks.length > 0) {
+    let idx = maxes.indexOf(Math.max(...maxes))
+    while (diff > 0) {
+      maxes[idx] += 1
+      diff -= 1
+    }
+    while (diff < 0 && maxes[idx] > 1) {
+      maxes[idx] -= 1
+      diff += 1
+    }
+  }
+  const checks = aspect.checks.map((c, i) => {
+    const nm = maxes[i]
+    const ns = c.max === 0 ? 0 : Math.min(nm, Math.round((c.score * nm) / c.max))
+    return { ...c, score: ns, max: nm, status: statusOf(ns, nm) }
+  })
+  return {
+    name: aspect.name,
+    max: targetMax,
+    score: checks.reduce((s, c) => s + c.score, 0),
+    checks,
+  }
+}
+
 // ---------- Kata kunci lowongan ----------
 
 const STOPWORDS = new Set([
@@ -543,7 +775,13 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   const linkedinScore = lower.includes('linkedin.com') ? 4 : 0
 
   const portfolioUrl = findPortfolio(text)
-  const portfolioScore = portfolioUrl ? 3 : 0
+  const portfolioScore = portfolioUrl ? 2 : 0
+
+  // Lokasi domisili: perekrut menyaring kandidat berdasarkan domisili,
+  // jadi kota yang tertera di area kontak dinilai sebagai kelengkapan
+  // kontak (1 poin diambil dari link portofolio; total Kontak tetap 20).
+  const location = findLocation(text)
+  const locationScore = location ? 1 : 0
 
   const kontakChecks = [
     makeCheck(
@@ -565,10 +803,16 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
         : 'Tautan LinkedIn tidak ditemukan. Cantumkan URL profil LinkedIn agar rekruter mudah memverifikasi profilmu.',
     ),
     makeCheck(
-      'portofolio', 'Kontak', 'Link portofolio', portfolioScore, 3,
+      'portofolio', 'Kontak', 'Link portofolio', portfolioScore, 2,
       portfolioUrl
         ? `Portofolio terbaca: ${portfolioUrl}`
         : 'Link portofolio tidak ditemukan. Cantumkan alamat GitHub, Behance, Kaggle, atau website portofolio pribadi (kata "portofolio" saja tanpa alamat tidak dihitung).',
+    ),
+    makeCheck(
+      'lokasi', 'Kontak', 'Lokasi domisili', locationScore, 1,
+      location
+        ? `Domisili terbaca: ${location}. Perekrut memang menyaring kandidat berdasarkan domisili, jadi keterangan ini membantu.`
+        : 'Kota domisili tidak ditemukan di area kontak. Cantumkan kota tempat tinggalmu saat ini (mis. "Jakarta" atau "Domisili: Bandung") — banyak rekruter menyaring kandidat berdasarkan domisili sebelum membaca isi CV.',
     ),
   ]
 
@@ -625,16 +869,41 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   }
 
   // ===== PENGALAMAN (maks 28) =====
+  // Bobot di dalam aspek ini dibagi ulang (2026-11-21) untuk memberi
+  // ruang bagi dimensi baru — linimasa, proyek/magang, dan (bila posisi
+  // target diisi) relevansi pengalaman. Ambang/syarat pemeriksaan lama
+  // TIDAK berubah; hanya nilai poinnya diskalakan ke maks barunya.
+  // Tanpa peran: heading 5, kata kerja 5, hasil terukur 6, kedalaman 4,
+  // frasa 3, linimasa 3, proyek 2 = 28.
+  // Dengan peran: kata kerja 4, hasil terukur 5, linimasa 2, dan
+  // relevansi pengalaman 3 menggantikan selisihnya = tetap 28.
+  const verbMax = hasRole ? 4 : 5
+  const measurableMax = hasRole ? 5 : 6
+  const linimasaMax = hasRole ? 2 : 3
+
   const hasExperienceHeading =
     /(pengalaman|experience|pekerjaan|work history|riwayat kerja)/i.test(lower)
-  const experienceHeadingScore = hasExperienceHeading ? 6 : 0
+  const experienceHeadingScore = hasExperienceHeading ? 5 : 0
 
   const verbCount = countActionVerbs(lower)
-  const verbScore = verbCount >= 5 ? 6 : verbCount >= 3 ? 4 : verbCount >= 1 ? 2 : 0
+  const verbScore =
+    verbCount >= 5
+      ? verbMax
+      : verbCount >= 3
+        ? Math.round((verbMax * 2) / 3)
+        : verbCount >= 1
+          ? Math.round(verbMax / 3)
+          : 0
 
   const measurableCount = countMeasurableResults(text)
   const measurableScore =
-    measurableCount >= 3 ? 8 : measurableCount === 2 ? 5 : measurableCount === 1 ? 3 : 0
+    measurableCount >= 3
+      ? measurableMax
+      : measurableCount === 2
+        ? Math.round((measurableMax * 2) / 3)
+        : measurableCount === 1
+          ? Math.round(measurableMax / 3)
+          : 0
 
   // Kedalaman entri: tiap entri dinilai kelengkapannya
   // (jabatan + perusahaan + periode + uraian isi).
@@ -644,7 +913,7 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   let depthScore = 0
   if (expBlocks.length > 0) {
     const ratio = completeEntries / expBlocks.length
-    depthScore = ratio >= 1 ? 5 : ratio >= 0.5 ? 3 : completeEntries >= 1 ? 1 : 0
+    depthScore = ratio >= 1 ? 4 : ratio >= 0.5 ? 2 : completeEntries >= 1 ? 1 : 0
   }
   const depthMessage = !experienceSection
     ? 'Bagian pengalaman tidak ditemukan, jadi kedalaman entri belum bisa dinilai. Buat bagian "Pengalaman" dengan satu entri per pekerjaan.'
@@ -671,30 +940,86 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
       ? 'Tidak ditemukan frasa klise yang umum (mis. "pekerja keras", "bertanggung jawab atas") di dalam CV.'
       : `Ditemukan ${weakPhrases.length} frasa generik tanpa bukti: ${weakPhrases.map((p) => `"${p}"`).join(', ')}. Frasa seperti ini diklaim hampir semua pelamar sehingga tidak membedakanmu — ganti dengan bukti konkret (angka, hasil, contoh pekerjaan).`
 
+  // Linimasa pengalaman: kesenjangan panjang antar-entri dan kebaruan
+  // peran terakhir, dinilai dari periode yang terbaca per entri.
+  const timeline = assessTimeline(expBlocks, new Date().getFullYear())
+  const linimasaScore =
+    linimasaMax === 3 ? timeline.score3 : Math.round((timeline.score3 * linimasaMax) / 3)
+
+  // Proyek/magang/organisasi sebagai bukti pengalaman (fresh graduate).
+  const projectAssessment = assessProjects(text, expBlocks.length)
+
   const pengalamanChecks = [
     makeCheck(
-      'pengalaman-heading', 'Pengalaman', 'Bagian pengalaman kerja', experienceHeadingScore, 6,
+      'pengalaman-heading', 'Pengalaman', 'Bagian pengalaman kerja', experienceHeadingScore, 5,
       hasExperienceHeading
         ? 'Bagian pengalaman kerja ditemukan.'
         : 'Bagian pengalaman kerja tidak ditemukan. Buat bagian "Pengalaman" yang berisi riwayat pekerjaanmu.',
     ),
     makeCheck(
-      'kata-kerja-aksi', 'Pengalaman', 'Kata kerja aksi', verbScore, 6,
+      'kata-kerja-aksi', 'Pengalaman', 'Kata kerja aksi', verbScore, verbMax,
       `Ditemukan ${verbCount} kata kerja aksi berbeda (mis. meningkatkan, mengelola, membangun). ${verbCount >= 5 ? 'Sudah bervariasi.' : 'Gunakan minimal 5 kata kerja aksi berbeda untuk menunjukkan peran aktifmu.'}`,
     ),
     makeCheck(
-      'hasil-terukur', 'Pengalaman', 'Hasil terukur (angka pencapaian)', measurableScore, 8,
+      'hasil-terukur', 'Pengalaman', 'Hasil terukur (angka pencapaian)', measurableScore, measurableMax,
       `Ditemukan ${measurableCount} angka pencapaian (persen, jumlah, atau nominal — tahun dan nomor HP tidak dihitung). ${measurableCount >= 3 ? 'Sudah meyakinkan.' : 'Tambahkan hasil terukur, misalnya "meningkatkan penjualan 30%" atau "mengelola 15 orang".'}`,
     ),
     makeCheck(
-      'kedalaman-entri', 'Pengalaman', 'Kedalaman entri pengalaman', depthScore, 5,
+      'kedalaman-entri', 'Pengalaman', 'Kedalaman entri pengalaman', depthScore, 4,
       depthMessage,
     ),
     makeCheck(
       'frasa-lemah', 'Pengalaman', 'Frasa lemah & klise', weakPhraseScore, 3,
       weakPhraseMessage,
     ),
+    makeCheck(
+      'linimasa', 'Pengalaman', 'Linimasa pengalaman', linimasaScore, linimasaMax,
+      timeline.message,
+    ),
+    makeCheck(
+      'proyek', 'Pengalaman', 'Proyek / magang sebagai bukti pengalaman', projectAssessment.score, 2,
+      projectAssessment.message,
+    ),
   ]
+
+  // Relevansi pengalaman terhadap posisi target (kondisional): jabatan
+  // dan isi pengalaman dinilai keterkaitannya dengan bidang posisi yang
+  // dituju — bukan hanya ringkasannya.
+  if (hasRole) {
+    const expLower = experienceSection.toLowerCase()
+    const titleText = experienceSection
+      .split('\n')
+      .filter((l) => !BULLET_LINE.test(l))
+      .join(' ')
+      .toLowerCase()
+    const titleHits = roleWords.filter((w) => titleText.includes(w))
+    const sectionHits = roleWords.filter((w) => expLower.includes(w))
+    const missingWords = roleWords.filter((w) => !expLower.includes(w))
+    const relevanceExpScore = !experienceSection
+      ? 0
+      : titleHits.length > 0
+        ? 3
+        : sectionHits.length === roleWords.length && roleWords.length > 0
+          ? 2
+          : sectionHits.length > 0
+            ? 1
+            : 0
+    pengalamanChecks.push(
+      makeCheck(
+        'relevansi-pengalaman', 'Pengalaman', 'Relevansi pengalaman dengan posisi target',
+        relevanceExpScore, 3,
+        !experienceSection
+          ? `Posisi target "${role}" belum bisa dinilai relevansinya karena bagian pengalaman belum ada. Pengalaman (termasuk magang dan proyek) yang berkaitan dengan bidang posisi yang dituju adalah bukti terkuat bagi rekruter.`
+          : relevanceExpScore === 3
+            ? `Jabatan di pengalamanmu menyebut kata kunci posisi target "${role}" (${titleHits.map((w) => `"${w}"`).join(', ')}) — relevansinya langsung terlihat oleh rekruter.`
+            : relevanceExpScore === 2
+              ? `Isi pengalamanmu menyebut semua kata kunci posisi target "${role}" (${sectionHits.map((w) => `"${w}"`).join(', ')}), tetapi belum muncul di judul jabatan. Bila memang sesuai, sebutkan bidang itu di judul entri pengalamanmu.`
+              : relevanceExpScore === 1
+                ? `Pengalamanmu baru menyebut sebagian kata kunci posisi target "${role}" (${sectionHits.map((w) => `"${w}"`).join(', ')}); yang belum terbaca: ${missingWords.map((w) => `"${w}"`).join(', ')}. Tonjolkan tugas dan hasil yang paling berkaitan dengan bidang yang dituju.`
+                : `Pengalamanmu tidak menyebut satu pun kata kunci posisi target "${role}" (${roleWords.map((w) => `"${w}"`).join(', ')}). Bila ada tugas/proyek yang berkaitan, tonjolkan; bila memang berpindah bidang, jelaskan jembatannya di ringkasan (kursus, proyek pribadi, magang).`,
+      ),
+    )
+  }
 
   // ===== PENDIDIKAN (maks 12) =====
   const hasEducation =
@@ -915,12 +1240,48 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
     { name: 'Format & ATS', max: 20, checks: formatChecks },
   ]
 
-  const aspects: AspectResult[] = aspectDefs.map((a) => ({
+  const baseAspects: AspectResult[] = aspectDefs.map((a) => ({
     name: a.name,
     max: a.max,
     score: a.checks.reduce((sum, c) => sum + c.score, 0),
     checks: a.checks,
   }))
+
+  // ===== Kata kunci lowongan =====
+  // Bila deskripsi lowongan diisi dan menghasilkan kata kunci, kecocokan
+  // kata kunci menjadi aspek tersendiri yang MASUK skor (maks 20) dan
+  // aspek dasar diskalakan proporsional (×0,8) agar total tetap 100.
+  // Tanpa deskripsi lowongan, komposisi skor persis seperti sebelumnya
+  // dan kata kunci tidak dihitung sama sekali.
+  const jobDesc = options.jobDesc?.trim() ?? ''
+  const keywords = jobDesc ? extractJobKeywords(jobDesc, lower) : null
+  const jobMatchApplied = !!keywords && keywords.total > 0
+
+  let aspects = baseAspects
+  if (jobMatchApplied && keywords) {
+    aspects = baseAspects.map((a) => scaleAspect(a, 0.8))
+    const jobScore = Math.round((keywords.percent / 100) * 20)
+    const missingPreview = keywords.missing.slice(0, 5).join(', ')
+    aspects = [
+      ...aspects,
+      {
+        name: 'Kecocokan dengan Lowongan',
+        max: 20,
+        score: jobScore,
+        checks: [
+          makeCheck(
+            'kecocokan-lowongan', 'Kecocokan dengan Lowongan', 'Kecocokan kata kunci lowongan',
+            jobScore, 20,
+            `Ditemukan ${keywords.found.length} dari ${keywords.total} kata kunci teratas lowongan di CV-mu (${keywords.percent}%). Skor keseluruhanmu kini mencakup kecocokan dengan lowongan ini — aspek ini khusus untuk lowongan yang kamu tempel dan berubah bila lowongannya berganti.${
+              keywords.missing.length > 0
+                ? ` Kata kunci penting yang belum ada: ${missingPreview}${keywords.missing.length > 5 ? ', …' : ''}. Tambahkan hanya kata kunci yang benar-benar sesuai pengalamanmu.`
+                : ' Semua kata kunci teratas lowongan sudah ada di CV-mu.'
+            }`,
+          ),
+        ],
+      },
+    ]
+  }
 
   const allChecks = aspects.flatMap((a) => a.checks)
   const total = aspects.reduce((sum, a) => sum + a.score, 0)
@@ -943,10 +1304,7 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
         (aspectMaxByName.get(b.aspect) ?? 0) - (aspectMaxByName.get(a.aspect) ?? 0),
     )
 
-  // ===== Kata kunci lowongan & peringatan posisi (tidak mengubah skor) =====
-  const jobDesc = options.jobDesc?.trim() ?? ''
-  const keywords = jobDesc ? extractJobKeywords(jobDesc, lower) : null
-
+  // ===== Peringatan posisi (tidak mengubah skor) =====
   let roleWarning: string | null = null
   if (role) {
     const firstWord = role.toLowerCase().match(/[a-z]+/)?.[0] ?? ''
@@ -962,6 +1320,7 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
     strengths,
     priorities,
     keywords,
+    jobMatchApplied,
     roleWarning,
     portfolioUrl,
     wordCount: totalWords,

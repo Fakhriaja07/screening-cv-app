@@ -5,6 +5,7 @@ import {
   addHistoryEntry,
   aspectDeltas,
   clearHistory,
+  compositionDiffers,
   entryFromResult,
   loadHistory,
   scoreDelta,
@@ -187,9 +188,9 @@ check('Riwayat: hapus mengosongkan storage', loadHistory(store).length === 0, 's
 // (ambang label ≥85/≥70/≥50; kata kerja aksi ≥5; hasil terukur ≥3;
 // skill ≥8; panjang ideal 220–900 kata).
 check(
-  'Rombakan aspek: skor patokan terkunci 96/58/16',
-  strong.total === 96 && medium.total === 58 && weak.total === 16,
-  `kuat ${strong.total}, menengah ${medium.total}, lemah ${weak.total} (harus 96/58/16)`,
+  'Standar aspek 2026-11-21: skor patokan tanpa lowongan terkunci 96/61/16',
+  strong.total === 96 && medium.total === 61 && weak.total === 16,
+  `kuat ${strong.total}, menengah ${medium.total}, lemah ${weak.total} (harus 96/61/16; menengah naik dari 58 karena linimasa magangnya bersih 3/3 dan aturan netral proyek +2, dikurangi heading 6→5 dan kedalaman 5→4)`,
 )
 
 check(
@@ -211,19 +212,23 @@ check(
   strong.total < 100 &&
     strongCheck('sertifikasi')?.score === 0 &&
     strongCheck('bahasa')?.score === 1 &&
-    strongCheck('kedalaman-entri')?.score === 5 &&
+    strongCheck('kedalaman-entri')?.score === 4 &&
     strongCheck('frasa-lemah')?.score === 3 &&
     strongCheck('konsistensi-format')?.score === 3 &&
     strongCheck('kerapian-bahasa')?.score === 2 &&
-    strongCheck('hasil-terukur')?.score === 8 &&
-    strongCheck('kata-kerja-aksi')?.score === 6,
-  `kuat: sertifikasi ${strongCheck('sertifikasi')?.score}/3, bahasa ${strongCheck('bahasa')?.score}/2, kedalaman ${strongCheck('kedalaman-entri')?.score}/5, frasa ${strongCheck('frasa-lemah')?.score}/3, konsistensi ${strongCheck('konsistensi-format')?.score}/3, kerapian ${strongCheck('kerapian-bahasa')?.score}/2`,
+    strongCheck('hasil-terukur')?.score === 6 &&
+    strongCheck('kata-kerja-aksi')?.score === 5 &&
+    strongCheck('lokasi')?.score === 1 &&
+    strongCheck('portofolio')?.score === 2 &&
+    strongCheck('linimasa')?.score === 3 &&
+    strongCheck('proyek')?.score === 2,
+  `kuat: sertifikasi ${strongCheck('sertifikasi')?.score}/3, bahasa ${strongCheck('bahasa')?.score}/2, kedalaman ${strongCheck('kedalaman-entri')?.score}/4, frasa ${strongCheck('frasa-lemah')?.score}/3, konsistensi ${strongCheck('konsistensi-format')?.score}/3, kerapian ${strongCheck('kerapian-bahasa')?.score}/2, lokasi ${strongCheck('lokasi')?.score}/1, linimasa ${strongCheck('linimasa')?.score}/3, proyek ${strongCheck('proyek')?.score}/2`,
 )
 
 check(
-  'Rombakan aspek: jumlah pemeriksaan 20 (21 bila posisi target diisi)',
-  strong.aspects.flatMap((a) => a.checks).length === 20 &&
-    analyzeCv(SAMPLE_CV, { targetRole: 'Data Analyst' }).aspects.flatMap((a) => a.checks).length === 21,
+  'Standar aspek: jumlah pemeriksaan 23 (25 bila posisi target diisi)',
+  strong.aspects.flatMap((a) => a.checks).length === 23 &&
+    analyzeCv(SAMPLE_CV, { targetRole: 'Data Analyst' }).aspects.flatMap((a) => a.checks).length === 25,
   `tanpa peran ${strong.aspects.flatMap((a) => a.checks).length}, dengan peran ${analyzeCv(SAMPLE_CV, { targetRole: 'Data Analyst' }).aspects.flatMap((a) => a.checks).length}`,
 )
 
@@ -274,9 +279,9 @@ Kasir — Toko Berkah (2022 - 2023)
 Staf Gudang — PT Logistik Jaya (2021 - 2022)`
 check(
   'Aspek baru: separuh entri lengkap → kedalaman sebagian (campuran)',
-  checkOf(analyzeCv(HALF_DEEP_CV), 'kedalaman-entri')?.score === 3 &&
-    mediumCheck('kedalaman-entri')?.score === 5,
-  `campuran ${checkOf(analyzeCv(HALF_DEEP_CV), 'kedalaman-entri')?.score}/5, menengah (1 entri lengkap) ${mediumCheck('kedalaman-entri')?.score}/5`,
+  checkOf(analyzeCv(HALF_DEEP_CV), 'kedalaman-entri')?.score === 2 &&
+    mediumCheck('kedalaman-entri')?.score === 4,
+  `campuran ${checkOf(analyzeCv(HALF_DEEP_CV), 'kedalaman-entri')?.score}/4, menengah (1 entri lengkap) ${mediumCheck('kedalaman-entri')?.score}/4`,
 )
 
 // --- Pemeriksaan baru: konsistensi format & urutan ---
@@ -438,6 +443,158 @@ check(
   dataSkills.length >= 8 && dataSkills.length <= 12 &&
     getRoleSkills('').skills.length >= 8,
   `Data Analyst ${dataSkills.length} skill, fallback ${getRoleSkills('').skills.length} skill`,
+)
+
+// ---------- Peningkatan standar berbasis aspek (2026-11-21) ----------
+// Dimensi baru yang dinilai: lokasi domisili, linimasa pengalaman,
+// proyek/magang sebagai bukti pengalaman, relevansi pengalaman terhadap
+// posisi target, dan kecocokan lowongan yang masuk skor (aspek
+// kondisional). Kuota pemeriksaan lama tidak diubah.
+
+const JOB_DATA = `Lowongan: Data Analyst
+Kami mencari Data Analyst untuk tim bisnis. Tanggung jawab: menganalisis data penjualan, membuat dashboard dan visualisasi data, menulis query SQL, mengolah data dengan Python dan Excel, membuat laporan untuk manajemen, bekerja sama dengan tim produk dan bisnis, memahami statistik dan data warehouse, pengalaman dengan Power BI atau Tableau menjadi nilai tambah.`
+
+const JOB_MARKETING = `Lowongan: Digital Marketing Specialist
+Kami mencari Digital Marketing Specialist. Tanggung jawab: mengelola media sosial perusahaan, membuat konten kreatif, menjalankan iklan Meta Ads dan Google Ads, optimasi SEO website, copywriting untuk kampanye, email marketing, analisis performa kampanye digital, membangun brand awareness, bekerja sama dengan tim desain dan content creator.`
+
+const JOB_ADMIN = `Lowongan: Staff Administrasi
+Dibutuhkan Staff Administrasi perkantoran. Tanggung jawab: input data dan data entry ke sistem, mengarsipkan dokumen, membuat laporan administrasi, menggunakan Microsoft Excel dan Microsoft Word, mengelola surat dan jadwal, mengetik dokumen, membantu tim administrasi, teliti dan rapi dalam mengelola arsip data perusahaan.`
+
+// --- Lokasi domisili ---
+check(
+  'Standar 2026-11-21: lokasi domisili di area kontak dinilai',
+  strongCheck('lokasi')?.score === 1 &&
+    mediumCheck('lokasi')?.score === 0 &&
+    weakCheck('lokasi')?.score === 0 &&
+    checkOf(analyzeCv('Rina\nrina@mail.com\nDomisili: Bandung'), 'lokasi')?.score === 1,
+  `kuat ${strongCheck('lokasi')?.score}/1 (Jakarta di header), menengah ${mediumCheck('lokasi')?.score}/1, lemah ${weakCheck('lokasi')?.score}/1, label Domisili terbaca`,
+)
+
+// --- Linimasa pengalaman ---
+const GAP_CV = `Dedi Kurnia
+dedi.kurnia@gmail.com | 0812-5555-6666 | Jakarta
+
+Pengalaman
+Kasir — Toko Berkah (2015 - 2016)
+- Melayani pembeli setiap hari.
+Staf Gudang — PT Logistik Jaya (2021 - 2022)
+- Mencatat stok barang masuk dan keluar.`
+const gapResult = analyzeCv(GAP_CV)
+check(
+  'Standar 2026-11-21: linimasa — kesenjangan 5 tahun + peran terakhir basi → 0, tahun disebut di pesan',
+  checkOf(gapResult, 'linimasa')?.score === 0 &&
+    (checkOf(gapResult, 'linimasa')?.message.includes('kesenjangan sekitar 5 tahun') ?? false) &&
+    (checkOf(gapResult, 'linimasa')?.message.includes('2022') ?? false) &&
+    strongCheck('linimasa')?.score === 3 &&
+    mediumCheck('linimasa')?.score === 3 &&
+    weakCheck('linimasa')?.score === 0,
+  `gap ${checkOf(gapResult, 'linimasa')?.score}/3, kuat ${strongCheck('linimasa')?.score}/3 (peran saat ini), menengah ${mediumCheck('linimasa')?.score}/3, lemah ${weakCheck('linimasa')?.score}/3 (periode tak terbaca)`,
+)
+
+// --- Proyek/magang sebagai bukti pengalaman ---
+const FRESH_CV = `Sinta Dewi
+sinta.dewi@gmail.com | 0813-7777-8888 | Bandung
+
+Ringkasan
+Lulusan baru SMK yang aktif berorganisasi dan pernah mengerjakan beberapa proyek sekolah di bidang administrasi dan data.
+
+Proyek
+- Membuat sistem arsip digital untuk perpustakaan sekolah menggunakan Microsoft Excel dan Google Drive, dipakai oleh 300 siswa.
+- Mengelola media sosial OSIS selama satu tahun dan meningkatkan pengikut sebesar 40%.
+
+Pendidikan
+SMK Negeri 2 Bandung — Jurusan Administrasi Perkantoran (2021 - 2024)
+
+Keahlian
+Microsoft Word, Microsoft Excel, Google Workspace, Canva, Input Data, Pengarsipan, Komunikasi, Kerja Tim`
+const fresh = analyzeCv(FRESH_CV)
+check(
+  'Standar 2026-11-21: proyek beruraian = bukti pengalaman fresh graduate; tanpa formal & tanpa proyek = 0',
+  checkOf(fresh, 'proyek')?.score === 2 &&
+    weakCheck('proyek')?.score === 0 &&
+    mediumCheck('proyek')?.score === 2 &&
+    (fresh.aspects.find((a) => a.name === 'Pengalaman')?.score ?? 0) >= 8,
+  `fresh (hanya proyek) proyek ${checkOf(fresh, 'proyek')?.score}/2 & Pengalaman total ${fresh.aspects.find((a) => a.name === 'Pengalaman')?.score}/28, lemah proyek ${weakCheck('proyek')?.score}/2, menengah (formal ada, tanpa bagian proyek → netral) ${mediumCheck('proyek')?.score}/2`,
+)
+
+// --- Relevansi pengalaman terhadap posisi target ---
+check(
+  'Standar 2026-11-21: relevansi pengalaman — jabatan menyebut bidang target (positif) vs tak berkaitan (negatif)',
+  checkOf(strongRole, 'relevansi-pengalaman')?.score === 3 &&
+    checkOf(mediumWrongRole, 'relevansi-pengalaman')?.score === 0 &&
+    strongCheck('relevansi-pengalaman') === undefined,
+  `kuat+Data Analyst ${checkOf(strongRole, 'relevansi-pengalaman')?.score}/3, menengah+Akuntansi ${checkOf(mediumWrongRole, 'relevansi-pengalaman')?.score}/3, tanpa peran: pemeriksaan tidak ada`,
+)
+
+// --- Kecocokan lowongan masuk skor ---
+const strongJobMatch = analyzeCv(SAMPLE_CV, { jobDesc: JOB_DATA })
+const strongJobMismatch = analyzeCv(SAMPLE_CV, { jobDesc: JOB_MARKETING })
+const mediumJobMatch = analyzeCv(MEDIUM_CV, { jobDesc: JOB_ADMIN })
+const mediumJobMismatch = analyzeCv(MEDIUM_CV, { jobDesc: JOB_MARKETING })
+const jobAspectOf = (r: ReturnType<typeof analyzeCv>) =>
+  r.aspects.find((a) => a.name === 'Kecocokan dengan Lowongan')
+check(
+  'Standar 2026-11-21: tanpa deskripsi lowongan → aspek kecocokan tidak muncul, jobMatchApplied=false',
+  strong.jobMatchApplied === false && jobAspectOf(strong) === undefined && strong.aspects.length === 6,
+  `jobMatchApplied ${strong.jobMatchApplied}, jumlah aspek ${strong.aspects.length}`,
+)
+check(
+  'Standar 2026-11-21: mode lowongan — total maks tetap 100 (6 aspek diskalakan 80 + kecocokan 20)',
+  strongJobMatch.jobMatchApplied === true &&
+    strongJobMatch.aspects.reduce((s, a) => s + a.max, 0) === 100 &&
+    jobAspectOf(strongJobMatch)?.max === 20 &&
+    strongJobMatch.aspects.length === 7,
+  `maks total ${strongJobMatch.aspects.reduce((s, a) => s + a.max, 0)}, aspek ${strongJobMatch.aspects.map((a) => `${a.name} ${a.score}/${a.max}`).join(' | ')}`,
+)
+check(
+  'Standar 2026-11-21: CV kuat yang TIDAK cocok dengan lowongan turun, terjelaskan aspek lowongan',
+  strongJobMatch.total === 89 &&
+    strongJobMismatch.total === 79 &&
+    (jobAspectOf(strongJobMatch)?.score ?? -1) === 12 &&
+    (jobAspectOf(strongJobMismatch)?.score ?? -1) === 2 &&
+    strongJobMismatch.total < strong.total - 10,
+  `kuat+data ${strongJobMatch.total} (kecocokan ${jobAspectOf(strongJobMatch)?.score}/20, ${strongJobMatch.keywords?.percent}%), kuat+marketing ${strongJobMismatch.total} (kecocokan ${jobAspectOf(strongJobMismatch)?.score}/20, ${strongJobMismatch.keywords?.percent}%), tanpa lowongan ${strong.total}`,
+)
+check(
+  'Standar 2026-11-21: CV menengah yang cocok dengan lowongan > yang tidak cocok',
+  mediumJobMatch.total === 60 &&
+    mediumJobMismatch.total === 48 &&
+    (jobAspectOf(mediumJobMatch)?.score ?? 0) > (jobAspectOf(mediumJobMismatch)?.score ?? 0),
+  `menengah+admin ${mediumJobMatch.total} (kecocokan ${jobAspectOf(mediumJobMatch)?.score}/20, ${mediumJobMatch.keywords?.percent}%), menengah+marketing ${mediumJobMismatch.total} (kecocokan ${jobAspectOf(mediumJobMismatch)?.score}/20, ${mediumJobMismatch.keywords?.percent}%)`,
+)
+
+// --- Riwayat: komposisi aspek berbeda ditangani anggun ---
+const jobEntry = entryFromResult(strongJobMatch, '', new Date('2026-11-21T10:00:00.000Z'))
+const baseEntry = entryFromResult(strong, '', new Date('2026-11-20T10:00:00.000Z'))
+let historyMixOk = false
+try {
+  const deltas = aspectDeltas(baseEntry, jobEntry)
+  const kecocokanDelta = deltas.find((a) => a.name === 'Kecocokan dengan Lowongan')
+  historyMixOk =
+    jobEntry.aspects.length === 7 &&
+    kecocokanDelta !== undefined &&
+    kecocokanDelta.previous === null &&
+    kecocokanDelta.delta === null &&
+    compositionDiffers(baseEntry, jobEntry) === true &&
+    compositionDiffers(baseEntry, entryFromResult(strong, '')) === false
+} catch {
+  historyMixOk = false
+}
+check(
+  'Standar 2026-11-21: riwayat lintas komposisi (dengan/tanpa aspek lowongan) tidak crash & terdeteksi berbeda',
+  historyMixOk,
+  `entri mode lowongan punya ${jobEntry.aspects.length} aspek; aspek baru berdelta null; compositionDiffers bekerja dua arah`,
+)
+
+// --- Contoh Fase 2 untuk pemeriksaan baru ---
+check(
+  'Standar 2026-11-21: contoh tersedia untuk kecocokan-lowongan, linimasa, relevansi-pengalaman, lokasi, proyek',
+  ['kecocokan-lowongan', 'linimasa', 'relevansi-pengalaman', 'lokasi', 'proyek'].every(
+    (id) => getCheckExample(id) !== null,
+  ),
+  ['kecocokan-lowongan', 'linimasa', 'relevansi-pengalaman', 'lokasi', 'proyek']
+    .map((id) => `${id}: ${getCheckExample(id) ? 'ada' : 'TIDAK ADA'}`)
+    .join(' | '),
 )
 
 if (failures > 0) {

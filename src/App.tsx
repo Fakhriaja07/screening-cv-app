@@ -5,6 +5,7 @@ import {
   addHistoryEntry,
   aspectDeltas,
   clearHistory,
+  compositionDiffers,
   entryFromResult,
   formatHistoryDate,
   loadHistory,
@@ -339,6 +340,9 @@ export default function App() {
       lines.push('', `KECOCOKAN KATA KUNCI LOWONGAN: ${result.keywords.percent}%`)
       lines.push(`Ketemu: ${result.keywords.found.join(', ') || '-'}`)
       lines.push(`Belum ada: ${result.keywords.missing.join(', ') || '-'}`)
+      if (result.jobMatchApplied) {
+        lines.push('Catatan: skor total di atas sudah mencakup aspek Kecocokan dengan Lowongan (20 poin), karena deskripsi lowongan diisi.')
+      }
     }
     if (result.roleWarning) lines.push('', `CATATAN POSISI: ${result.roleWarning}`)
     const text = lines.join('\n')
@@ -380,8 +384,10 @@ export default function App() {
           <span className="badge"><Icon d={I.zap} size={14} /> Penilaian CV Bahasa Indonesia</span>
           <h1>Screening CV</h1>
           <p className="hero-sub">
-            Masukkan CV-mu, dapatkan skor 0–100 dari 6 aspek dan 20 pemeriksaan,
-            lengkap dengan bagian mana saja yang harus diperbaiki. Analisis standar
+            Masukkan CV-mu, dapatkan skor 0–100 dari 6 aspek dan 23 pemeriksaan,
+            lengkap dengan bagian mana saja yang harus diperbaiki. Bila kamu
+            menempel deskripsi lowongan, kecocokan CV-mu dengan lowongan itu
+            ikut menjadi aspek penilaian tersendiri. Analisis standar
             berjalan 100% di browser — file CV tidak diunggah ke server mana pun.
             Ada juga Analisis AI opsional untuk saran penulisan ulang.
           </p>
@@ -393,8 +399,8 @@ export default function App() {
           </div>
           <div className="hero-stats">
             <div><strong>100</strong><span>total poin</span></div>
-            <div><strong>6</strong><span>aspek dinilai</span></div>
-            <div><strong>20</strong><span>pemeriksaan</span></div>
+            <div><strong>6+1</strong><span>aspek dinilai</span></div>
+            <div><strong>23</strong><span>pemeriksaan</span></div>
           </div>
         </div>
       </header>
@@ -411,7 +417,7 @@ export default function App() {
           <span className="step-num">2</span>
           <Icon d={I.target} size={22} />
           <h3>Isi posisi &amp; lowongan</h3>
-          <p>Opsional: posisi target dan deskripsi lowongan untuk cek kata kunci.</p>
+          <p>Opsional: posisi target dan deskripsi lowongan — relevansi dan kecocokannya kini ikut dinilai dalam skor.</p>
         </div>
         <div className="step-card">
           <span className="step-num">3</span>
@@ -565,8 +571,10 @@ export default function App() {
 
                   {prevEntry && (() => {
                     const d = scoreDelta(prevEntry.total, result.total)
-                    const changed = aspectDeltas(prevEntry, entryFromResult(result, targetRole))
+                    const currEntry = entryFromResult(result, targetRole)
+                    const changed = aspectDeltas(prevEntry, currEntry)
                       .filter((a) => a.delta !== null && a.delta !== 0)
+                    const compositionChanged = compositionDiffers(prevEntry, currEntry)
                     return (
                       <div className="compare-box">
                         <p className="compare-main">
@@ -596,6 +604,14 @@ export default function App() {
                           </ul>
                         ) : (
                           <p className="aspect-deltas-note">Semua aspek sama seperti cek terakhir.</p>
+                        )}
+                        {compositionChanged && (
+                          <p className="aspect-deltas-note">
+                            Catatan: komposisi aspek berbeda dari cek terakhir (misalnya
+                            dengan/tanpa aspek Kecocokan dengan Lowongan atau posisi target),
+                            jadi selisih per aspek di atas hanya perkiraan — perbandingan
+                            total skor tetap berlaku.
+                          </p>
                         )}
                       </div>
                     )
@@ -691,11 +707,22 @@ export default function App() {
               {result.keywords && (
                 <div className="card">
                   <h3><Icon d={I.target} size={18} /> Kecocokan Kata Kunci Lowongan</h3>
-                  <p>
-                    <strong>{result.keywords.percent}%</strong> dari {result.keywords.total} kata kunci
-                    teratas lowongan ditemukan di CV-mu. Bagian ini ditampilkan terpisah dan
-                    <strong> tidak mengubah skor utama</strong>.
-                  </p>
+                  {result.jobMatchApplied ? (
+                    <p>
+                      <strong>{result.keywords.percent}%</strong> dari {result.keywords.total} kata kunci
+                      teratas lowongan ditemukan di CV-mu. Karena kamu mengisi deskripsi lowongan,
+                      kecocokan ini <strong>masuk skor utama</strong> sebagai aspek
+                      “Kecocokan dengan Lowongan” (20 poin) — aspek lain diskalakan proporsional
+                      agar total tetap 100. Skor ini khusus untuk lowongan ini dan akan berubah
+                      bila lowongannya berganti.
+                    </p>
+                  ) : (
+                    <p>
+                      Deskripsi lowongan yang kamu tempel tidak menghasilkan kata kunci yang
+                      bisa dicek, jadi kecocokan lowongan <strong>tidak memengaruhi skor</strong> kali ini.
+                      Tempel deskripsi lowongan yang lengkap agar aspek Kecocokan dengan Lowongan bisa dinilai.
+                    </p>
+                  )}
                   <div className="chips-group">
                     <span className="chips-title">Sudah ada:</span>
                     <div className="chips">
@@ -732,7 +759,7 @@ export default function App() {
                     onChange={(e) => setAiConsent(e.target.checked)}
                   />
                   <span>
-                    Saya setuju teks CV dikirim ke OpenRouter (model Gemma 4 31B) untuk dianalisis.
+                    Saya setuju teks CV dikirim ke OpenRouter untuk dianalisis.
                     Teks tidak disimpan oleh Screening CV.
                   </span>
                 </label>
@@ -843,24 +870,29 @@ export default function App() {
             <h3><Icon d={I.book} size={18} /> Bagaimana skor dihitung?</h3>
             <p>
               Penilaian berbasis aturan (rule-based) dengan total <strong>100 poin</strong> dari
-              <strong> 6 aspek</strong> dan <strong>20 pemeriksaan</strong>. Poin hanya diberikan
+              <strong> 6 aspek</strong> dan <strong>23 pemeriksaan</strong>, ditambah pemeriksaan
+              kondisional bila kamu mengisi posisi target, dan satu aspek kondisional bila kamu
+              menempel deskripsi lowongan. Poin hanya diberikan
               untuk bukti isi yang benar-benar ada di CV:
             </p>
             <ul className="rules-list">
-              <li><strong>Kontak — 20 poin:</strong> email valid (7), nomor HP Indonesia (6), LinkedIn (4), link portofolio (3). Format HP 08xx, +62, maupun bertanda kurung dengan spasi/strip/titik tetap terbaca.</li>
+              <li><strong>Kontak — 20 poin:</strong> email valid (7), nomor HP Indonesia (6), LinkedIn (4), link portofolio (2), dan lokasi domisili (1) — perekrut menyaring kandidat berdasarkan domisili, jadi kota yang tertera di area kontak ikut dinilai. Format HP 08xx, +62, maupun bertanda kurung dengan spasi/strip/titik tetap terbaca.</li>
               <li><strong>Ringkasan — 10 poin:</strong> dinilai dari panjang isi ringkasan; 40 kata atau lebih = poin penuh. Bila kamu mengisi posisi target, sebagian poin (3) dialihkan untuk menilai relevansi ringkasan: apakah ringkasanmu menyebut posisi/bidang yang dituju.</li>
-              <li><strong>Pengalaman — 28 poin:</strong> bagian pengalaman (6), variasi kata kerja aksi (6), angka pencapaian seperti persen/jumlah/nominal (8) — tahun dan nomor HP tidak dihitung sebagai pencapaian — ditambah kedalaman entri (5: setiap entri dinilai kelengkapannya: jabatan + perusahaan + periode + uraian isi) dan frasa lemah &amp; klise (3: frasa generik tanpa bukti seperti "pekerja keras" atau "bertanggung jawab atas" menurunkan poin).</li>
+              <li><strong>Pengalaman — 28 poin:</strong> bagian pengalaman (5), variasi kata kerja aksi (5), angka pencapaian seperti persen/jumlah/nominal (6) — tahun dan nomor HP tidak dihitung sebagai pencapaian — kedalaman entri (4: setiap entri dinilai kelengkapannya: jabatan + perusahaan + periode + uraian isi), frasa lemah &amp; klise (3: frasa generik tanpa bukti seperti "pekerja keras" atau "bertanggung jawab atas" menurunkan poin), linimasa pengalaman (3: kesenjangan panjang antar-entri tanpa penjelasan dan peran terakhir yang sudah lama berakhir menurunkan poin), dan proyek/magang/organisasi sebagai bukti pengalaman (2: proyek yang diuraikan isinya dihitung sebagai pengalaman — terutama penting bagi fresh graduate; bila pengalaman formal sudah ada, pemeriksaan ini netral). Bila posisi target diisi, 3 poin dialihkan untuk relevansi pengalaman: apakah jabatan dan isi pengalamanmu berkaitan dengan bidang yang dituju.</li>
               <li><strong>Pendidikan — 12 poin:</strong> pendidikan tercantum (6), IPK/GPA (3), dan sertifikasi &amp; pelatihan sebagai bagian tersendiri (3).</li>
               <li><strong>Keahlian — 10 poin:</strong> daftar skill (8; 8 item atau lebih = poin penuh) dan bahasa asing beserta tingkat kemahirannya (2).</li>
               <li><strong>Format &amp; ATS — 20 poin:</strong> panjang ideal 220–900 kata (8), tahun/periode tercantum (4), struktur bullet (3), konsistensi format &amp; urutan (3: satu format periode untuk semua entri, entri pengalaman diurutkan dari yang terbaru), dan kerapian bahasa (2: kata ganti "saya" yang berlebihan di poin pengalaman dan kata yang sering salah eja dari daftar periksa dasar).</li>
+              <li><strong>Kecocokan dengan Lowongan — 20 poin (kondisional):</strong> hanya muncul bila kamu menempel deskripsi lowongan. Dinilai dari berapa banyak kata kunci teratas lowongan yang ditemukan di CV-mu. Bila aspek ini aktif, keenam aspek di atas diskalakan proporsional (×0,8) sehingga total tetap 100 — dan skormu berarti "kualitas CV + kecocokannya dengan lowongan ini". Tanpa deskripsi lowongan, komposisi skor persis seperti daftar di atas.</li>
             </ul>
             <p>
               Label skor: 85+ Sangat Siap Dilamar • 70–84 Sudah Bagus • 50–69 Perlu Perbaikan •
-              di bawah 50 Perlu Dirombak Dulu. Sejak 2026-11-19 penilaian diperluas lewat
-              aspek yang dinilai — kedalaman entri, frasa klise, sertifikasi, bahasa asing,
-              konsistensi format, kerapian bahasa, dan relevansi ringkasan — bukan lewat
-              menaikkan kuota angka. Cek kata kunci lowongan ditampilkan terpisah dan
-              tidak mengubah skor utama.
+              di bawah 50 Perlu Dirombak Dulu. Standar penilaian dinaikkan lewat
+              aspek yang dinilai, bukan lewat menaikkan kuota angka: 2026-11-19 ditambah
+              kedalaman entri, frasa klise, sertifikasi, bahasa asing, konsistensi format,
+              kerapian bahasa, dan relevansi ringkasan; 2026-11-21 ditambah lokasi domisili,
+              linimasa pengalaman, proyek/magang sebagai bukti pengalaman, relevansi
+              pengalaman terhadap posisi target, dan kecocokan kata kunci lowongan yang
+              kini masuk skor.
             </p>
           </div>
 
