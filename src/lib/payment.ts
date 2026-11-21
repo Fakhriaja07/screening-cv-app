@@ -1,25 +1,46 @@
-// Pembayaran Analisis AI lewat QRIS manual (keputusan pengguna, 2026-11-21).
+// Pembayaran Analisis AI lewat QRIS manual + kode token sekali pakai
+// (keputusan pengguna, 2026-11-21).
 //
 // Analisis standar (rule-based) tetap gratis. Analisis AI berbayar
 // AI_PRICE per analisis, dibayar dengan memindai QRIS GoPay Merchant milik
 // pemilik situs. QRIS statis tidak mengirim notifikasi apa pun ke situs,
-// jadi alurnya berbasis kepercayaan: pengguna membayar, menekan tombol
-// "Saya Sudah Membayar", dan kredit AI di perangkatnya bertambah.
-// Nominal yang dibayar = AI_PRICE + kode unik 2 digit, agar admin mudah
-// mencocokkan pembayaran di riwayat merchant.
+// jadi pembayaran tidak bisa diverifikasi otomatis oleh situs. Alurnya:
+// pengguna membayar nominal tepat (AI_PRICE + kode unik 2 digit, agar
+// admin mudah mencocokkan di riwayat merchant), menghubungi admin dengan
+// bukti bayar, admin memberikan 1 KODE TOKEN, lalu pengguna menukarkan
+// kode itu di kartu Analisis AI untuk mendapat 1 token.
 //
-// Kredit hanya berupa angka di localStorage perangkat pengguna sendiri —
-// bukan data server, bukan bukti pembayaran. Modul ini murni dan bisa
-// diuji: semua fungsi menerima storage opsional (mock di Node).
+// Mekanisme ini menggantikan tombol konfirmasi "Saya Sudah Membayar"
+// yang berbasis kepercayaan — tombol itu dihapus pada 2026-11-21 karena
+// siapa pun bisa mengklaim kredit tanpa membayar (pemilik membuktikannya
+// sendiri). Situs hanya menyimpan hash SHA-256 kode yang sah
+// (src/lib/tokenCodes.ts); kode aslinya dipegang admin di luar repo.
+//
+// Token hanya berupa angka di localStorage perangkat pengguna sendiri —
+// bukan data server. Penanda kode yang sudah ditukar juga tersimpan per
+// perangkat, jadi batas jujurnya: kode yang sama masih bisa ditukar di
+// perangkat lain; perlindungan utamanya adalah kode hanya dibagikan
+// admin setelah pembayaran diperiksa. Modul ini murni dan bisa diuji:
+// semua fungsi menerima storage opsional (mock di Node).
 
 import type { StorageLike } from './history'
+import { TOKEN_CODE_HASHES } from './tokenCodes'
 
 // Harga satu Analisis AI dalam Rupiah. Satu konstanta tunggal agar mudah
 // diganti bila harga berubah.
 export const AI_PRICE = 5000
 
+// Tautan kontak admin (mis. WhatsApp) untuk meminta kode token setelah
+// membayar. Kosong = belum diisi: UI menampilkan langkah menghubungi
+// admin sebagai teks instruksi biasa, tanpa tautan. Isi nanti dengan
+// tautan admin, mis. "https://wa.me/62...".
+export const ADMIN_CONTACT_URL = ''
+
+// Kunci storage saldo TIDAK diganti walau istilahnya kini "token"
+// (sebelumnya "kredit"), agar saldo pengguna lama tidak hilang.
 export const AI_CREDITS_STORAGE_KEY = 'screening-cv:ai-credits:v1'
 export const AI_PENDING_CODE_STORAGE_KEY = 'screening-cv:ai-pending-code:v1'
+export const REDEEMED_CODES_STORAGE_KEY = 'screening-cv:redeemed-codes:v1'
 
 function defaultStorage(): StorageLike | null {
   try {
@@ -37,9 +58,9 @@ export function formatRupiah(amount: number): string {
   return `Rp${new Intl.NumberFormat('id-ID').format(amount)}`
 }
 
-// ---------- Kredit AI ----------
+// ---------- Token AI (saldo) ----------
 
-// Baca saldo kredit. Data rusak/hilang → 0, tidak pernah crash.
+// Baca saldo token. Data rusak/hilang → 0, tidak pernah crash.
 export function getCredits(
   storage: StorageLike | null = defaultStorage(),
 ): number {
@@ -67,7 +88,9 @@ function saveCredits(
   }
 }
 
-// Tambah kredit (bawaan: 1, sesuai satu pembayaran) dan kembalikan saldo baru.
+// Tambah token (bawaan: 1, sesuai satu pembayaran) dan kembalikan saldo
+// baru. Dipakai jalur redeem kode token dan klaim pembayaran otomatis
+// (Midtrans) — TIDAK lagi dari tombol konfirmasi kepercayaan.
 export function addCredit(
   storage: StorageLike | null = defaultStorage(),
   count = 1,
@@ -77,7 +100,7 @@ export function addCredit(
   return next
 }
 
-// Pakai 1 kredit. true bila saldo cukup dan kredit berhasil dikurangi;
+// Pakai 1 token. true bila saldo cukup dan token berhasil dikurangi;
 // false bila saldo 0 (saldo tidak berubah).
 export function consumeCredit(
   storage: StorageLike | null = defaultStorage(),
@@ -147,10 +170,99 @@ export function amountForCode(code: number): number {
   return AI_PRICE + code
 }
 
+// ---------- Kode token sekali pakai (redeem) ----------
+//
+// Pengguna menerima 1 kode dari admin setelah pembayarannya diperiksa.
+// Kode berbentuk "CVAI-XXXXXX". Situs tidak menyimpan kode asli — hanya
+// hash SHA-256-nya (TOKEN_CODE_HASHES). Penukaran: input dinormalisasi
+// (trim + uppercase), di-hash, lalu dicocokkan ke daftar hash. Hash kode
+// yang berhasil ditukar dicatat di perangkat ini; penukaran ulang kode
+// yang sama di perangkat yang sama ditolak.
+
+// Normalisasi input kode: buang spasi tepi dan samakan huruf besar.
+export function normalizeTokenCode(input: string): string {
+  return input.trim().toUpperCase()
+}
+
+// SHA-256 hex memakai Web Crypto (tersedia di browser modern lewat HTTPS
+// dan di Node modern). hashFn bisa disuntikkan untuk pengujian.
+export async function sha256Hex(text: string): Promise<string> {
+  const subtle = (globalThis as { crypto?: Crypto }).crypto?.subtle
+  if (!subtle) throw new Error('Web Crypto tidak tersedia di lingkungan ini.')
+  const digest = await subtle.digest('SHA-256', new TextEncoder().encode(text))
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+const REDEEMED_CODES_MAX = 200
+
+function loadRedeemedHashes(storage: StorageLike | null): string[] {
+  if (!storage) return []
+  try {
+    const raw = storage.getItem(REDEEMED_CODES_STORAGE_KEY)
+    if (!raw) return []
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((v): v is string => typeof v === 'string')
+  } catch {
+    return []
+  }
+}
+
+// Apakah hash kode ini sudah pernah ditukar di perangkat ini?
+export function isCodeRedeemed(
+  codeHash: string,
+  storage: StorageLike | null = defaultStorage(),
+): boolean {
+  return loadRedeemedHashes(storage).includes(codeHash)
+}
+
+// Catat hash kode sebagai sudah ditukar. true bila BARU dicatat;
+// false bila sudah tercatat atau penyimpanan tidak tersedia.
+export function markCodeRedeemed(
+  codeHash: string,
+  storage: StorageLike | null = defaultStorage(),
+): boolean {
+  if (!storage) return false
+  const hashes = loadRedeemedHashes(storage)
+  if (hashes.includes(codeHash)) return false
+  hashes.push(codeHash)
+  try {
+    storage.setItem(REDEEMED_CODES_STORAGE_KEY, JSON.stringify(hashes.slice(-REDEEMED_CODES_MAX)))
+  } catch {
+    // Gagal menyimpan: jangan perlakukan penukaran sebagai berhasil.
+    return false
+  }
+  return true
+}
+
+export type RedeemTokenResult = { ok: true; balance: number } | { ok: false }
+
+// Tukarkan kode token: sukses menambah tepat 1 token dan mengembalikan
+// saldo baru. Gagal (kode tidak dikenal, sudah ditukar di perangkat ini,
+// atau penyimpanan tidak tersedia) tidak mengubah saldo apa pun. Semua
+// kegagalan sengaja disamaratakan — UI menampilkan satu pesan umum.
+export async function redeemTokenCode(
+  input: string,
+  storage: StorageLike | null = defaultStorage(),
+  hashFn: (text: string) => Promise<string> = sha256Hex,
+): Promise<RedeemTokenResult> {
+  const normalized = normalizeTokenCode(input)
+  if (!normalized || !storage) return { ok: false }
+  let hash: string
+  try {
+    hash = (await hashFn(normalized)).toLowerCase()
+  } catch {
+    return { ok: false }
+  }
+  if (!TOKEN_CODE_HASHES.includes(hash)) return { ok: false }
+  if (!markCodeRedeemed(hash, storage)) return { ok: false }
+  return { ok: true, balance: addCredit(storage) }
+}
+
 // ---------- Klaim order Midtrans (pembayaran otomatis) ----------
 //
 // Saat pembayaran otomatis (Midtrans) terkonfirmasi lunas oleh server,
-// frontend menambah kredit lalu mencatat order_id-nya di sini. Catatan
+// frontend menambah token lalu mencatat order_id-nya di sini. Catatan
 // ini mencegah order yang sama diklaim ulang dari browser yang sama
 // (mis. polling ganda atau tombol ditekan dua kali). Ini pengaman sisi
 // klien — keputusan "lunas" sendiri selalu datang dari server situs
@@ -180,8 +292,8 @@ export function isOrderClaimed(
 }
 
 // Catat order sebagai sudah diklaim. Mengembalikan true bila order ini
-// BARU dicatat (kredit boleh ditambah), false bila sudah pernah
-// diklaim sebelumnya (jangan tambah kredit lagi).
+// BARU dicatat (token boleh ditambah), false bila sudah pernah
+// diklaim sebelumnya (jangan tambah token lagi).
 export function markOrderClaimed(
   orderId: string,
   storage: StorageLike | null = defaultStorage(),

@@ -266,22 +266,40 @@ GoPay Merchant milik pengguna — jalur **manual** dulu, bukan payment
 gateway. Analisis standar (rule-based) tetap gratis sepenuhnya.
 
 - Harga **Rp5.000 per Analisis AI** — konstanta tunggal `AI_PRICE` di
-  `src/lib/payment.ts`, mudah diganti. Kredit disimpan di localStorage
-  perangkat pengguna (kunci `screening-cv:ai-credits:v1`); setiap analisis
-  AI yang **berhasil** mengonsumsi 1 kredit, yang gagal/error tidak
-  mengurangi kredit.
+  `src/lib/payment.ts`, mudah diganti. Token (saldo) disimpan di
+  localStorage perangkat pengguna (kunci `screening-cv:ai-credits:v1` —
+  kunci lama dipertahankan agar saldo pengguna lama tidak hilang;
+  istilahnya saja yang diganti dari "kredit" menjadi "token"); setiap
+  analisis AI yang **berhasil** mengonsumsi 1 token, yang gagal/error
+  tidak mengurangi token.
 - Alur bayar: kartu Analisis AI menampilkan gambar QRIS
   (`public/QRIS.jpeg` — file biner, diunggah manual pengguna ke GitHub
   karena push connector hanya menerima teks), nominal persis yang harus
   dibayar = harga + **kode unik 2 digit** (Rp5.0xx; kode membantu admin
   mencocokkan pembayaran di riwayat merchant dan tidak dibulatkan),
-  langkah 1–2–3, lalu tombol "Saya Sudah Membayar" yang menambah kredit.
-- **Sifatnya kepercayaan/manual, dan teks situs tidak mengklaim
-  sebaliknya:** QRIS statis tidak mengirim notifikasi pembayaran ke
-  situs, jadi tidak ada verifikasi otomatis — kredit aktif begitu
-  pengguna menekan tombol konfirmasi, dan pembayaran yang sesungguhnya
-  tercatat di riwayat merchant. Backend `api/analyze-ai.ts` tidak diubah;
-  paywall ini murni sisi klien.
+  lalu langkah 1–2–3: bayar → hubungi admin dengan bukti bayar →
+  masukkan **kode token** yang diberikan admin.
+- **Mekanisme token sekali pakai (diubah 2026-11-21):** semula paywall
+  ini memakai tombol konfirmasi kepercayaan "Saya Sudah Membayar" —
+  tombol itu **dihapus** karena pemilik membuktikan sendiri siapa pun
+  bisa mengklaim kredit tanpa membayar. Penggantinya: admin memeriksa
+  pembayaran (nominal unik di riwayat merchant + bukti dari pengguna),
+  lalu memberikan **1 kode token sekali pakai** (`CVAI-XXXXXX`, batch
+  berisi 50 kode yang dibuat dengan CSPRNG). Situs hanya menyimpan
+  **hash SHA-256** kode-kode itu (`src/lib/tokenCodes.ts`); daftar kode
+  asli dipegang pemilik di luar repo. Pengguna menukarkan kode di kartu
+  AI: input dinormalisasi dan di-hash, dicocokkan ke daftar hash, lalu
+  token bertambah tepat 1. Setelah 5 percobaan gagal berturut-turut,
+  kolom kode dikunci sampai halaman dimuat ulang.
+- **Batas jujurnya, dicatat apa adanya:** QRIS statis tetap tidak
+  mengirim notifikasi ke situs, jadi pemeriksaan pembayaran dilakukan
+  admin secara manual. Penanda kode yang sudah ditukar tersimpan **per
+  perangkat** (localStorage `screening-cv:redeemed-codes:v1`), sehingga
+  kode yang sama secara teknis masih bisa ditukar di perangkat lain —
+  perlindungan utamanya adalah kode hanya dibagikan admin setelah
+  pembayaran diperiksa, dan setiap kode hanya diterbitkan untuk satu
+  pembayaran. Backend `api/analyze-ai.ts` tidak diubah; paywall ini
+  murni sisi klien.
 - Langkah lanjutan bila volume transaksi naik: migrasi ke payment
   gateway (QRIS dinamis per transaksi + webhook) agar pembayaran
   terverifikasi otomatis sebelum kredit diberikan.
@@ -373,6 +391,54 @@ Sandbox maupun Production:
   jalur utama dan bagian manual tersembunyi otomatis.
 - Potongan QRIS Midtrans 0,7% per transaksi (dari Rp5.000 diterima
   bersih ±Rp4.965).
+
+## Rencana cadangan gateway (diteliti 2026-11-21)
+
+Konteks: akun Midtrans pengguna terkendala error login *"Your role
+is not allowed to login"* — akun sudah terdaftar dan terverifikasi
+email, tetapi dugaan kuat tertaut identitas GoBiz/GoPay Merchant
+karena email/HP berada dalam satu kolam identitas
+Midtrans/GoBiz/GoFood, dan pengguna **tidak punya nomor HP kedua**
+untuk pendaftaran ulang. Jalur utama tetap berjalan: support
+Midtrans memperbaiki role akun. Atas permintaan pengguna, agen
+meneliti gateway cadangan di luar ekosistem GoTo; hasilnya:
+
+- **Xendit — DINILAI TIDAK LAYAK untuk kasus ini.** (1) Dokumentasi
+  onboarding Xendit hanya mengizinkan pengajuan perorangan sebagai
+  sub-akun xenPlatform — perorangan tidak bisa membuka akun mandiri
+  tanpa badan usaha. (2) Biaya QRIS Xendit dilaporkan 0,7% + biaya
+  pemrosesan tetap Rp4.000 per transaksi (berlaku mulai 2026-10-01,
+  menurut analisis pihak ketiga atas dokumentasi biaya Xendit) —
+  pada harga Rp5.000 biaya totalnya ±Rp4.035 sehingga sisa bersih
+  hanya ±Rp965. Aktivasi QRIS-nya sendiri diperkirakan 3–5 hari
+  kerja. Xendit baru masuk akal bila kelak berbadan usaha (mis. PT
+  Perorangan) dan/atau harga produk jauh lebih besar.
+- **Tripay — belum bisa dipakai sekarang.** Akun personalnya paling
+  ringan (cukup KTP, tanpa NPWP/badan usaha) dan biaya QRIS-nya
+  Rp750 + 0,7% (bersih ±Rp4.215 dari Rp5.000), TETAPI pendaftaran
+  pengguna baru sedang **ditutup sementara** (pengumuman di situsnya
+  sejak 2026-08-27 dan masih berlaku saat diteliti). Layak dicek
+  ulang berkala.
+- **iPaymu — CADANGAN YANG DITUNJUK bila support Midtrans gagal.**
+  Merchant Personal menerima perorangan (dokumen: KTP, swafoto
+  memegang KTP, halaman depan buku tabungan atas nama yang sama;
+  NPWP kemungkinan diminta menurut FAQ terbaru — konfirmasi saat
+  pendaftaran), tim meninjau dokumen maks 2×24 jam kerja, QRIS
+  dinamis 0,5% untuk nominal sampai Rp100.000 dengan pencairan H+2
+  (dari Rp5.000 bersih ±Rp4.975 — termurah di antara semua opsi),
+  tanpa biaya aktivasi/bulanan, dan berada di luar ekosistem GoTo
+  sehingga nomor HP pengguna yang sekarang tidak bermasalah. Model
+  integrasinya redirect ke halaman pembayaran iPaymu + callback
+  notifikasi; desain kredit & verifikasi server-side yang sudah
+  dibangun untuk Midtrans dapat dibawa, endpoint-nya yang diganti.
+- **Perbandingan bersih per Analisis AI Rp5.000:** Midtrans 0,7% →
+  Rp4.965; iPaymu 0,5% (pencairan H+2) → Rp4.975; Tripay →
+  Rp4.215; Xendit → ±Rp965.
+- **Pemicu eksekusi cadangan:** support Midtrans tidak menyelesaikan
+  masalah role dalam beberapa hari kerja, atau menyatakan tidak
+  bisa. Urutan eksekusinya: daftar iPaymu → verifikasi → bangun
+  endpoint iPaymu → uji sandbox → live. Midtrans tetap bisa menyusul
+  kapan pun role-nya beres (integrasinya sudah jadi).
 
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 

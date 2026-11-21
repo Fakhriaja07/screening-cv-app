@@ -14,6 +14,7 @@ import {
 } from './lib/history'
 import { requestAiAnalysis, requestAiAnalysisStreaming, type AiAnalysis } from './lib/ai'
 import {
+  ADMIN_CONTACT_URL,
   AI_PRICE,
   addCredit,
   amountForCode,
@@ -24,6 +25,7 @@ import {
   getOrCreatePendingCode,
   isOrderClaimed,
   markOrderClaimed,
+  redeemTokenCode,
 } from './lib/payment'
 import {
   checkSnapTransaction,
@@ -203,6 +205,13 @@ export default function App() {
   const [pendingCode, setPendingCode] = useState<number>(() => getOrCreatePendingCode())
   const [payOpen, setPayOpen] = useState(false)
   const [qrisError, setQrisError] = useState(false)
+  // Penukaran kode token: input pengguna, pesan hasil, dan penghitung
+  // kegagalan berturut-turut dalam sesi ini (kolom dikunci setelah 5×
+  // gagal sampai halaman dimuat ulang).
+  const [redeemInput, setRedeemInput] = useState('')
+  const [redeemMsg, setRedeemMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [redeemFails, setRedeemFails] = useState(0)
+  const [redeemBusy, setRedeemBusy] = useState(false)
   // Pembayaran otomatis Midtrans: mode dibaca dari /api/payment-config.
   // null = belum selesai dimuat → perlakukan sebagai "off" (manual).
   const [payConfig, setPayConfig] = useState<PaymentConfig | null>(null)
@@ -318,21 +327,41 @@ export default function App() {
     setPrevEntry(null)
   }
 
-  // QRIS manual: pengguna menyatakan sudah membayar → kredit bertambah 1,
-  // kode unik percobaan ini dibersihkan agar pembelian berikutnya mendapat
-  // kode baru. Tidak ada verifikasi otomatis (QRIS statis tidak mengirim
-  // notifikasi ke situs); pembayaran tercatat di riwayat merchant.
-  function handleConfirmPaid() {
-    setAiCredits(addCredit())
-    clearPendingCode()
-    setPendingCode(getOrCreatePendingCode())
-    setPayOpen(false)
+  // QRIS manual + kode token: pengguna membayar, menghubungi admin dengan
+  // bukti bayar, menerima 1 kode token dari admin, lalu menukarkannya di
+  // sini. Kode divalidasi terhadap hash yang sah; sukses menambah tepat
+  // 1 token dan kode unik nominal dibersihkan agar pembelian berikutnya
+  // mendapat kode baru. (Tombol konfirmasi kepercayaan lama dihapus
+  // 2026-11-21 karena bisa diklaim tanpa membayar.)
+  async function handleRedeemCode() {
+    if (redeemBusy || redeemFails >= 5) return
+    setRedeemBusy(true)
+    try {
+      const res = await redeemTokenCode(redeemInput)
+      if (res.ok) {
+        setAiCredits(res.balance)
+        setRedeemInput('')
+        setRedeemFails(0)
+        setRedeemMsg({
+          ok: true,
+          text: `Kode diterima — token AI kamu bertambah 1 (total sekarang ${res.balance}). Centang persetujuan di bawah, lalu jalankan Analisis AI.`,
+        })
+        clearPendingCode()
+        setPendingCode(getOrCreatePendingCode())
+        setPayOpen(false)
+      } else {
+        setRedeemFails((f) => f + 1)
+        setRedeemMsg({ ok: false, text: 'Kode tidak valid atau sudah dipakai di perangkat ini.' })
+      }
+    } finally {
+      setRedeemBusy(false)
+    }
   }
 
   // Polling status resmi ke server situs (yang menarik status langsung
-  // ke Midtrans) setelah Snap melaporkan selesai/menunggu. Kredit hanya
+  // ke Midtrans) setelah Snap melaporkan selesai/menunggu. Token hanya
   // bertambah bila server menjawab paid — callback Snap semata TIDAK
-  // pernah menambah kredit.
+  // pernah menambah token.
   async function pollAutoPayment(orderId: string) {
     if (autoPollRef.current) return
     autoPollRef.current = true
@@ -349,24 +378,24 @@ export default function App() {
         if (check.paid) {
           if (isOrderClaimed(orderId)) {
             setAutoMsg(
-              'Pembayaran order ini sudah pernah diklaim di browser ini, jadi kredit tidak ditambah dua kali.',
+              'Pembayaran order ini sudah pernah diklaim di browser ini, jadi token tidak ditambah dua kali.',
             )
           } else if (markOrderClaimed(orderId)) {
             setAiCredits(addCredit())
             setPayOpen(false)
             setAutoMsg(
-              'Pembayaran terkonfirmasi oleh Midtrans — kredit AI kamu bertambah 1. Centang persetujuan di bawah, lalu jalankan Analisis AI.',
+              'Pembayaran terkonfirmasi oleh Midtrans — token AI kamu bertambah 1. Centang persetujuan di bawah, lalu jalankan Analisis AI.',
             )
           } else {
             setAutoMsg(
-              'Pembayaran terkonfirmasi oleh Midtrans, tetapi pencatatan klaim gagal di browser ini. Hubungi admin agar kreditmu ditambah manual.',
+              'Pembayaran terkonfirmasi oleh Midtrans, tetapi pencatatan klaim gagal di browser ini. Hubungi admin agar tokenmu ditambah manual.',
             )
           }
           return
         }
         if (check.state === 'failed') {
           setAutoMsg(
-            'Pembayaran berakhir tanpa penyelesaian (kedaluwarsa, dibatalkan, atau ditolak). Tidak ada kredit yang ditambah — silakan coba bayar lagi.',
+            'Pembayaran berakhir tanpa penyelesaian (kedaluwarsa, dibatalkan, atau ditolak). Tidak ada token yang ditambah — silakan coba bayar lagi.',
           )
           return
         }
@@ -402,14 +431,14 @@ export default function App() {
         },
         onError: () => {
           setAutoMsg(
-            'Pembayaran gagal diproses Midtrans. Tidak ada kredit yang ditambah — silakan coba lagi.',
+            'Pembayaran gagal diproses Midtrans. Tidak ada token yang ditambah — silakan coba lagi.',
           )
           setAutoBusy(false)
         },
         onClose: () => {
           if (!autoPollRef.current) {
             setAutoMsg(
-              'Jendela pembayaran ditutup sebelum pembayaran selesai. Kredit hanya bertambah setelah pembayaran terkonfirmasi oleh Midtrans.',
+              'Jendela pembayaran ditutup sebelum pembayaran selesai. Token hanya bertambah setelah pembayaran terkonfirmasi oleh Midtrans.',
             )
             setAutoBusy(false)
           }
@@ -426,7 +455,7 @@ export default function App() {
   async function handleAiAnalyze() {
     if (!aiConsent || aiLoading) return
     if (getCredits() <= 0) {
-      setAiError('Kredit AI kamu habis. Bayar lewat QRIS di atas untuk menambah kredit.')
+      setAiError('Token AI kamu habis. Bayar lewat QRIS di atas untuk menambah token.')
       return
     }
     if (cvText.trim().length < 50) {
@@ -475,7 +504,7 @@ export default function App() {
         setAiError(streamErr instanceof Error ? streamErr.message : 'Analisis AI gagal. Coba lagi nanti.')
       }
     } finally {
-      // Kredit hanya terpotong bila hasil berhasil diterima — tepat satu
+      // Token hanya terpotong bila hasil berhasil diterima — tepat satu
       // kali per analisis, termasuk bila jalur streaming sempat gagal dan
       // cadangan non-streaming yang berhasil (atau sebaliknya).
       if (succeeded && consumeCredit()) {
@@ -546,9 +575,12 @@ export default function App() {
     window.setTimeout(() => setCopiedTemplate(false), 2000)
   }
 
-  // Bagian pembayaran QRIS manual: tampil saat kredit habis, atau saat
-  // pengguna memilih "Beli kredit lagi". Nominal selalu harga + kode unik
-  // yang sedang berlaku untuk pengguna ini.
+  // Bagian pembayaran QRIS manual + kode token: tampil saat token habis,
+  // atau saat pengguna memilih "Beli token lagi". Nominal selalu harga +
+  // kode unik yang sedang berlaku untuk pengguna ini. Token didapat dari
+  // kode yang diberikan admin setelah pembayaran diperiksa — tidak ada
+  // lagi tombol konfirmasi kepercayaan.
+  const redeemLocked = redeemFails >= 5
   const paymentSection = (
     <div className="pay-box">
       <p className="pay-intro">
@@ -579,16 +611,62 @@ export default function App() {
         </span>
       </p>
       <ol className="pay-steps">
-        <li>Pindai kode QRIS di atas dengan aplikasi pembayaranmu.</li>
-        <li>Masukkan nominal tepat {formatRupiah(amountForCode(pendingCode))}, lalu selesaikan pembayaran.</li>
-        <li>Tekan tombol di bawah ini — kredit AI kamu langsung aktif.</li>
+        <li>
+          Pindai kode QRIS di atas dan bayar nominal tepat{' '}
+          {formatRupiah(amountForCode(pendingCode))}.
+        </li>
+        <li>
+          Hubungi admin dan kirim bukti pembayaranmu — setelah terverifikasi,
+          admin akan memberikan <strong>1 kode token</strong> untukmu.
+          {ADMIN_CONTACT_URL ? (
+            <>
+              {' '}
+              <a href={ADMIN_CONTACT_URL} target="_blank" rel="noreferrer">
+                Hubungi admin di sini
+              </a>
+              .
+            </>
+          ) : null}
+        </li>
+        <li>Masukkan kode token dari admin pada kolom di bawah ini, lalu tukarkan.</li>
       </ol>
-      <button className="btn btn-primary" type="button" onClick={handleConfirmPaid}>
-        Saya Sudah Membayar
-      </button>
+      <div className="redeem-row">
+        <input
+          className="redeem-input"
+          type="text"
+          placeholder="CVAI-XXXXXX"
+          value={redeemInput}
+          onChange={(e) => setRedeemInput(e.target.value)}
+          disabled={redeemLocked || redeemBusy}
+          autoComplete="off"
+          autoCapitalize="characters"
+          spellCheck={false}
+          aria-label="Kode token dari admin"
+        />
+        <button
+          className="btn btn-primary"
+          type="button"
+          onClick={handleRedeemCode}
+          disabled={redeemLocked || redeemBusy || !redeemInput.trim()}
+        >
+          {redeemBusy ? 'Memeriksa…' : 'Tukarkan Kode'}
+        </button>
+      </div>
+      {redeemMsg && (
+        <p className={redeemMsg.ok ? 'pay-note redeem-ok' : 'pay-note redeem-err'} role="status">
+          {redeemMsg.text}
+        </p>
+      )}
+      {redeemLocked && (
+        <p className="pay-note">
+          Terlalu banyak percobaan kode yang gagal. Muat ulang halaman ini untuk
+          mencoba lagi.
+        </p>
+      )}
       <p className="pay-note">
-        Kredit aktif seketika setelah kamu menekan tombol ini; pembayaranmu
-        tercatat di riwayat merchant kami.
+        Token diterbitkan oleh admin setelah pembayaranmu terverifikasi dari
+        bukti yang kamu kirim — situs tidak dapat memeriksa pembayaran QRIS
+        secara otomatis. Satu kode berlaku untuk 1 token (1 kali Analisis AI).
       </p>
     </div>
   )
@@ -606,7 +684,7 @@ export default function App() {
         Analisis AI berbayar <strong>{formatRupiah(AI_PRICE)} per analisis</strong> —
         analisis standar (skor dan saran perbaikan di atas) tetap gratis.
         Bayar otomatis lewat <strong>QRIS</strong> (semua e-wallet &amp; m-banking),
-        GoPay, atau ShopeePay melalui <strong>Midtrans</strong>. Kredit bertambah
+        GoPay, atau ShopeePay melalui <strong>Midtrans</strong>. Token bertambah
         hanya setelah pembayaranmu <strong>terverifikasi otomatis oleh
         Midtrans</strong> — tidak perlu konfirmasi manual.
       </p>
@@ -1016,13 +1094,13 @@ export default function App() {
                 {aiCredits > 0 ? (
                   <>
                     <div className="credit-row">
-                      <span className="credit-badge">Kredit AI: {aiCredits} analisis</span>
+                      <span className="credit-badge">Token AI: {aiCredits} analisis</span>
                       <button
                         className="btn btn-plain credit-buy"
                         type="button"
                         onClick={() => setPayOpen((o) => !o)}
                       >
-                        {payOpen ? 'Tutup pembelian' : 'Beli kredit lagi'}
+                        {payOpen ? 'Tutup pembelian' : 'Beli token lagi'}
                       </button>
                     </div>
                     {payOpen && activePaySection}

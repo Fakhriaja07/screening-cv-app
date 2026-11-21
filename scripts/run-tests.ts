@@ -16,10 +16,12 @@ import {
 } from '../src/lib/history'
 import { SAMPLE_CV } from '../src/lib/sampleCv'
 import {
+  ADMIN_CONTACT_URL,
   AI_CLAIMED_ORDERS_STORAGE_KEY,
   AI_CREDITS_STORAGE_KEY,
   AI_PENDING_CODE_STORAGE_KEY,
   AI_PRICE,
+  REDEEMED_CODES_STORAGE_KEY,
   addCredit,
   amountForCode,
   clearPendingCode,
@@ -27,9 +29,17 @@ import {
   formatRupiah,
   getCredits,
   getOrCreatePendingCode,
+  isCodeRedeemed,
   isOrderClaimed,
   markOrderClaimed,
+  normalizeTokenCode,
+  redeemTokenCode,
 } from '../src/lib/payment'
+import { TOKEN_CODE_HASHES } from '../src/lib/tokenCodes'
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   MIDTRANS_ENABLED_PAYMENTS,
   apiHostFor,
@@ -750,6 +760,78 @@ check(
   'QRIS manual: kode unik rusak → dibuat ulang, tidak crash',
   codeFromCorrupt === 1,
   `kode ${codeFromCorrupt}`,
+)
+
+// ---------- Uji kode token sekali pakai (redeem, 2026-11-21) ----------
+check(
+  'Token: daftar hash batch 1 berisi 50 hash SHA-256 unik',
+  TOKEN_CODE_HASHES.length === 50 &&
+    new Set(TOKEN_CODE_HASHES).size === 50 &&
+    TOKEN_CODE_HASHES.every((h) => /^[0-9a-f]{64}$/.test(h)),
+  `${TOKEN_CODE_HASHES.length} hash`,
+)
+check(
+  'Token: kontak admin berupa string (kosong = UI tanpa tautan)',
+  typeof ADMIN_CONTACT_URL === 'string',
+  `ADMIN_CONTACT_URL = "${ADMIN_CONTACT_URL}"`,
+)
+
+// Kode asli batch #1 dibaca dari daftar pemilik di LUAR repo
+// (~/workspace/token-ai-codes-batch1.txt) — tidak pernah masuk repo.
+const batchFilePath = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../token-ai-codes-batch1.txt',
+)
+const batchText = readFileSync(batchFilePath, 'utf8')
+const batchCode1 = batchText.match(/CVAI-[A-Z2-9]{6}/)?.[0] ?? ''
+const batchCode1Hash = createHash('sha256').update(batchCode1, 'utf8').digest('hex')
+check(
+  'Token: kode batch #1 tervalidasi (hash SHA-256-nya ada di daftar situs)',
+  batchCode1 !== '' && TOKEN_CODE_HASHES.includes(batchCode1Hash),
+  `kode #1 ${batchCode1} → hash ${batchCode1Hash.slice(0, 12)}…`,
+)
+check(
+  'Token: normalisasi input = trim + uppercase',
+  normalizeTokenCode(`  ${batchCode1.toLowerCase()} `) === batchCode1 &&
+    normalizeTokenCode('') === '',
+  'huruf kecil & spasi tepi diterima',
+)
+
+const redeemStore = new MockStorage()
+const redeem1 = await redeemTokenCode(` ${batchCode1.toLowerCase()} `, redeemStore)
+check(
+  'Token: redeem kode valid (huruf kecil + spasi) → token bertambah tepat 1',
+  redeem1.ok === true && redeem1.balance === 1 && getCredits(redeemStore) === 1,
+  `hasil ${JSON.stringify(redeem1)}`,
+)
+check(
+  'Token: hash kode tercatat sebagai sudah ditukar di perangkat ini',
+  isCodeRedeemed(batchCode1Hash, redeemStore) &&
+    (redeemStore.getItem(REDEEMED_CODES_STORAGE_KEY) ?? '').includes(batchCode1Hash),
+  `storage: ${redeemStore.getItem(REDEEMED_CODES_STORAGE_KEY)}`,
+)
+const redeem2 = await redeemTokenCode(batchCode1, redeemStore)
+check(
+  'Token: redeem kedua kode yang sama di perangkat ini ditolak, saldo tetap',
+  redeem2.ok === false && getCredits(redeemStore) === 1,
+  `saldo tetap ${getCredits(redeemStore)}`,
+)
+const redeemWrong = await redeemTokenCode('CVAI-ZZZZZZ', redeemStore)
+const redeemGarbage = await redeemTokenCode('bukan-kode-sama-sekali', redeemStore)
+check(
+  'Token: kode salah / bukan kode ditolak, saldo tidak berubah',
+  redeemWrong.ok === false && redeemGarbage.ok === false && getCredits(redeemStore) === 1,
+  'semua bentuk kode tak dikenal ditolak',
+)
+// Batas jujur mekanisme: penanda terpakai tersimpan per perangkat, jadi
+// kode yang sama masih bisa ditukar di perangkat LAIN. Uji ini mengunci
+// perilaku itu agar tidak berubah diam-diam.
+const otherDeviceStore = new MockStorage()
+const redeemOtherDevice = await redeemTokenCode(batchCode1, otherDeviceStore)
+check(
+  'Token: penanda terpakai bersifat per perangkat (perangkat lain = catatan baru)',
+  redeemOtherDevice.ok === true && getCredits(otherDeviceStore) === 1,
+  'sesuai batas jujur yang dicatat di ROADMAP',
 )
 
 // ---------- Uji integrasi Midtrans: mode, order, status, signature (2026-11-21) ----------
