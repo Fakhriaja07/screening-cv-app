@@ -2,6 +2,7 @@
 // Jalankan: npx tsx scripts/run-tests.ts
 import {
   analyzeCv,
+  countWords,
   detectPhone,
   findPortfolio,
   priorityRanks,
@@ -664,6 +665,187 @@ check(
   'Personal: CV kuat tanpa contoh personal linimasa & konsistensi',
   strongPersonal['linimasa'] === undefined && strongPersonal['konsistensi-format'] === undefined,
   `kunci personal CV kuat: [${Object.keys(strongPersonal).join(', ')}]`,
+)
+
+// ---------- Uji perluasan contoh personal: bullet + audit sisa (2026-11-24) ----------
+// Menyusul teguran pengguna bahwa contoh struktur bullet masih generik
+// ("Tugas saya meliputi input data…") padahal uraian di CV pengguna
+// sendiri bisa dikutip — dan ia bingung arti pemeriksaannya. Bullet
+// kini dipersonalisasi + pesan pemeriksaannya memuat definisi gamblang;
+// hasil audit sisa id (panjang, keahlian, bahasa, relevansi-pengalaman)
+// ikut dipersonalisasi dengan aturan anti-karang yang sama.
+
+const wordTokens = (s: string) => s.toLowerCase().match(/[a-zà-ÿ]+/g) ?? []
+
+// --- Struktur bullet: uraian paragraf pengguna sendiri dipecah ---
+const BULLET_CV = `Rudi Hartono
+rudi.hartono@gmail.com | 0812-3333-4444 | linkedin.com/in/rudihartono
+
+Ringkasan
+Staf administrasi berpengalaman dua tahun di perusahaan distribusi, terbiasa mengelola dokumen dan data penjualan harian.
+
+Pengalaman
+Staf Administrasi — PT Distribusi Nusantara (2022 - 2024)
+Tugas saya meliputi input data penjualan ke sistem setiap hari. Saya juga membuat laporan bulanan untuk manajer dan mengarsipkan dokumen transaksi.
+Menjawab telepon dari pelanggan dan mencatat pesanan yang masuk.
+
+Pendidikan
+SMK Negeri 1 Jakarta — Jurusan Administrasi Perkantoran (2019 - 2022)
+
+Keahlian
+Microsoft Word, Microsoft Excel, Input Data, Pengarsipan, Komunikasi, Kerja Tim, Ketelitian, Bahasa Inggris`
+const bulletResult = analyzeCv(BULLET_CV)
+const pBullet = buildPersonalExamples(bulletResult, BULLET_CV, '')['bullet']
+check(
+  'Personal: pesan struktur bullet memuat definisi gamblang, skor & poin tidak berubah',
+  checkOf(bulletResult, 'bullet')?.score === 0 &&
+    checkOf(bulletResult, 'bullet')?.max === 3 &&
+    (checkOf(bulletResult, 'bullet')?.message.includes('satu poin per baris') ?? false) &&
+    (checkOf(bulletResult, 'bullet')?.message.includes('bukan ditulis menyatu dalam satu paragraf panjang') ?? false),
+  `skor ${checkOf(bulletResult, 'bullet')?.score}/${checkOf(bulletResult, 'bullet')?.max}; pesan: "${checkOf(bulletResult, 'bullet')?.message.slice(0, 80)}…"`,
+)
+check(
+  'Personal: bullet mengutip uraian pengalaman pengguna sendiri (bukan contoh generik)',
+  !!pBullet &&
+    pBullet.kutipanAsli.includes('Tugas saya meliputi input data penjualan') &&
+    BULLET_CV.includes(pBullet.kutipanAsli.split('\n')[0]) &&
+    !pBullet.kutipanAsli.includes('Microsoft Excel'),
+  pBullet ? `kutipan: "${pBullet.kutipanAsli.split('\n')[0].slice(0, 60)}…"` : 'contoh personal bullet tidak ada',
+)
+check(
+  'Personal: bullet versi perbaikan = baris bullet dari kata-kata yang sama persis (anti-karang)',
+  !!pBullet &&
+    pBullet.versiPerbaikan.split('\n').length === 3 &&
+    pBullet.versiPerbaikan.split('\n').every((l) => l.startsWith('• ')) &&
+    wordTokens(pBullet.versiPerbaikan).every((w) => wordTokens(pBullet.kutipanAsli).includes(w)) &&
+    !pBullet.versiPerbaikan.includes('Excel') &&
+    pBullet.versiPerbaikan.includes('• Menjawab telepon dari pelanggan'),
+  pBullet
+    ? `sesudah: "${pBullet.versiPerbaikan.replace(/\n/g, ' / ').slice(0, 90)}…"`
+    : 'contoh personal bullet tidak ada',
+)
+// Uraian pengalaman demo sudah berbentuk bullet semua → tidak ada
+// uraian paragraf yang bisa dikutip; contoh bullet tetap generik.
+check(
+  'Personal: bullet tetap generik bila tidak ada uraian paragraf yang bisa dikutip',
+  demoPersonal['bullet'] === undefined && getCheckExample('bullet') !== null,
+  `personal bullet demo: ${demoPersonal['bullet'] === undefined ? 'tidak ada (benar)' : 'ADA (salah)'}`,
+)
+
+// --- Panjang CV: jumlah kata aktual + paragraf terpanjang pengguna ---
+const pPanjangWeak = buildPersonalExamples(weak, WEAK_CV, '')['panjang']
+check(
+  'Personal: panjang CV terlalu pendek menyebut jumlah kata aktual + placeholder perluasan',
+  !!pPanjangWeak &&
+    pPanjangWeak.catatan.includes(`${countWords(WEAK_CV)} kata`) &&
+    pPanjangWeak.catatan.includes('di bawah rentang ideal') &&
+    pPanjangWeak.kutipanAsli.includes('Saya pernah bekerja di toko pakaian') &&
+    pPanjangWeak.versiPerbaikan.includes('[tambahkan uraian pencapaian aslimu'),
+  pPanjangWeak ? `catatan: "${pPanjangWeak.catatan.slice(0, 70)}…"` : 'contoh personal panjang tidak ada',
+)
+const LONG_SENTENCE =
+  'Mengelola arsip dokumen perusahaan dan mencatat setiap transaksi penjualan harian dengan rapi dan teliti untuk laporan manajemen.'
+const LONG_CV = `Nama Panjang
+nama.panjang@gmail.com | 0812-0000-1111
+
+Ringkasan
+${Array(60).fill(LONG_SENTENCE).join(' ')}`
+const longResult = analyzeCv(LONG_CV)
+const pPanjangLong = buildPersonalExamples(longResult, LONG_CV, '')['panjang']
+check(
+  'Personal: panjang CV terlalu panjang menyebut jumlah kata aktual + placeholder pemadatan',
+  !!pPanjangLong &&
+    countWords(LONG_CV) > 900 &&
+    pPanjangLong.catatan.includes(`${countWords(LONG_CV)} kata`) &&
+    pPanjangLong.catatan.includes('melebihi rentang ideal') &&
+    pPanjangLong.kutipanAsli.includes('Mengelola arsip dokumen perusahaan') &&
+    pPanjangLong.versiPerbaikan.includes('[padatkan paragraf ini'),
+  `kata CV panjang: ${countWords(LONG_CV)}; personal: ${pPanjangLong ? 'ada' : 'TIDAK ADA'}`,
+)
+
+// --- Daftar skill: item pengguna sendiri + placeholder kamus peran ---
+const SKILL_CV = `Tono Wijaya
+tono.wijaya@gmail.com | 0812-7777-6666 | linkedin.com/in/tonowijaya
+
+Ringkasan
+Lulusan SMK yang terbiasa melayani pelanggan dan mengoperasikan mesin kasir di toko ritel selama dua tahun.
+
+Pengalaman
+Kasir — Toko Berkah (2022 - 2024)
+- Melayani 80 pembeli setiap hari dan mencatat kas.
+
+Pendidikan
+SMK Negeri 1 Surabaya — Jurusan Akuntansi (2019 - 2022)
+
+Keahlian
+Microsoft Word, Komunikasi, Kerja Tim`
+const skillResult = analyzeCv(SKILL_CV, { targetRole: 'Kasir' })
+const pSkills = buildPersonalExamples(skillResult, SKILL_CV, 'Kasir')['keahlian']
+check(
+  'Personal: keahlian mengutip item pengguna sendiri + placeholder skill dari kamus peran',
+  !!pSkills &&
+    pSkills.kutipanAsli === 'Microsoft Word, Komunikasi, Kerja Tim' &&
+    pSkills.versiPerbaikan.startsWith(pSkills.kutipanAsli) &&
+    pSkills.versiPerbaikan.includes('[Mesin Kasir (POS)]') &&
+    pSkills.catatan.includes('3 item') &&
+    pSkills.catatan.includes('posisi Kasir'),
+  pSkills ? `sesudah: "${pSkills.versiPerbaikan.slice(0, 90)}…"` : 'contoh personal keahlian tidak ada',
+)
+// Tanpa bagian keahlian sama sekali → ketiadaan murni, tetap generik.
+check(
+  'Personal: keahlian tanpa bagian skill sama sekali tetap generik',
+  weakPersonal['keahlian'] === undefined && getCheckExample('keahlian') !== null,
+  `personal keahlian CV lemah: ${weakPersonal['keahlian'] === undefined ? 'tidak ada (benar)' : 'ADA (salah)'}`,
+)
+
+// --- Bahasa asing: disebut tanpa bagian/level → kutip + placeholder ---
+const BAHASA_CV = `Sari Utami
+sari.utami@gmail.com | 0813-9999-8888 | linkedin.com/in/sariutami
+
+Ringkasan
+Staf administrasi berpengalaman tiga tahun yang terbiasa mengarsipkan dokumen dan mampu berbahasa Inggris secara lisan maupun tulisan untuk keperluan kantor.
+
+Pengalaman
+Staf Administrasi — PT Arsip Prima (2021 - 2024)
+- Mengarsipkan 200 dokumen setiap bulan.
+
+Pendidikan
+SMK Negeri 4 Jakarta — Jurusan Administrasi Perkantoran (2018 - 2021)
+
+Keahlian
+Microsoft Word, Microsoft Excel, Pengarsipan, Input Data, Komunikasi, Kerja Tim, Ketelitian, Mengetik Cepat`
+const bahasaResult = analyzeCv(BAHASA_CV)
+const pBahasa = buildPersonalExamples(bahasaResult, BAHASA_CV, '')['bahasa']
+check(
+  'Personal: bahasa mengutip baris sebutan pengguna sendiri + placeholder tingkat kemahiran',
+  !!pBahasa &&
+    checkOf(bahasaResult, 'bahasa')?.score === 1 &&
+    pBahasa.kutipanAsli.includes('berbahasa Inggris') &&
+    pBahasa.versiPerbaikan.includes('Bahasa Inggris — [tingkat kemahiranmu') &&
+    pBahasa.catatan.includes('tingkat kemahirannya'),
+  pBahasa ? `sesudah: "${pBahasa.versiPerbaikan.replace(/\n/g, ' / ')}"` : 'contoh personal bahasa tidak ada',
+)
+// Tidak disebut sama sekali di CV → ketiadaan murni, tetap generik.
+check(
+  'Personal: bahasa yang tidak disebut sama sekali tetap generik',
+  demoPersonal['bahasa'] === undefined && getCheckExample('bahasa') !== null,
+  `personal bahasa demo: ${demoPersonal['bahasa'] === undefined ? 'tidak ada (benar)' : 'ADA (salah)'}`,
+)
+
+// --- Relevansi pengalaman: entri pengguna + kata kunci target hilang ---
+const relExpResult = analyzeCv(DEMO_WEAK_CV, { targetRole: 'Data Analyst' })
+const pRelExp = buildPersonalExamples(relExpResult, DEMO_WEAK_CV, 'Data Analyst')[
+  'relevansi-pengalaman'
+]
+check(
+  'Personal: relevansi-pengalaman mengutip entri pengguna + placeholder kata kunci target yang hilang',
+  !!pRelExp &&
+    checkOf(relExpResult, 'relevansi-pengalaman')?.score === 0 &&
+    pRelExp.kutipanAsli.includes('Kasir — Toko Berkah') &&
+    pRelExp.versiPerbaikan.includes('[tonjolkan tugas atau hasilmu') &&
+    pRelExp.versiPerbaikan.includes('"data"') &&
+    pRelExp.catatan.includes('Data Analyst'),
+  pRelExp ? `kutipan: "${pRelExp.kutipanAsli.split('\n')[0]}"` : 'contoh personal relevansi-pengalaman tidak ada',
 )
 
 check(

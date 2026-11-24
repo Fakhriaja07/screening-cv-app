@@ -229,6 +229,39 @@ function getSection(text: string, targets: string[]): string {
   return collected.join('\n').trim()
 }
 
+// Kata heading bagian keahlian — satu-satunya daftar yang dipakai
+// penilaian dan pembaca item keahlian lain (contoh personal).
+const SKILL_HEADINGS = ['keahlian', 'skill', 'kemampuan', 'kompetensi', 'tools', 'teknologi']
+
+// Item-item pada bagian keahlian, diekstrak dengan cara yang persis
+// sama dengan yang dihitung pemeriksaan daftar keahlian — dipakai
+// penilaian dan lapisan tampilan dari sumber yang sama.
+export function getSkillItems(rawText: string): string[] {
+  const section = getSection(rawText, SKILL_HEADINGS)
+  if (!section) return []
+  return section
+    .split(/[\n,;•·|]+/)
+    .map((s) => s.replace(/^\s*[-*]\s*/, '').trim())
+    .filter((s) => s.length >= 2)
+}
+
+// Pola sebutan kemampuan bahasa asing di dalam teks — pola yang sama
+// yang dipakai pemeriksaan bahasa untuk membedakan "disebut di dalam
+// CV" dari "sudah menjadi bagian tersendiri".
+export const LANGUAGE_MENTION =
+  /(bahasa\s+(inggris|mandarin|jepang|korea|arab|jerman|prancis|belanda|spanyol)|toefl|ielts|jlpt|hsk)/i
+
+// Item-item pada bagian bahasa, diekstrak dengan cara yang persis
+// sama dengan yang dihitung pemeriksaan bahasa asing.
+export function getLanguageItems(rawText: string): string[] {
+  const section = getSection(rawText, ['bahasa', 'language', 'languages'])
+  if (!section) return []
+  return section
+    .split(/[\n,;•·|]+/)
+    .map((s) => s.replace(/^\s*[-*]\s*/, '').trim())
+    .filter((s) => s.length >= 2)
+}
+
 export const BULLET_LINE = /^\s*(?:[-•*·]|\d+[.)])\s+/
 
 // Memecah teks menjadi baris beserta offset awal tiap baris di teks asli.
@@ -1010,6 +1043,16 @@ const ROLE_GENERIC_WORDS = new Set([
   'intern', 'magang', 'freelance', 'konsultan', 'consultant',
 ])
 
+// Kata-kata bermakna dari posisi target (tanpa kata jabatan generik) —
+// ekstraksi yang sama yang dipakai pemeriksaan relevansi ringkasan &
+// pengalaman; dipakai juga lapisan tampilan dari sumber yang sama.
+export function getRoleWords(role: string): string[] {
+  return role
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter((w) => w.length >= 3 && !ROLE_GENERIC_WORDS.has(w))
+}
+
 // ---------- Prioritas perbaikan (sumber bersama) ----------
 
 // Memilih & mengurutkan prioritas perbaikan dari semua pemeriksaan:
@@ -1107,10 +1150,7 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   // Bila posisi target diisi DAN punya kata bermakna, aspek ini dipecah:
   // ringkasan (maks 7) + relevansi ringkasan terhadap posisi target (maks 3).
   const summaryWords = summarySection ? countWords(summarySection) : 0
-  const roleWords = role
-    .toLowerCase()
-    .split(/[^a-z]+/)
-    .filter((w) => w.length >= 3 && !ROLE_GENERIC_WORDS.has(w))
+  const roleWords = getRoleWords(role)
   const hasRole = roleWords.length > 0
 
   const summaryScoreFull =
@@ -1357,31 +1397,14 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   ]
 
   // ===== KEAHLIAN (maks 10) =====
-  const skillsSection = getSection(text, [
-    'keahlian', 'skill', 'kemampuan', 'kompetensi', 'tools', 'teknologi',
-  ])
-  const skillItems = skillsSection
-    ? skillsSection
-        .split(/[\n,;•·|]+/)
-        .map((s) => s.replace(/^\s*[-*]\s*/, '').trim())
-        .filter((s) => s.length >= 2)
-    : []
+  const skillItems = getSkillItems(text)
   const skillCount = skillItems.length
   const skillScore =
     skillCount >= 8 ? 8 : skillCount >= 5 ? 5 : skillCount >= 3 ? 3 : skillCount >= 1 ? 1 : 0
 
   // Bahasa asing sebagai bagian pendukung tersendiri.
-  const langSection = getSection(text, ['bahasa', 'language', 'languages'])
-  const langItems = langSection
-    ? langSection
-        .split(/[\n,;•·|]+/)
-        .map((s) => s.replace(/^\s*[-*]\s*/, '').trim())
-        .filter((s) => s.length >= 2)
-    : []
-  const langMentioned =
-    /(bahasa\s+(inggris|mandarin|jepang|korea|arab|jerman|prancis|belanda|spanyol)|toefl|ielts|jlpt|hsk)/i.test(
-      text,
-    )
+  const langItems = getLanguageItems(text)
+  const langMentioned = LANGUAGE_MENTION.test(text)
   const langScore = langItems.length >= 1 ? 2 : langMentioned ? 1 : 0
 
   const keahlianChecks = [
@@ -1504,7 +1527,7 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
     ),
     makeCheck(
       'bullet', 'Format & ATS', 'Struktur bullet', bulletScore, 3,
-      `Ditemukan ${bulletCount} baris bullet. ${bulletCount >= 6 ? 'Struktur poin-poinnya sudah rapi.' : 'Susun pencapaianmu dalam poin-poin (bullet) agar mudah dipindai rekruter dan sistem ATS.'}`,
+      `Ditemukan ${bulletCount} baris bullet. ${bulletCount >= 6 ? 'Struktur poin-poinnya sudah rapi.' : 'Bullet artinya uraian tugas dan pencapaian ditulis sebagai poin-poin terpisah — satu poin untuk satu tugas/pencapaian, satu poin per baris, diawali tanda • atau - — bukan ditulis menyatu dalam satu paragraf panjang. Susun pencapaianmu dalam poin-poin seperti itu agar mudah dipindai rekruter dan sistem ATS.'}`,
     ),
     makeCheck(
       'konsistensi-format', 'Format & ATS', 'Konsistensi format & urutan', consistencyScore, 3,

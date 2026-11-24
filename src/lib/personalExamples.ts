@@ -22,6 +22,7 @@
 import {
   ACTION_VERBS,
   BULLET_LINE,
+  LANGUAGE_MENTION,
   PERIOD_FAMILY_LABEL,
   SAYA_OVERUSE_THRESHOLD,
   countWords,
@@ -30,13 +31,17 @@ import {
   findWeakPhraseOccurrences,
   getExperienceEntryDetails,
   getExperienceSectionRange,
+  getLanguageItems,
   getPeriodExprs,
+  getRoleWords,
+  getSkillItems,
   getSummarySection,
   getTimelineFacts,
   type AnalysisResult,
   type CheckItem,
   type ExperienceEntryDetail,
 } from './analyze'
+import { checkSkills, getRoleSkills } from './examples'
 
 export interface PersonalExample {
   kutipanAsli: string
@@ -483,6 +488,241 @@ function personalConsistency(result: AnalysisResult, cvText: string): PersonalEx
   }
 }
 
+// ---------- Struktur bullet ----------
+
+// Penanda baris jangkar entri — aturan penanda yang sama dengan parser
+// entri di analyze.ts (baris memuat tahun/periode atau kata penanda
+// peran berjalan). Dipakai untuk memisahkan judul entri dari baris
+// uraian isinya di dalam baris-baris entri.
+const ENTRY_ANCHOR_MARK = /\b(19|20)\d{2}\b|\b(sekarang|saat ini|present)\b/i
+
+// Pecah satu baris uraian menjadi kalimat-kalimatnya. Pemecahan
+// konservatif: hanya pada tanda titik/tanya/seru yang diikuti spasi —
+// kata-kata di dalam kalimat tidak disentuh sama sekali.
+function splitSentences(line: string): string[] {
+  return line
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+}
+
+function personalBullet(result: AnalysisResult, cvText: string): PersonalExample | null {
+  if (!needsFix(result, 'bullet')) return null
+  const entries = getExperienceEntryDetails(cvText)
+  for (const entry of entries) {
+    if (!entry.hasContent) continue
+    const anchorIdx = entry.lines.findIndex((l) => ENTRY_ANCHOR_MARK.test(l))
+    if (anchorIdx === -1) continue
+    // Baris uraian isi entri yang belum berbentuk bullet: baris sesudah
+    // judul/jangkar, bukan bullet, dan cukup panjang untuk disebut
+    // uraian (bukan sisa judul atau baris pendek lain).
+    const narrative = entry.lines
+      .slice(anchorIdx + 1)
+      .map((l) => l.trim())
+      .filter((l) => l !== '' && !BULLET_LINE.test(l) && countWords(l) >= 4)
+    if (narrative.length === 0) continue
+    const picked = narrative.slice(0, 3)
+    const bullets: string[] = []
+    for (const line of picked) {
+      for (const sentence of splitSentences(line)) {
+        bullets.push(`• ${capitalize(sentence)}`)
+      }
+    }
+    if (bullets.length === 0) continue
+    return {
+      kutipanAsli: truncate(picked.join('\n'), 340),
+      versiPerbaikan: truncate(bullets.join('\n'), 560),
+      catatan:
+        'Uraian di atas dikutip dari entri pengalamanmu sendiri. Versi perbaikannya TIDAK menambah atau mengubah satu kata pun — ' +
+        'uraian yang sama hanya dipecah menjadi poin-poin terpisah (satu poin per baris, diawali •), dan baris berisi beberapa kalimat dipecah per kalimat. ' +
+        'Terapkan pola yang sama ke seluruh uraian pengalamanmu.',
+    }
+  }
+  return null
+}
+
+// ---------- Panjang CV ----------
+
+function personalLength(result: AnalysisResult, cvText: string): PersonalExample | null {
+  if (!needsFix(result, 'panjang')) return null
+  const words = countWords(cvText)
+  // Paragraf = blok teks yang dipisahkan baris kosong. Paragraf
+  // terpanjang (berdasarkan jumlah kata) adalah calon kutipan: pada CV
+  // terlalu panjang ia calon pertama yang dipadatkan; pada CV terlalu
+  // pendek ia contoh isi yang perlu diperluas dari pengalaman asli.
+  const blocks = cvText
+    .split(/\n\s*\n/)
+    .map((b) => b.trim())
+    .filter((b) => b !== '')
+  let longest: string | null = null
+  let longestWords = 0
+  for (const b of blocks) {
+    const w = countWords(b)
+    if (w > longestWords) {
+      longestWords = w
+      longest = b
+    }
+  }
+  if (!longest || longestWords < 10) return null
+  const quote = truncate(flatten(longest), 340)
+  if (words > 900) {
+    return {
+      kutipanAsli: quote,
+      versiPerbaikan:
+        `${quote}\n` +
+        '[padatkan paragraf ini: hapus kalimat yang tidak relevan dengan posisi yang kamu lamar — pertahankan hanya tugas dan hasil terpentingmu]',
+      catatan:
+        `CV-mu saat ini berisi ${words} kata — melebihi rentang ideal 220–900 kata (sekitar 1–2 halaman). ` +
+        `Paragraf terpanjangmu (${longestWords} kata) dikutip di atas sebagai calon pertama untuk dipadatkan. ${ANTI_KARANG}`,
+    }
+  }
+  return {
+    kutipanAsli: quote,
+    versiPerbaikan:
+      `${quote}\n` +
+      '[tambahkan uraian pencapaian aslimu dari pengalaman, magang, proyek, atau organisasi — satu poin untuk satu pencapaian]',
+    catatan:
+      `CV-mu saat ini berisi ${words} kata — di bawah rentang ideal 220–900 kata (sekitar 1–2 halaman), jadi terlihat kosong bagi rekruter. ` +
+      `Paragraf terpanjangmu dikutip di atas; perluas isi CV dari pengalaman yang benar-benar kamu jalani. ${ANTI_KARANG}`,
+  }
+}
+
+// ---------- Daftar keahlian / skill ----------
+
+function personalSkills(
+  result: AnalysisResult,
+  cvText: string,
+  targetRole: string,
+): PersonalExample | null {
+  if (!needsFix(result, 'keahlian')) return null
+  // Item dikutip dari ekstraksi yang sama dengan pemeriksaannya — CV
+  // tanpa bagian keahlian sama sekali adalah ketiadaan murni dan tetap
+  // memakai contoh generik.
+  const items = getSkillItems(cvText)
+  if (items.length === 0) return null
+  const quote = items.join(', ')
+  // Tambahan hanya berupa placeholder: skill dari kamus Daftar Skill
+  // untuk posisi target yang BELUM terbaca di CV pengguna.
+  const dict = getRoleSkills(targetRole)
+  const missing = checkSkills(cvText, dict.skills)
+    .filter((s) => !s.present)
+    .map((s) => s.skill)
+    .slice(0, 4)
+  const additions =
+    missing.length > 0
+      ? missing.map((s) => `[${s}]`).join(', ')
+      : '[tambahkan skill lain yang benar-benar kamu kuasai]'
+  const roleNote = !targetRole.trim()
+    ? 'daftar saran umum untuk fresh graduate'
+    : dict.posisiKustom
+      ? `daftar saran umum (kamus belum punya daftar khusus untuk posisi "${dict.label}")`
+      : `daftar saran untuk posisi ${dict.label}`
+  return {
+    kutipanAsli: truncate(quote, 300),
+    versiPerbaikan: truncate(`${quote}, ${additions}`, 460),
+    catatan:
+      `Bagian keahlianmu saat ini memuat ${items.length} item; idealnya minimal 8 skill yang spesifik. ` +
+      `Skill dalam [kurung siku] berasal dari ${roleNote} — cantumkan hanya yang benar-benar kamu kuasai (hapus kurungnya), dan hapus yang tidak kamu kuasai. ${ANTI_KARANG}`,
+  }
+}
+
+// ---------- Bahasa asing ----------
+
+const LANG_LABELS: Record<string, string> = {
+  inggris: 'Bahasa Inggris',
+  mandarin: 'Bahasa Mandarin',
+  jepang: 'Bahasa Jepang',
+  korea: 'Bahasa Korea',
+  arab: 'Bahasa Arab',
+  jerman: 'Bahasa Jerman',
+  prancis: 'Bahasa Prancis',
+  belanda: 'Bahasa Belanda',
+  spanyol: 'Bahasa Spanyol',
+}
+
+function personalLanguage(result: AnalysisResult, cvText: string): PersonalExample | null {
+  if (!needsFix(result, 'bahasa')) return null
+  // Sudah ada bagian bahasa berisi item → pemeriksaan ini lolos; tidak
+  // ada yang perlu dicontohkan.
+  if (getLanguageItems(cvText).length > 0) return null
+  // Kasus yang bisa dikutip: bahasa disebut di dalam teks (barisnya
+  // bisa ditunjuk), tetapi belum menjadi bagian tersendiri. Bila tidak
+  // disebut sama sekali → ketiadaan murni, tetap generik.
+  const line = cvText
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => LANGUAGE_MENTION.test(l))
+  if (!line) return null
+  const m = line.match(LANGUAGE_MENTION)
+  if (!m) return null
+  let label: string
+  if (m[2]) {
+    label = LANG_LABELS[m[2].toLowerCase()] ?? `Bahasa ${capitalize(m[2].toLowerCase())}`
+  } else if (/jlpt/i.test(m[0])) {
+    label = 'Bahasa Jepang'
+  } else if (/hsk/i.test(m[0])) {
+    label = 'Bahasa Mandarin'
+  } else {
+    label = 'Bahasa Inggris' // toefl / ielts
+  }
+  return {
+    kutipanAsli: truncate(line, 240),
+    versiPerbaikan:
+      `Bahasa\n• ${label} — [tingkat kemahiranmu: dasar / menengah / aktif — atau skor tes resminya bila ada]`,
+    catatan:
+      `Kemampuan ${label.toLowerCase()} sudah kamu sebut di dalam CV-mu (baris di atas), tetapi belum menjadi bagian tersendiri beserta tingkat kemahirannya. ` +
+      `Pindahkan ke bagian "Bahasa" seperti versi perbaikan dan isi tingkatnya dengan jujur. ${ANTI_KARANG}`,
+  }
+}
+
+// ---------- Relevansi pengalaman dengan posisi target ----------
+
+function personalExperienceRelevance(
+  result: AnalysisResult,
+  cvText: string,
+  targetRole: string,
+): PersonalExample | null {
+  if (!needsFix(result, 'relevansi-pengalaman')) return null
+  const role = targetRole.trim()
+  if (!role) return null
+  const roleWords = getRoleWords(role)
+  if (roleWords.length === 0) return null
+  const range = getExperienceSectionRange(cvText)
+  if (!range) return null
+  // Kata kunci yang belum terbaca di bagian pengalaman — dihitung dari
+  // bagian dan kata yang sama dengan pemeriksaannya.
+  const sectionLower = cvText.slice(range.start, range.end).toLowerCase()
+  const missing = roleWords.filter((w) => !sectionLower.includes(w))
+  const entries = getExperienceEntryDetails(cvText).filter((e) => e.hasContent)
+  if (entries.length === 0) return null
+  const entry = entries[0]
+  const quote = entry.lines.slice(0, 4).join('\n')
+  if (missing.length > 0) {
+    return {
+      kutipanAsli: truncate(quote, 340),
+      versiPerbaikan:
+        `${truncate(quote, 340)}\n` +
+        `• [tonjolkan tugas atau hasilmu yang berkaitan dengan "${missing.join('" / "')}" — hanya yang benar-benar kamu kerjakan]`,
+      catatan:
+        `Isi pengalamanmu belum menyebut kata kunci posisi target "${role}" (${missing
+          .map((w) => `"${w}"`)
+          .join(', ')}), jadi rekruter dan sistem ATS tidak melihat kaitannya dengan bidang yang kamu tuju. ` +
+        `Entri pertamamu dikutip di atas — tambahkan poin seperti pada versi perbaikan dari tugas yang benar-benar kamu jalani. ${ANTI_KARANG}`,
+    }
+  }
+  // Semua kata kunci sudah ada di isi, tetapi belum di judul jabatan
+  // (skor 2 pada pemeriksaan) — judul entri pengguna yang dikutip.
+  return {
+    kutipanAsli: truncate(quote, 340),
+    versiPerbaikan:
+      `${truncate(quote, 340)}\n` +
+      `[sebutkan bidang "${role}" pada judul entri di atas bila memang sesuai dengan pekerjaanmu, agar relevansinya terbaca sejak judul]`,
+    catatan:
+      `Kata kunci posisi target "${role}" sudah muncul di isi pengalamanmu, tetapi belum terbaca di judul jabatan — ` +
+      'padahal judul adalah yang pertama dipindai rekruter. Kutipan di atas adalah entri pertamamu sendiri.',
+  }
+}
+
 // ---------- Pembangun utama ----------
 
 // Peta id pemeriksaan → contoh personal, hanya untuk pemeriksaan yang
@@ -508,5 +748,10 @@ export function buildPersonalExamples(
   put('relevansi-ringkasan', personalSummaryRelevance(result, cvText, targetRole))
   put('linimasa', personalTimeline(result, cvText))
   put('konsistensi-format', personalConsistency(result, cvText))
+  put('bullet', personalBullet(result, cvText))
+  put('panjang', personalLength(result, cvText))
+  put('keahlian', personalSkills(result, cvText, targetRole))
+  put('bahasa', personalLanguage(result, cvText))
+  put('relevansi-pengalaman', personalExperienceRelevance(result, cvText, targetRole))
   return out
 }

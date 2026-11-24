@@ -760,6 +760,75 @@ linimasa & format kini ikut dipersonalisasi, sehingga total 9 id.
   lolos. Patokan identik: 96/61/16, mode lowongan 89/79 & 60/48,
   fresh graduate 53, demo 55→96.
 
+**Perluasan kedua (2026-11-24, menyusul teguran pengguna bahwa contoh
+struktur bullet masih generik — "Tugas saya meliputi input data…"
+padahal isinya tidak ada di CV-nya — dan ia bingung arti
+pemeriksaannya):** pemeriksaan **bullet** dipersonalisasi, pesan
+pemeriksaannya diperjelas, dan sisa pemeriksaan yang contohnya masih
+generik diaudit satu per satu. Total kini 14 id personal.
+
+- **bullet**: "Sebelum" mengutip uraian pengalaman pengguna sendiri
+  yang belum berbentuk bullet — baris-baris uraian dari entri
+  pengalaman (parser entri yang sama; judul entri dipisahkan dari isi
+  lewat penanda jangkar yang sama). "Sesudah" adalah teks YANG SAMA
+  diubah jadi bullet: transformasi deterministik dan konservatif —
+  setiap baris uraian menjadi satu bullet, baris panjang berisi
+  beberapa kalimat dipecah per kalimat, dan selain pemecahan +
+  huruf kapital awal TIDAK ada kata yang diubah/ditambah. Contoh
+  generik lama menambah "Microsoft Excel" dan "[200+]" — versi
+  personal tidak boleh; uji menegaskan setiap kata di versi perbaikan
+  ada di kutipan aslinya dan tidak ada "Excel" yang menyusup. Bila
+  bagian pengalaman tidak memuat uraian yang bisa dikutip (hanya
+  judul entri, atau uraiannya sudah berbentuk bullet semua), tetap
+  generik.
+- **Pesan pemeriksaan bullet diperjelas** (id & poin tidak berubah,
+  skor tidak berubah): kini memuat satu kalimat definisi gamblang —
+  bullet artinya uraian tugas/pencapaian ditulis sebagai poin-poin
+  terpisah (satu poin untuk satu tugas/pencapaian, satu poin per
+  baris, diawali • atau -), bukan menyatu dalam satu paragraf panjang.
+- **Hasil audit sisa id** (aturan sama: kutipan = kata pengguna
+  sendiri, tambahan hanya placeholder kurung):
+  - **panjang — dipersonalisasi**: catatan menyebut jumlah kata
+    aktual CV pengguna (penghitung `countWords` yang sama) dan
+    "Sebelum" mengutip paragraf terpanjangnya. CV terlalu panjang →
+    paragraf itu calon pemadatan + placeholder perintah memadatkan;
+    CV terlalu pendek → placeholder perluasan dari pengalaman asli.
+  - **keahlian — dipersonalisasi**: "Sebelum" mengutip item bagian
+    skill pengguna sendiri (ekstraksi `getSkillItems` yang sama
+    dengan pemeriksaannya); "Sesudah" = item yang sama + placeholder
+    skill dari kamus Daftar Skill untuk posisi target yang belum
+    terbaca di CV (maks 4, lewat `getRoleSkills` + `checkSkills` yang
+    sama dengan kartu Daftar Skill). Tanpa bagian skill sama sekali
+    → tetap generik (ketiadaan murni).
+  - **bahasa — dipersonalisasi bersyarat**: bila bahasa disebut di
+    dalam teks tanpa bagian/level tersendiri (skor 1), baris
+    sebutannya dikutip dan "Sesudah" menampilkan bentuk bagian
+    "Bahasa" dengan nama bahasa dari teks pengguna sendiri +
+    placeholder tingkat kemahiran. Bila tidak disebut sama sekali →
+    tetap generik. Ekstraksi memakai `getLanguageItems` +
+    `LANGUAGE_MENTION` yang sama dengan pemeriksaannya.
+  - **relevansi-pengalaman — dipersonalisasi**: entri pengalaman
+    pertama pengguna dikutip; kata kunci posisi target yang belum
+    terbaca di bagian pengalaman (dari `getRoleWords` yang sama
+    dengan pemeriksaannya) disebut namanya di catatan, dan "Sesudah"
+    menambah poin placeholder untuk menonjolkan tugas yang berkaitan
+    — hanya yang benar-benar dikerjakan. Bila semua kata kunci sudah
+    ada di isi tetapi belum di judul jabatan (skor 2), placeholdernya
+    menunjuk judul entri yang dikutip itu.
+  - **Tetap generik**: email, hp, linkedin, portofolio, lokasi,
+    pengalaman-heading, pendidikan, ipk, sertifikasi, proyek,
+    periode — ketiadaan murni (pemeriksaan hanya gagal saat sesuatu
+    TIDAK ada di CV, jadi tidak ada bukti yang bisa dikutip) atau
+    buktinya tidak bisa ditunjuk andal. kecocokan-lowongan juga tetap
+    generik: contoh personal tidak menerima deskripsi lowongan.
+- Perubahan analyze.ts: ekspor bersama baru `getSkillItems`,
+  `getLanguageItems`, `LANGUAGE_MENTION`, `getRoleWords` —
+  `analyzeCv` di-refactor memakainya dengan perilaku identik (satu
+  sumber ekstraksi untuk penilaian & tampilan), plus teks pesan
+  bullet di atas. 11 uji baru; total 148 uji lolos. Patokan identik:
+  96/61/16, mode lowongan 89/79 & 60/48, fresh graduate 53, demo
+  55→96.
+
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
 - Akurasi yang terasa benar: hasil cocok dengan intuisi pengguna.
