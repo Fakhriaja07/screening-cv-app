@@ -299,6 +299,7 @@ export default function App() {
   // di memori halaman (state), tidak pernah disimpan ke localStorage.
   const [analyzedText, setAnalyzedText] = useState('')
   const [analyzedRole, setAnalyzedRole] = useState('')
+  const [analyzedJobDesc, setAnalyzedJobDesc] = useState('')
   // Tanggal analisis terakhir — dipakai di kepala laporan PDF unduhan.
   const [analysisDate, setAnalysisDate] = useState<Date | null>(null)
   const [fileName, setFileName] = useState('')
@@ -344,6 +345,10 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const resultRef = useRef<HTMLDivElement>(null)
   const aiStartRef = useRef(0)
+  // Penanda generasi analisis AI yang sedang berjalan: handleReset
+  // menaikkannya, sehingga hasil AI yang tiba SETELAH pengguna menekan
+  // reset dibuang (tidak tampil, token tidak terpotong) — audit 2026-11-24.
+  const aiRunRef = useRef(0)
   const thinkingBodyRef = useRef<HTMLDivElement>(null)
 
   // Penghitung detik berjalan selama analisis AI berlangsung.
@@ -401,6 +406,7 @@ export default function App() {
     setResult(res)
     setAnalyzedText(cvText)
     setAnalyzedRole(targetRole)
+    setAnalyzedJobDesc(jobDesc)
     setAnalysisDate(new Date())
     // Fase 1: simpan skor ke riwayat perangkat (hanya skor — teks CV tidak
     // disimpan) dan ingat entri sebelumnya untuk perbandingan sebelum → sesudah.
@@ -424,12 +430,16 @@ export default function App() {
   }
 
   function handleReset() {
+    // Batalkan secara logis analisis AI yang mungkin masih berjalan:
+    // hasilnya akan dibuang saat tiba (lihat handleAiAnalyze).
+    aiRunRef.current += 1
     setCvText('')
     setTargetRole('')
     setJobDesc('')
     setResult(null)
     setAnalyzedText('')
     setAnalyzedRole('')
+    setAnalyzedJobDesc('')
     setAnalysisDate(null)
     setFileName('')
     setError('')
@@ -574,10 +584,20 @@ export default function App() {
       setAiError('Token AI kamu habis. Bayar lewat QRIS di atas untuk menambah token.')
       return
     }
-    if (cvText.trim().length < 50) {
+    // Audit 2026-11-24: bila hasil standar sedang tampil, AI menganalisis
+    // SNAPSHOT yang menghasilkan hasil itu (analyzedText/analyzedRole/
+    // analyzedJobDesc) — bukan isi kotak teks saat ini yang mungkin sudah
+    // diedit pengguna sesudahnya. Tanpa ini, konteks perbaikan (dari hasil
+    // tampil) bisa tidak cocok dengan teks yang dikirim ke AI.
+    const sourceText = result ? analyzedText : cvText
+    const sourceRole = result ? analyzedRole : targetRole
+    const sourceJobDesc = result ? analyzedJobDesc : jobDesc
+    if (sourceText.trim().length < 50) {
       setAiError('Teks CV terlalu pendek untuk dianalisis AI. Lengkapi dulu teks CV-nya.')
       return
     }
+    const runId = ++aiRunRef.current
+    const isStale = () => aiRunRef.current !== runId
     setAiLoading(true)
     setAiError('')
     setAiThinking('')
@@ -591,7 +611,12 @@ export default function App() {
     const perbaikan = result
       ? buildAiFixContext(result, buildPersonalExamples(result, analyzedText, analyzedRole))
       : []
-    const input = { cvText, targetRole, jobDesc, ...(perbaikan.length ? { perbaikan } : {}) }
+    const input = {
+      cvText: sourceText,
+      targetRole: sourceRole,
+      jobDesc: sourceJobDesc,
+      ...(perbaikan.length ? { perbaikan } : {}),
+    }
     let succeeded = false
     try {
       const data = await requestAiAnalysisStreaming(input, {
@@ -603,22 +628,32 @@ export default function App() {
           })
         },
       })
-      setAiResult(data)
-      succeeded = true
+      // Pengguna menekan reset selagi analisis berjalan → hasil dibuang.
+      if (!isStale()) {
+        setAiResult(data)
+        succeeded = true
+      }
     } catch (streamErr) {
       // Streaming gagal — sebelum event pertama (jaringan/HTTP error)
       // ATAU di tengah aliran (model kehabisan batas waktu hanya untuk
       // berpikir sebelum JSON selesai): coba sekali mode non-streaming
       // sebagai cadangan. Token tetap hanya terpotong bila salah satu
       // jalur berhasil, jadi cadangan ini tidak merugikan pengguna.
-      try {
-        const data = await requestAiAnalysis(input)
-        setAiResult(data)
-        succeeded = true
-      } catch (fallbackErr) {
-        setAiError(
-          fallbackErr instanceof Error ? fallbackErr.message : 'Analisis AI gagal. Coba lagi nanti.',
-        )
+      // Bila pengguna sudah menekan reset, cadangan tidak perlu dijalankan.
+      if (!isStale()) {
+        try {
+          const data = await requestAiAnalysis(input)
+          if (!isStale()) {
+            setAiResult(data)
+            succeeded = true
+          }
+        } catch (fallbackErr) {
+          if (!isStale()) {
+            setAiError(
+              fallbackErr instanceof Error ? fallbackErr.message : 'Analisis AI gagal. Coba lagi nanti.',
+            )
+          }
+        }
       }
     } finally {
       // Token hanya terpotong bila hasil berhasil diterima — tepat satu
@@ -654,7 +689,9 @@ export default function App() {
     const { buildReportPdf } = await import('./lib/pdf')
     const { blob, fileName } = buildReportPdf(result, {
       ai: aiResult,
-      targetRole,
+      // Posisi pada laporan = posisi saat analisis dijalankan (snapshot),
+      // bukan isi kolom posisi yang mungkin sudah diedit sesudahnya.
+      targetRole: analyzedRole,
       date: analysisDate ?? new Date(),
     })
     downloadBlob(blob, fileName)
@@ -1211,7 +1248,7 @@ export default function App() {
                         className="btn btn-primary"
                         type="button"
                         onClick={handleAiAnalyze}
-                        disabled={!aiConsent || aiLoading || cvText.trim().length < 50}
+                        disabled={!aiConsent || aiLoading || (result ? analyzedText : cvText).trim().length < 50}
                       >
                         <Icon d={I.spark} size={16} />
                         {aiLoading ? 'Menganalisis dengan AI…' : aiResult ? 'Analisis Ulang dengan AI' : 'Analisis dengan AI'}

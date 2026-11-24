@@ -44,6 +44,85 @@ export interface AiRequestInput {
   perbaikan?: AiCheckContext[]
 }
 
+// Batas waktu sisi klien (audit 2026-11-24: sebelumnya fetch tanpa
+// batas sama sekali — koneksi yang menggantung membuat status
+// "menganalisis" berputar selamanya). Nilai di atas batas server
+// (aliran 150 detik; non-streaming 75 detik × maks 3 percobaan) dengan
+// margin, agar hanya koneksi yang benar-benar mati yang diputus di sini.
+const NONSTREAM_CLIENT_TIMEOUT_MS = 240_000
+const STREAM_CLIENT_TIMEOUT_MS = 200_000
+
+const INVALID_RESULT_MESSAGE =
+  'Jawaban AI tidak lengkap atau kosong. Coba lagi — tokenmu tidak terpakai bila analisis gagal.'
+
+// Validasi bentuk hasil AI di sisi klien (audit 2026-11-24: sebelumnya
+// respons 200 langsung dipercaya lewat cast `as AiAnalysis`, sehingga
+// JSON sampah/null/kosong pun dianggap sukses dan token terpotong).
+// Aturannya meniru server: hasil harus memuat isi substantif, item
+// penulisan ulang/perbaikan yang kosong dibuang, dan bila daftar
+// pemeriksaan gagal dikirim maka perbaikanLengkap tidak boleh kosong.
+export function validateAiAnalysis(data: unknown, requestedFixCount = 0): AiAnalysis {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error(INVALID_RESULT_MESSAGE)
+  }
+  const obj = data as Record<string, unknown>
+  const asStr = (v: unknown): string => (typeof v === 'string' ? v : '')
+
+  const rewrites: AiRewrite[] = []
+  if (Array.isArray(obj.saranPenulisanUlang)) {
+    for (const item of obj.saranPenulisanUlang) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) continue
+      const it = item as Record<string, unknown>
+      const saran = asStr(it.saran).trim()
+      if (!saran) continue
+      rewrites.push({ asli: asStr(it.asli), saran, alasan: asStr(it.alasan) })
+    }
+  }
+  const kekurangan: string[] = []
+  if (Array.isArray(obj.kekurangan)) {
+    for (const item of obj.kekurangan) {
+      const s = asStr(item).trim()
+      if (s) kekurangan.push(s)
+    }
+  }
+  const fixes: AiFix[] = []
+  if (Array.isArray(obj.perbaikanLengkap)) {
+    for (const item of obj.perbaikanLengkap) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) continue
+      const it = item as Record<string, unknown>
+      const sesudah = asStr(it.sesudah).trim()
+      if (!sesudah) continue
+      const idPemeriksaan = asStr(it.idPemeriksaan).trim()
+      fixes.push({
+        idPemeriksaan,
+        judul: asStr(it.judul).trim() || idPemeriksaan,
+        sebelum: asStr(it.sebelum),
+        sesudah,
+        catatan: asStr(it.catatan),
+      })
+    }
+  }
+
+  const result: AiAnalysis = {
+    ringkasan: asStr(obj.ringkasan),
+    saranPenulisanUlang: rewrites,
+    kekurangan,
+    saranRingkasan: asStr(obj.saranRingkasan),
+    perbaikanLengkap: fixes,
+  }
+  const hasSubstance =
+    result.ringkasan.trim() !== '' ||
+    result.saranPenulisanUlang.length > 0 ||
+    result.kekurangan.length > 0 ||
+    result.saranRingkasan.trim() !== '' ||
+    result.perbaikanLengkap.length > 0
+  if (!hasSubstance) throw new Error(INVALID_RESULT_MESSAGE)
+  if (requestedFixCount > 0 && result.perbaikanLengkap.length === 0) {
+    throw new Error(INVALID_RESULT_MESSAGE)
+  }
+  return result
+}
+
 // Susun daftar pemeriksaan yang gagal dari hasil analisis standar yang
 // sedang tampil: prioritas perbaikan lebih dulu (sesuai urutan tampil),
 // lalu sisa pemeriksaan yang belum "baik", tanpa duplikat id. Inilah
@@ -68,19 +147,31 @@ export function buildAiFixContext(
   for (const aspect of result.aspects) {
     for (const check of aspect.checks) push(check)
   }
-  return out.slice(0, 20)
+  // Batas 25 = seluruh pemeriksaan (23 + 2 kondisional): daftar tidak
+  // boleh terpotong diam-diam (audit 2026-11-24).
+  return out.slice(0, 25)
 }
 
 export async function requestAiAnalysis(input: AiRequestInput): Promise<AiAnalysis> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), NONSTREAM_CLIENT_TIMEOUT_MS)
   let response: Response
   try {
     response = await fetch('/api/analyze-ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
+      signal: controller.signal,
     })
   } catch {
+    if (controller.signal.aborted) {
+      throw new Error(
+        'Analisis AI terlalu lama tanpa jawaban. Coba lagi — tokenmu tidak terpakai bila analisis gagal.',
+      )
+    }
     throw new Error('Tidak bisa menghubungi server Analisis AI. Periksa koneksimu lalu coba lagi.')
+  } finally {
+    clearTimeout(timer)
   }
 
   let data: unknown = null
@@ -98,7 +189,7 @@ export async function requestAiAnalysis(input: AiRequestInput): Promise<AiAnalys
     throw new Error(message)
   }
 
-  return data as AiAnalysis
+  return validateAiAnalysis(data, input.perbaikan?.length ?? 0)
 }
 
 export interface AiStreamHandlers {
@@ -117,78 +208,103 @@ export async function requestAiAnalysisStreaming(
   input: AiRequestInput,
   handlers: AiStreamHandlers,
 ): Promise<AiAnalysis> {
-  let response: Response
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), STREAM_CLIENT_TIMEOUT_MS)
   try {
-    response = await fetch('/api/analyze-ai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...input, stream: true }),
-    })
-  } catch {
-    throw new Error('Tidak bisa menghubungi server Analisis AI. Periksa koneksimu lalu coba lagi.')
-  }
-
-  if (!response.ok) {
-    let data: unknown = null
+    let response: Response
     try {
-      data = await response.json()
+      response = await fetch('/api/analyze-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...input, stream: true }),
+        signal: controller.signal,
+      })
     } catch {
-      data = null
+      if (controller.signal.aborted) {
+        throw new Error(
+          'Analisis AI terlalu lama tanpa jawaban. Coba lagi — tokenmu tidak terpakai bila analisis gagal.',
+        )
+      }
+      throw new Error('Tidak bisa menghubungi server Analisis AI. Periksa koneksimu lalu coba lagi.')
     }
-    const message =
-      data && typeof data === 'object' && 'error' in data
-        ? String((data as { error: unknown }).error)
-        : 'Analisis AI gagal. Coba lagi nanti.'
-    throw new Error(message)
-  }
 
-  if (!response.body) {
-    throw new Error('Browser tidak mendukung penerimaan aliran data. Coba browser lain.')
-  }
+    if (!response.ok) {
+      let data: unknown = null
+      try {
+        data = await response.json()
+      } catch {
+        data = null
+      }
+      const message =
+        data && typeof data === 'object' && 'error' in data
+          ? String((data as { error: unknown }).error)
+          : 'Analisis AI gagal. Coba lagi nanti.'
+      throw new Error(message)
+    }
 
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-  let result: AiAnalysis | null = null
-  let streamError: Error | null = null
+    if (!response.body) {
+      throw new Error('Browser tidak mendukung penerimaan aliran data. Coba browser lain.')
+    }
 
-  const handleLine = (line: string) => {
-    const trimmed = line.trim()
-    if (!trimmed) return
-    let event: Record<string, unknown>
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let resultData: unknown = null
+    let hasResult = false
+    let streamError: Error | null = null
+
+    const handleLine = (line: string) => {
+      const trimmed = line.trim()
+      if (!trimmed) return
+      let event: Record<string, unknown>
+      try {
+        event = JSON.parse(trimmed) as Record<string, unknown>
+      } catch {
+        return
+      }
+      handlers.onActivity?.()
+      if (event.type === 'reasoning' && typeof event.text === 'string') {
+        handlers.onReasoning(event.text)
+      } else if (event.type === 'result') {
+        resultData = event.data
+        hasResult = true
+      } else if (event.type === 'error') {
+        streamError = new Error(
+          typeof event.error === 'string' ? event.error : 'Analisis AI gagal. Coba lagi nanti.',
+        )
+      }
+    }
+
     try {
-      event = JSON.parse(trimmed) as Record<string, unknown>
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        let nl = buffer.indexOf('\n')
+        while (nl >= 0) {
+          handleLine(buffer.slice(0, nl))
+          buffer = buffer.slice(nl + 1)
+          nl = buffer.indexOf('\n')
+        }
+      }
     } catch {
-      return
+      if (controller.signal.aborted) {
+        throw new Error(
+          'Analisis AI terlalu lama tanpa jawaban. Coba lagi — tokenmu tidak terpakai bila analisis gagal.',
+        )
+      }
+      throw new Error('Aliran analisis AI terputus di tengah jalan. Coba lagi.')
     }
-    handlers.onActivity?.()
-    if (event.type === 'reasoning' && typeof event.text === 'string') {
-      handlers.onReasoning(event.text)
-    } else if (event.type === 'result') {
-      result = event.data as AiAnalysis
-    } else if (event.type === 'error') {
-      streamError = new Error(
-        typeof event.error === 'string' ? event.error : 'Analisis AI gagal. Coba lagi nanti.',
-      )
-    }
-  }
+    if (buffer.trim()) handleLine(buffer)
 
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    let nl = buffer.indexOf('\n')
-    while (nl >= 0) {
-      handleLine(buffer.slice(0, nl))
-      buffer = buffer.slice(nl + 1)
-      nl = buffer.indexOf('\n')
+    if (streamError) throw streamError
+    if (!hasResult) {
+      throw new Error('Aliran analisis AI terputus sebelum hasil diterima. Coba lagi.')
     }
+    // Hasil aliran tetap divalidasi bentuknya sebelum dianggap sukses —
+    // event "result" berisi sampah/kosong tidak boleh memotong token.
+    return validateAiAnalysis(resultData, input.perbaikan?.length ?? 0)
+  } finally {
+    clearTimeout(timer)
   }
-  if (buffer.trim()) handleLine(buffer)
-
-  if (streamError) throw streamError
-  if (!result) {
-    throw new Error('Aliran analisis AI terputus sebelum hasil diterima. Coba lagi.')
-  }
-  return result
 }

@@ -65,8 +65,11 @@ const MAX_ROLE_CHARS = 200
 
 // Konteks pemeriksaan yang gagal dari frontend: dibatasi jumlah dan
 // panjang tiap field-nya agar prompt tidak membengkak tanpa kendali.
-const MAX_FIX_CHECKS = 20
-const MAX_FIX_ITEMS = 20
+// Batas 25 = seluruh pemeriksaan yang ada (23 + 2 kondisional): janji
+// produknya adalah AI memperbaiki SEMUA yang gagal, jadi batas tidak
+// boleh memotong daftar secara diam-diam (audit 2026-11-24).
+const MAX_FIX_CHECKS = 25
+const MAX_FIX_ITEMS = 25
 
 // Batas waktu menunggu respons OpenRouter per permintaan. Model gratis bisa
 // sangat lambat; tanpa batas ini fungsi serverless menggantung sampai
@@ -105,6 +108,13 @@ const rateBuckets = new Map<string, { count: number; windowStart: number }>()
 
 function isRateLimited(ip: string): boolean {
   const now = Date.now()
+  // Pangkas bucket kedaluwarsa sesekali agar Map tidak tumbuh tanpa
+  // batas oleh IP-IP unik (termasuk yang dipalsukan) seumur instance.
+  if (rateBuckets.size > 1000) {
+    for (const [key, bucket] of rateBuckets) {
+      if (now - bucket.windowStart > RATE_LIMIT_WINDOW_MS) rateBuckets.delete(key)
+    }
+  }
   const bucket = rateBuckets.get(ip)
   if (!bucket || now - bucket.windowStart > RATE_LIMIT_WINDOW_MS) {
     rateBuckets.set(ip, { count: 1, windowStart: now })
@@ -115,9 +125,21 @@ function isRateLimited(ip: string): boolean {
 }
 
 function clientIp(req: AiRequest): string {
+  // Audit 2026-11-24: versi lama mempercayai entri PERTAMA
+  // x-forwarded-for — entri yang paling mudah dipalsukan pemanggil
+  // (header itu daftar "klien, proxy1, proxy2, …"; platform menambahkan
+  // IP asli di bagian AKHIR). Utamakan x-real-ip (diisi platform dari
+  // koneksi sebenarnya), lalu entri TERAKHIR x-forwarded-for, lalu
+  // alamat socket.
+  const realIp = req.headers['x-real-ip']
+  const real = Array.isArray(realIp) ? realIp[0] : realIp
+  if (real && real.trim()) return real.trim()
   const forwarded = req.headers['x-forwarded-for']
   const first = Array.isArray(forwarded) ? forwarded[0] : forwarded
-  if (first) return first.split(',')[0].trim()
+  if (first) {
+    const parts = first.split(',').map((p) => p.trim()).filter(Boolean)
+    if (parts.length > 0) return parts[parts.length - 1]
+  }
   return req.socket?.remoteAddress ?? 'unknown'
 }
 
@@ -131,12 +153,17 @@ const SYSTEM_PROMPT =
 export function parseFailedChecks(value: unknown): FailedCheckContext[] {
   if (!Array.isArray(value)) return []
   const out: FailedCheckContext[] = []
+  const seenIds = new Set<string>()
   for (const item of value) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) continue
     const obj = item as Record<string, unknown>
     const id = asString(obj.id).trim().slice(0, 60)
     const judul = asString(obj.judul).trim().slice(0, 120)
     if (!id || !judul) continue
+    // Id duplikat dibuang (yang pertama menang): prompt tidak boleh
+    // memuat pemeriksaan yang sama dua kali (audit 2026-11-24).
+    if (seenIds.has(id)) continue
+    seenIds.add(id)
     out.push({
       id,
       judul,
@@ -233,9 +260,13 @@ function normalizeRewrite(item: unknown): RewriteItem | null {
   }
   if (item && typeof item === 'object') {
     const it = item as Record<string, unknown>
+    const saran = asString(it.saran).trim()
+    // Item tanpa saran penulisan ulang tidak berguna (termasuk objek
+    // kosong {} yang sebelumnya lolos apa adanya) — dibuang.
+    if (!saran) return null
     return {
       asli: asString(it.asli),
-      saran: asString(it.saran),
+      saran,
       alasan: asString(it.alasan),
     }
   }
@@ -259,7 +290,7 @@ function normalizeFix(item: unknown): FixItem | null {
   }
 }
 
-function normalizeResult(raw: unknown): AiResult | null {
+function normalizeResult(raw: unknown, requestedFixIds: string[] = []): AiResult | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const obj = raw as Record<string, unknown>
   // Objek JSON yang sama sekali tidak memuat field skema dianggap bukan
@@ -293,19 +324,48 @@ function normalizeResult(raw: unknown): AiResult | null {
         ? obj.perbaikanLengkap
         : [obj.perbaikanLengkap]
   const fixes: FixItem[] = []
+  const requestedSet = new Set(requestedFixIds)
+  const seenFixIds = new Set<string>()
   for (const item of fixSource) {
     const normalized = normalizeFix(item)
-    if (normalized) fixes.push(normalized)
+    if (!normalized) continue
+    // Rekonsiliasi dengan daftar yang DIMINTA (audit 2026-11-24): item
+    // ber-id asing yang tidak diminta dan item duplikat dibuang — model
+    // tidak boleh mengarang pemeriksaan sendiri atau menggandakan satu
+    // perbaikan untuk menutupi yang hilang.
+    if (requestedSet.size > 0) {
+      if (!requestedSet.has(normalized.idPemeriksaan)) continue
+      if (seenFixIds.has(normalized.idPemeriksaan)) continue
+      seenFixIds.add(normalized.idPemeriksaan)
+    }
+    fixes.push(normalized)
     if (fixes.length >= MAX_FIX_ITEMS) break
   }
 
-  return {
+  const result: AiResult = {
     ringkasan: asString(obj.ringkasan),
     saranPenulisanUlang: rewrites,
     kekurangan: asStringList(obj.kekurangan, 6),
     saranRingkasan: asString(obj.saranRingkasan),
     perbaikanLengkap: fixes,
   }
+
+  // Hasil "hampa" BUKAN sukses (audit 2026-11-24): jawaban seperti
+  // {"ringkasan":""} sebelumnya lolos sebagai HTTP 200 dan token pengguna
+  // terpotong untuk kartu AI kosong. Hasil hanya sah bila memuat isi
+  // substantif di sedikitnya satu bidang — dan bila daftar pemeriksaan
+  // gagal dikirim, perbaikanLengkap tidak boleh kosong sama sekali
+  // (itulah inti yang dibayar pengguna; kekurangan sebagian masih
+  // ditoleransi, ketiadaan total tidak).
+  const hasSubstance =
+    result.ringkasan.trim() !== '' ||
+    result.saranPenulisanUlang.length > 0 ||
+    result.kekurangan.length > 0 ||
+    result.saranRingkasan.trim() !== '' ||
+    result.perbaikanLengkap.length > 0
+  if (!hasSubstance) return null
+  if (requestedSet.size > 0 && result.perbaikanLengkap.length === 0) return null
+  return result
 }
 
 // Model reasoning sering membungkus proses berpikirnya dalam tag <think>
@@ -316,30 +376,30 @@ function stripThinkBlocks(text: string): string {
     .replace(/<\/?think(?:ing)?>/gi, ' ')
 }
 
-function tryParseJson(text: string): AiResult | null {
+function tryParseJson(text: string, requestedFixIds: string[] = []): AiResult | null {
   try {
-    return normalizeResult(JSON.parse(text))
+    return normalizeResult(JSON.parse(text), requestedFixIds)
   } catch {
     return null
   }
 }
 
-export function parseAiJson(text: string): AiResult | null {
+export function parseAiJson(text: string, requestedFixIds: string[] = []): AiResult | null {
   // Urutan percobaan dari yang paling bersih ke yang paling toleran:
   // parse langsung → buang pagar kode → ekstrak { ... } terluar.
   const cleaned = stripThinkBlocks(text).trim()
   if (!cleaned) return null
-  const direct = tryParseJson(cleaned)
+  const direct = tryParseJson(cleaned, requestedFixIds)
   if (direct) return direct
   const defenced = cleaned.replace(/```(?:json)?/gi, '').trim()
   if (defenced !== cleaned) {
-    const fromDefenced = tryParseJson(defenced)
+    const fromDefenced = tryParseJson(defenced, requestedFixIds)
     if (fromDefenced) return fromDefenced
   }
   const start = defenced.indexOf('{')
   const end = defenced.lastIndexOf('}')
   if (start >= 0 && end > start) {
-    return tryParseJson(defenced.slice(start, end + 1))
+    return tryParseJson(defenced.slice(start, end + 1), requestedFixIds)
   }
   return null
 }
@@ -365,7 +425,7 @@ export interface AiParseOutcome {
 // Ekstrak hasil analisis dari respons Chat Completions mentah. Sumber teks
 // utama adalah message.content; bila kosong atau tidak terparse, coba
 // message.reasoning (beberapa model reasoning menaruh jawaban di sana).
-export function parseAiResponse(data: unknown): AiParseOutcome {
+export function parseAiResponse(data: unknown, requestedFixIds: string[] = []): AiParseOutcome {
   const root = data && typeof data === 'object' ? (data as Record<string, unknown>) : {}
   const choices = Array.isArray(root.choices) ? root.choices : []
   const first =
@@ -378,8 +438,8 @@ export function parseAiResponse(data: unknown): AiParseOutcome {
   const contentText = extractMessageText(message.content)
   const reasoningText = extractMessageText(message.reasoning)
 
-  let result = contentText ? parseAiJson(contentText) : null
-  if (!result && reasoningText) result = parseAiJson(reasoningText)
+  let result = contentText ? parseAiJson(contentText, requestedFixIds) : null
+  if (!result && reasoningText) result = parseAiJson(reasoningText, requestedFixIds)
   return { result, finishReason, rawText: contentText || reasoningText }
 }
 
@@ -593,7 +653,6 @@ async function streamAnalysis(res: AiResponse, opts: StreamOptions): Promise<voi
       console.error(`[analyze-ai] (stream) Timeout ${STREAM_TIMEOUT_MS / 1000} detik menunggu OpenRouter`)
       res.status(502).json({
         error: 'Layanan AI terlalu lama merespons. Coba lagi — hasil analisis standar tetap bisa dipakai.',
-        detail: `Timeout ${STREAM_TIMEOUT_MS / 1000} detik menunggu OpenRouter (streaming)`,
       })
       return
     }
@@ -611,27 +670,23 @@ async function streamAnalysis(res: AiResponse, opts: StreamOptions): Promise<voi
     if (aiResponse.status === 429) {
       res.status(429).json({
         error: 'Layanan AI sedang dibatasi (rate limit) atau kuota gratis sedang penuh, coba lagi nanti — hasil analisis standar tetap bisa dipakai.',
-        detail,
       })
       return
     }
     if (aiResponse.status === 401 || aiResponse.status === 403) {
       res.status(502).json({
         error: 'API key OpenRouter ditolak. Periksa konfigurasi OPENROUTER_API_KEY di server — hasil analisis standar tetap bisa dipakai.',
-        detail,
       })
       return
     }
     if (aiResponse.status === 402) {
       res.status(502).json({
         error: 'Kredit OpenRouter tidak cukup untuk menjalankan analisis AI. Isi kredit atau periksa batas pemakaian akun OpenRouter — hasil analisis standar tetap bisa dipakai.',
-        detail,
       })
       return
     }
     res.status(502).json({
       error: 'Layanan AI mengembalikan kesalahan. Coba lagi nanti — hasil analisis standar tetap bisa dipakai.',
-      detail,
     })
     return
   }
@@ -639,9 +694,9 @@ async function streamAnalysis(res: AiResponse, opts: StreamOptions): Promise<voi
   const reader = aiResponse.body?.getReader()
   if (!reader) {
     clearTimeout(timer)
+    console.error('[analyze-ai] (stream) OpenRouter tidak mengirim aliran data (stream kosong)')
     res.status(502).json({
       error: 'Layanan AI mengembalikan kesalahan. Coba lagi nanti — hasil analisis standar tetap bisa dipakai.',
-      detail: 'OpenRouter tidak mengirim aliran data (stream kosong).',
     })
     return
   }
@@ -761,29 +816,31 @@ async function streamAnalysis(res: AiResponse, opts: StreamOptions): Promise<voi
 
   if (streamError) {
     console.error(`[analyze-ai] (stream) ${streamError.detail}`)
-    send({ type: 'error', error: streamError.error, detail: streamError.detail })
+    send({ type: 'error', error: streamError.error })
     res.end?.()
     return
   }
 
-  let result = contentAll ? parseAiJson(contentAll) : null
-  if (!result && reasoningAll) result = parseAiJson(reasoningAll)
+  const requestedFixIds = checks.map((c) => c.id)
+  let result = contentAll ? parseAiJson(contentAll, requestedFixIds) : null
+  if (!result && reasoningAll) result = parseAiJson(reasoningAll, requestedFixIds)
   if (result) {
     send({ type: 'result', data: result })
   } else {
     const rawText = contentAll || reasoningAll
     const snippet = rawText.slice(0, 200)
-    const detail =
-      `finish_reason: ${finishReason || 'tidak tersedia'}; ` +
-      `panjang teks mentah: ${rawText.length} karakter; ` +
-      `cuplikan awal jawaban model: ${snippet ? `"${snippet}"` : '(kosong)'}`
+    // Diagnostik parse hanya untuk log server — TIDAK dikirim ke klien
+    // (audit 2026-11-24: frontend tidak pernah membacanya, dan cuplikan
+    // jawaban diturunkan dari CV pemanggil sehingga tidak perlu keluar
+    // lewat jalur error).
     console.error(
-      `[analyze-ai] (stream) Jawaban model tidak terparse (finish_reason=${finishReason || '-'}, panjang=${rawText.length})`,
+      `[analyze-ai] (stream) Jawaban model tidak terparse ` +
+        `(finish_reason=${finishReason || 'tidak tersedia'}; panjang=${rawText.length}; ` +
+        `cuplikan: ${snippet ? `"${snippet}"` : '(kosong)'})`,
     )
     send({
       type: 'error',
       error: 'Jawaban AI tidak bisa dibaca. Coba lagi — hasil analisis standar tetap bisa dipakai.',
-      detail,
     })
   }
   res.end?.()
@@ -794,13 +851,6 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
 
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Metode tidak diizinkan. Gunakan POST.' })
-    return
-  }
-
-  if (isRateLimited(clientIp(req))) {
-    res.status(429).json({
-      error: 'Terlalu banyak permintaan analisis AI dari koneksimu. Tunggu beberapa menit lalu coba lagi.',
-    })
     return
   }
 
@@ -842,6 +892,18 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
   if (jobDesc.length > MAX_JOBDESC_CHARS) {
     res.status(400).json({
       error: `Deskripsi lowongan terlalu panjang (maksimal ${MAX_JOBDESC_CHARS.toLocaleString('id-ID')} karakter). Persingkat dulu.`,
+    })
+    return
+  }
+
+  // Rate limit dicek SETELAH validasi body (audit 2026-11-24): sebelumnya
+  // permintaan tidak valid ikut membakar kuota IP, sehingga pengguna sah
+  // di IP bersama (NAT kantor/kampus) bisa kehabisan jatah oleh
+  // permintaan sampah. Hanya permintaan yang lolos validasi dan akan
+  // benar-benar memanggil upstream yang dihitung.
+  if (isRateLimited(clientIp(req))) {
+    res.status(429).json({
+      error: 'Terlalu banyak permintaan analisis AI dari koneksimu. Tunggu beberapa menit lalu coba lagi.',
     })
     return
   }
@@ -889,8 +951,12 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
           // Model reasoning bisa menghabiskan seluruh jatah token hanya
           // untuk berpikir (kejadian sebelumnya: penalaran 12 ribu karakter
           // memenuhi content dan JSON tidak pernah selesai). Batasi
-          // effort-nya agar jawaban JSON sempat ditulis.
-          ...(options.withReasoning ? { reasoning: { effort: 'low' } } : {}),
+          // effort-nya agar jawaban JSON sempat ditulis — dan beri CAP
+          // token penalaran yang sama seperti jalur streaming (audit
+          // 2026-11-24: jalur ini sebelumnya hanya effort low tanpa cap).
+          ...(options.withReasoning
+            ? { reasoning: { effort: 'low', max_tokens: 1500 } }
+            : {}),
           temperature: 0.4,
           // Jatah token besar agar JSON jawaban — kini termasuk perbaikan
           // untuk semua pemeriksaan yang gagal — tidak terpotong.
@@ -970,7 +1036,6 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
       console.error(`[analyze-ai] Timeout ${UPSTREAM_TIMEOUT_MS / 1000} detik menunggu OpenRouter`)
       res.status(502).json({
         error: 'Layanan AI terlalu lama merespons. Coba lagi — hasil analisis standar tetap bisa dipakai.',
-        detail: `Timeout ${UPSTREAM_TIMEOUT_MS / 1000} detik menunggu OpenRouter`,
       })
       return
     }
@@ -981,67 +1046,71 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
   }
 
   if (!aiResponse.ok) {
-    // Diagnosis: sertakan status HTTP + pesan error resmi OpenRouter pada
-    // field "detail" dan log server, agar penyebab 502 terlihat. Yang
-    // disertakan hanya status dan pesan OpenRouter — TIDAK termasuk API key,
-    // header, atau isi CV/permintaan.
+    // Diagnosis hanya di log server (audit 2026-11-24: field "detail"
+    // tidak lagi dikirim ke klien — frontend tidak pernah membacanya).
+    // Yang dicatat hanya status dan pesan OpenRouter — TIDAK termasuk
+    // API key, header, atau isi CV/permintaan.
     const message = upstreamMessage ?? (await readUpstreamMessage(aiResponse))
-    const detail = `OpenRouter HTTP ${aiResponse.status}${message ? `: ${message}` : ''}`
-    console.error(`[analyze-ai] ${detail}`)
+    console.error(`[analyze-ai] OpenRouter HTTP ${aiResponse.status}${message ? `: ${message}` : ''}`)
 
     if (aiResponse.status === 429) {
       res.status(429).json({
         error: 'Layanan AI sedang dibatasi (rate limit) atau kuota gratis sedang penuh, coba lagi nanti — hasil analisis standar tetap bisa dipakai.',
-        detail,
       })
       return
     }
     if (aiResponse.status === 401 || aiResponse.status === 403) {
       res.status(502).json({
         error: 'API key OpenRouter ditolak. Periksa konfigurasi OPENROUTER_API_KEY di server — hasil analisis standar tetap bisa dipakai.',
-        detail,
       })
       return
     }
     if (aiResponse.status === 402) {
       res.status(502).json({
         error: 'Kredit OpenRouter tidak cukup untuk menjalankan analisis AI. Isi kredit atau periksa batas pemakaian akun OpenRouter — hasil analisis standar tetap bisa dipakai.',
-        detail,
       })
       return
     }
     res.status(502).json({
       error: 'Layanan AI mengembalikan kesalahan. Coba lagi nanti — hasil analisis standar tetap bisa dipakai.',
-      detail,
     })
     return
   }
 
+  // Pembacaan body juga dibatasi waktu (audit 2026-11-24): timer fetch
+  // berhenti begitu header tiba, jadi tanpa balapan ini respons yang
+  // body-nya mengalir selamanya bisa menggantung fungsi serverless.
   let data: unknown = null
   try {
-    data = await aiResponse.json()
-  } catch {
+    data = await Promise.race([
+      aiResponse.json(),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new UpstreamTimeoutError()), UPSTREAM_TIMEOUT_MS)
+      }),
+    ])
+  } catch (err) {
+    if (err instanceof UpstreamTimeoutError) {
+      console.error(`[analyze-ai] Timeout ${UPSTREAM_TIMEOUT_MS / 1000} detik membaca body OpenRouter`)
+      res.status(502).json({
+        error: 'Layanan AI terlalu lama merespons. Coba lagi — hasil analisis standar tetap bisa dipakai.',
+      })
+      return
+    }
     data = null
   }
 
-  const parsed = parseAiResponse(data)
+  const parsed = parseAiResponse(data, failedChecks.map((c) => c.id))
   if (!parsed.result) {
-    // Diagnostik parse: sertakan finish_reason, panjang teks mentah, dan
-    // cuplikan awal jawaban model pada field "detail" agar kegagalan bisa
-    // didiagnosis. Cuplikan berasal dari JAWABAN model atas CV pemanggil
-    // sendiri (bukan input CV mentah) dan hanya muncul pada mode gagal
-    // parse; isi CV tetap tidak dicatat ke log.
+    // Diagnostik parse hanya di log server: finish_reason, panjang teks
+    // mentah, dan cuplikan awal JAWABAN model (bukan input CV mentah).
     const snippet = parsed.rawText.slice(0, 200)
-    const detail =
-      `finish_reason: ${parsed.finishReason || 'tidak tersedia'}; ` +
-      `panjang teks mentah: ${parsed.rawText.length} karakter; ` +
-      `cuplikan awal jawaban model: ${snippet ? `"${snippet}"` : '(kosong)'}`
     console.error(
-      `[analyze-ai] Jawaban model tidak terparse (finish_reason=${parsed.finishReason || '-'}, panjang=${parsed.rawText.length})`,
+      `[analyze-ai] Jawaban model tidak terparse ` +
+        `(finish_reason=${parsed.finishReason || 'tidak tersedia'}; panjang=${parsed.rawText.length}; ` +
+        `cuplikan: ${snippet ? `"${snippet}"` : '(kosong)'})`,
     )
     res.status(502).json({
       error: 'Jawaban AI tidak bisa dibaca. Coba lagi — hasil analisis standar tetap bisa dipakai.',
-      detail,
     })
     return
   }

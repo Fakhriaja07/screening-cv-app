@@ -934,6 +934,65 @@ gantinya, AI berbayar wajib memberikan perbaikan yang LENGKAP:
   lolos; patokan skor standar utuh: 96/61/16, mode lowongan 89/79 &
   60/48, fresh graduate 53, demo 55→96.
 
+## Audit menyeluruh & perbaikan bug (2026-11-24)
+
+Audit penuh atas perintah pengguna ("audit lagi websitenya perbaiki
+segala bug"): empat auditor baca-saja memindai pembayaran/token,
+penilaian (fuzzing ±70 probe), alur AI, dan contoh personal + glosarium;
+setiap temuan dibuktikan probe sebelum diperbaiki dan dikunci uji
+regresi. Patokan skor TIDAK bergerak: 96/61/16, lowongan 89/79 & 60/48,
+fresh graduate 53, demo 55→96.
+
+- **Penilaian (analyze.ts):** deteksi heading diganti aturan kata-utuh +
+  kosakata heading (kalimat naratif seperti "Saya profesional
+  berpengalaman." dan bullet "- Led training…" tidak lagi memotong/
+  mengarang bagian); "Bahasa/Language" kini batas bagian; HP sesudah
+  periode sebaris terdeteksi (pas cadangan berjangkar, rentang tahun
+  tetap bukan HP); "Jan 2020 - Present" dihitung satu keluarga periode;
+  SEMUA bagian Pengalaman dibaca (sebelumnya hanya yang pertama);
+  pengelompokan entri paragraf tidak lagi mencuri baris uraian sebagai
+  judul entri berikutnya; email berstruktur rusak ("gmail..com")
+  ditolak; teks kosong total 0 (tanpa poin panjang/kerapian gratis).
+- **Glosarium:** duplikasi kata ekor pada perluasan judul dibuang
+  ("DevOps Engineer" tidak lagi menjadi "DevOps Engineer Engineer",
+  ±17 pola nyata); singkatan bertanda hubung ikut mengembang
+  ("QC-Inspector", "SPV-Produksi").
+- **Contoh personal:** contoh kata-kerja-aksi kini muncul juga untuk
+  bullet berawalan kata kerja sah (me-); contoh kerapian memperbaiki
+  SEMUA salah eja dalam kutipan (sebelumnya hanya yang pertama).
+- **Alur AI:** parser server menolak hasil hampa ({"ringkasan":""}
+  sebelumnya lolos sebagai sukses dan memotong token) dan
+  merekonsiliasi perbaikanLengkap terhadap id yang diminta (asing/
+  duplikat dibuang; nol valid = gagal); klien kini memvalidasi bentuk
+  hasil di kedua jalur (sebelumnya cast buta) + batas waktu fetch;
+  rate limit memakai x-real-ip/entri terakhir x-forwarded-for (entri
+  pertama bisa dipalsukan untuk melewati batas), dicek SETELAH validasi
+  body, dan bucket kedaluwarsa dipangkas; field diagnostik "detail"
+  tidak lagi dikirim ke klien (tetap di log server); cap 1.500 token
+  penalaran kini juga di jalur non-streaming; batas konteks perbaikan
+  20 → 25 (= seluruh pemeriksaan); App mengirim snapshot teks/peran/
+  lowongan yang dianalisis ke AI (bukan kotak teks yang mungkin sudah
+  diedit) dan hasil AI yang tiba setelah reset dibuang tanpa memotong
+  token; laporan PDF memakai peran snapshot.
+- **PDF:** sanitasi karakter di luar WinAnsi (→ menjadi ->, ✓ menjadi v,
+  ★ menjadi *, emoji dibuang) — sebelumnya tercetak rusak ("→" → "!’",
+  "🚀" → "Ø=Þ€") pada teks AI di laporan.
+- **readFile:** batas ukuran 10 MB ditolak sebelum diurai + pesan error
+  parser dibungkus Bahasa Indonesia (sebelumnya pesan mentah pdf.js).
+- **Halaman privasi:** bagian Pembayaran ditulis ulang sesuai alur nyata
+  (QRIS manual ke merchant pemilik; sebelumnya masih menyebut Midtrans
+  sebagai pemroses — keliru sejak keputusan 2026-11-21); daftar
+  localStorage disesuaikan; tanggal diperbarui di privacy & terms.
+- **Terverifikasi bersih tanpa perubahan:** kelima puluh hash kode
+  token batch 1 cocok dua arah dengan daftar situs; riwayat skor
+  (history.ts) defensif terhadap data korup; string fitur yang dihapus
+  pengguna tetap absen.
+- **Sengaja TIDAK diubah (keputusan pengguna):** validasi periode
+  terbalik/masa depan dan ambang kata kunci lowongan (menyentuh
+  semantik/patokan — dilaporkan terpisah); pengunci 5× gagal tukar kode
+  berbasis sesi (sesuai teks UI); integrasi Midtrans tetap dorman.
+- 19 uji regresi audit baru; total seluruh suite lolos dan build bersih.
+
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
 - Akurasi yang terasa benar: hasil cocok dengan intuisi pengguna.

@@ -4,8 +4,12 @@ import {
   analyzeCv,
   countWords,
   detectPhone,
+  findPhone,
   findPortfolio,
+  getExperienceEntryDetails,
+  getPeriodExprs,
   getRoleWords,
+  getSummarySection,
   priorityRanks,
   selectPriorities,
 } from '../src/lib/analyze'
@@ -83,8 +87,8 @@ import {
   reportFileName,
 } from '../src/lib/report'
 import { buildPersonalExamples } from '../src/lib/personalExamples'
-import { buildReportPdf, buildReportPdfBytes } from '../src/lib/pdf'
-import { buildAiFixContext, type AiAnalysis } from '../src/lib/ai'
+import { buildReportPdf, buildReportPdfBytes, sanitizePdfText } from '../src/lib/pdf'
+import { buildAiFixContext, validateAiAnalysis, type AiAnalysis } from '../src/lib/ai'
 import { parseAiJson, parseFailedChecks } from '../api/analyze-ai.js'
 const MEDIUM_CV = `Budi Santoso
 budi.santoso@gmail.com | 0812-9876-5432 | linkedin.com/in/budisantoso
@@ -2059,6 +2063,301 @@ check(
     appTsxText.includes('Minta Kode Token via WhatsApp') &&
     appTsxText.includes('Saya setuju teks CV dikirim ke OpenRouter'),
   'hero + janji privasi, contoh hasil, instruksi token, dan persetujuan AI tetap ada',
+)
+
+// ---------- Regresi audit menyeluruh (2026-11-24) ----------
+// Setiap uji di bawah mengunci satu bug yang dibuktikan probe audit
+// sebelum diperbaiki. Patokan terkunci 96/61/16 dst. TIDAK berubah oleh
+// perbaikan-perbaikan ini (terverifikasi oleh uji patokan di atas).
+
+// --- Audit 1: heading palsu dari kalimat naratif (BUG-1) ---
+// Kalimat ringkasan "Saya profesional berpengalaman." sebelumnya
+// diperlakukan sebagai heading "Pengalaman" karena pencocokan substring,
+// sehingga bagian ringkasan terpotong dan bagian sesudahnya hilang.
+const AUDIT_HEADING_CV = [
+  'Budi', 'budi@example.com', '081234567890',
+  'Ringkasan',
+  'Saya profesional berpengalaman.',
+  'Pengalaman',
+  'Staff — PT Maju (2020-2022)',
+  '- Mengelola stok barang setiap hari',
+].join('\n')
+check(
+  'Audit: kalimat naratif bukan heading — ringkasan utuh & pengalaman terbaca',
+  getSummarySection(AUDIT_HEADING_CV).includes('profesional berpengalaman') &&
+    getExperienceEntryDetails(AUDIT_HEADING_CV).length === 1,
+  `ringkasan: "${getSummarySection(AUDIT_HEADING_CV).slice(0, 50)}", entri: ${getExperienceEntryDetails(AUDIT_HEADING_CV).length}`,
+)
+// Bullet "- Led training…" tidak boleh menjadi heading sertifikasi palsu.
+const AUDIT_BULLET_HEADING_CV = [
+  'Budi', 'budi@example.com', '081234567890',
+  'Pengalaman',
+  'Staff — PT Maju (2020-2022)',
+  '- Led training untuk 5 staf baru di gudang',
+  '- Mengelola stok barang setiap hari',
+  'Pendidikan',
+  'SMA Negeri 1 (2015-2018)',
+].join('\n')
+check(
+  'Audit: bullet "Led training" bukan heading sertifikasi (skor sertifikasi tetap 0)',
+  checkOf(analyzeCv(AUDIT_BULLET_HEADING_CV), 'sertifikasi')?.score === 0,
+  `sertifikasi ${checkOf(analyzeCv(AUDIT_BULLET_HEADING_CV), 'sertifikasi')?.score}/3`,
+)
+
+// --- Audit 2: HP sebaris sesudah periode (BUG-2) ---
+check(
+  'Audit: HP sesudah periode di baris yang sama terdeteksi',
+  findPhone('Staff 2020 - 2022 081234567890') !== null &&
+    findPhone('Periode 2015-2020 saja') === null,
+  `0812… sesudah periode: ${findPhone('Staff 2020 - 2022 081234567890')}, rentang tahun murni: ${findPhone('Periode 2015-2020 saja')}`,
+)
+
+// --- Audit 3: "Jan 2020 - Present" satu keluarga periode (BUG-3) ---
+const AUDIT_MONTH_CV = [
+  'Budi', 'budi@example.com', '081234567890',
+  'Pengalaman',
+  'Staff — PT A (Jan 2023 - Present)',
+  '- Mengelola stok',
+  'Staff — PT B (Jan 2020 - Des 2022)',
+  '- Mengelola stok',
+].join('\n')
+check(
+  'Audit: periode bulan tidak terhitung ganda — konsistensi penuh',
+  getPeriodExprs('Jan 2020 - Present').length === 1 &&
+    checkOf(analyzeCv(AUDIT_MONTH_CV), 'konsistensi-format')?.score === 3,
+  `ekspresi: ${getPeriodExprs('Jan 2020 - Present').length}, konsistensi ${checkOf(analyzeCv(AUDIT_MONTH_CV), 'konsistensi-format')?.score}/3`,
+)
+
+// --- Audit 4: dua bagian Pengalaman sama-sama dibaca (BUG-5) ---
+const AUDIT_TWO_SECTION_CV = [
+  'Budi', 'budi@example.com', '081234567890',
+  'Pengalaman Kerja',
+  'Staff — PT A (2020-2021)',
+  '- Mengelola stok barang',
+  'Pengalaman Organisasi',
+  'Manager — PT B (2023-2024)',
+  '- Memimpin tim acara kampus',
+].join('\n')
+check(
+  'Audit: bagian Pengalaman kedua tidak diabaikan',
+  getExperienceEntryDetails(AUDIT_TWO_SECTION_CV).length === 2,
+  `entri terbaca: ${getExperienceEntryDetails(AUDIT_TWO_SECTION_CV).length} (harus 2)`,
+)
+
+// --- Audit 5: pengelompokan entri paragraf tidak bergeser ---
+// Baris uraian paragraf entri pertama sebelumnya dicuri sebagai "judul"
+// entri berikutnya, mengacaukan kutipan kedalaman/hasil-terukur.
+const AUDIT_PARA_CV = [
+  'Budi', 'budi@example.com', '081234567890',
+  'Pengalaman',
+  'Kasir — Toko Berkah (Jan 2021 - Des 2022)',
+  'Saya melayani pembeli dan mencatat penjualan setiap hari.',
+  'Membuat laporan penjualan bulanan untuk pemilik toko.',
+  'Staf Gudang — PT Logistik Jaya (2023-2024)',
+  'Mengelola stok masuk dan keluar gudang.',
+].join('\n')
+const auditParaEntries = getExperienceEntryDetails(AUDIT_PARA_CV)
+check(
+  'Audit: entri paragraf terkelompok benar (Kasir 3 baris, lalu Staf Gudang)',
+  auditParaEntries.length === 2 &&
+    auditParaEntries[0].lines.length === 3 &&
+    auditParaEntries[0].lines[0].includes('Kasir') &&
+    auditParaEntries[1].lines[0].includes('Staf Gudang'),
+  `entri: ${auditParaEntries.map((e) => `${e.lines[0].slice(0, 20)} (${e.lines.length} baris)`).join(' | ')}`,
+)
+
+// --- Audit 6: email berstruktur rusak ditolak (DIDUGA-9) ---
+const AUDIT_BAD_EMAIL_CV = [
+  'Budi', 'budi@gmail..com', '081234567890',
+  'Pengalaman',
+  'Staff — PT A (2020-2021)',
+  '- Mengelola stok barang setiap hari dengan teliti dan rapi',
+].join('\n')
+check(
+  'Audit: email "gmail..com" tidak diterima sebagai email sah',
+  checkOf(analyzeCv(AUDIT_BAD_EMAIL_CV), 'email')?.score === 0,
+  `email ${checkOf(analyzeCv(AUDIT_BAD_EMAIL_CV), 'email')?.score}`,
+)
+
+// --- Audit 7: teks kosong total 0, tanpa poin gratis (DIDUGA-6) ---
+check(
+  'Audit: teks kosong/spasi saja → total 0 dan tidak NaN',
+  analyzeCv('').total === 0 && analyzeCv('   \n  ').total === 0 &&
+    Number.isFinite(analyzeCv('').total),
+  `kosong ${analyzeCv('').total}, spasi ${analyzeCv('   \n  ').total}`,
+)
+
+// --- Audit 8: glosarium — duplikasi ekor & singkatan bertanda hubung ---
+check(
+  'Audit glosarium: tidak ada duplikasi kata ekor pada perluasan judul',
+  expandJobTitle('DevOps Engineer') === 'DevOps Engineer' &&
+    expandJobTitle('SMM Specialist') === 'Social Media Specialist' &&
+    expandJobTitle('QC Control') === 'Quality Control' &&
+    expandJobTitle('QA Assurance') === 'Quality Assurance' &&
+    expandJobTitle('PM Manager') === 'Product Manager' &&
+    expandJobTitle('WH Gudang') === 'Staf Gudang',
+  `DevOps→"${expandJobTitle('DevOps Engineer')}", SMM→"${expandJobTitle('SMM Specialist')}", QC Control→"${expandJobTitle('QC Control')}"`,
+)
+check(
+  'Audit glosarium: singkatan bertanda hubung ikut mengembang; IT tetap apa adanya',
+  expandJobTitle('QC-Inspector') === 'Quality Control-Inspector' &&
+    expandJobTitle('SPV-Produksi') === 'Supervisor-Produksi' &&
+    expandJobTitle('QA/QC') === 'Quality Assurance / Quality Control' &&
+    expandJobTitle('tim IT Support') === 'tim IT Support',
+  `QC-Inspector→"${expandJobTitle('QC-Inspector')}", SPV-Produksi→"${expandJobTitle('SPV-Produksi')}"`,
+)
+
+// --- Audit 9: contoh personal kata-kerja-aksi untuk bullet kata kerja sah ---
+// Bullet berawalan kata kerja me- yang sah (Melayani, Mencatat, …)
+// sebelumnya TIDAK PERNAH menghasilkan contoh personal walau
+// pemeriksaannya gagal — generator hanya mengenali awalan lemah.
+const AUDIT_VERB_CV = [
+  'Sari Dewi', 'sari@example.com', '081298765432',
+  'Ringkasan',
+  'Lulusan SMA yang teliti dan siap bekerja di bidang ritel maupun gudang untuk jangka panjang.',
+  'Pengalaman',
+  'Pramuniaga — Toko Sinar (2022-2024)',
+  '• Melayani pelanggan yang datang ke toko setiap hari',
+  '• Mencatat penjualan harian ke buku kas toko',
+  '• Menjawab pertanyaan pelanggan tentang produk',
+  '• Merapikan rak display agar terlihat menarik',
+  '• Menghitung uang kas di akhir jam kerja',
+  'Pendidikan',
+  'SMA Negeri 2 (2019-2022)',
+  'Keahlian',
+  'Kasir, Komunikasi, Melayani pelanggan, Mencatat stok, Menghitung uang, Merapikan display, Menjawab telepon, Kerja tim',
+].join('\n')
+const auditVerbResult = analyzeCv(AUDIT_VERB_CV)
+const auditVerbExample = buildPersonalExamples(auditVerbResult, AUDIT_VERB_CV, '')['kata-kerja-aksi']
+check(
+  'Audit personal: contoh kata-kerja-aksi muncul untuk bullet kata kerja sah',
+  checkOf(auditVerbResult, 'kata-kerja-aksi')?.status !== 'baik' &&
+    !!auditVerbExample &&
+    AUDIT_VERB_CV.includes(auditVerbExample.kutipanAsli) &&
+    auditVerbExample.versiPerbaikan.includes('['),
+  auditVerbExample ? `kutipan: "${auditVerbExample.kutipanAsli.slice(0, 50)}…"` : 'contoh tidak ada',
+)
+
+// --- Audit 10: contoh kerapian memperbaiki SEMUA salah eja sebaris ---
+const AUDIT_TYPO_CV = [
+  'Rina', 'rina@example.com', '081298765433',
+  'Pengalaman',
+  'Kasir — Toko Berkah (2021-2023)',
+  '• Melakukan aktifitas kasir dan merubah jadwal piket setiap minggu',
+  'Pendidikan',
+  'SMA Negeri 1 (2018-2021)',
+].join('\n')
+const auditTypoExample = buildPersonalExamples(analyzeCv(AUDIT_TYPO_CV), AUDIT_TYPO_CV, '')['kerapian-bahasa']
+check(
+  'Audit personal: dua salah eja dalam satu kutipan sama-sama diperbaiki',
+  !!auditTypoExample &&
+    auditTypoExample.versiPerbaikan.includes('aktivitas') &&
+    auditTypoExample.versiPerbaikan.includes('mengubah') &&
+    !/\baktifitas\b/.test(auditTypoExample.versiPerbaikan) &&
+    !/\bmerubah\b/.test(auditTypoExample.versiPerbaikan),
+  auditTypoExample ? `sesudah: "${auditTypoExample.versiPerbaikan.slice(0, 70)}…"` : 'contoh tidak ada',
+)
+
+// --- Audit 11: parser AI menolak hasil hampa & merekonsiliasi perbaikan ---
+check(
+  'Audit AI: hasil hampa (ringkasan kosong / semua bidang kosong) ditolak parser',
+  parseAiJson('{"ringkasan":""}') === null &&
+    parseAiJson('{"ringkasan":"","saranPenulisanUlang":[{}],"kekurangan":[],"saranRingkasan":"","perbaikanLengkap":[]}') === null &&
+    parseAiJson('{"ringkasan":"Cukup baik."}') !== null,
+  'jawaban kosong tidak boleh lolos sebagai sukses (token aman)',
+)
+const AUDIT_FIX_JSON = JSON.stringify({
+  ringkasan: 'Ok.',
+  perbaikanLengkap: [
+    { idPemeriksaan: 'email', judul: 'Email', sebelum: '', sesudah: 'Tambahkan email', catatan: '' },
+    { idPemeriksaan: 'karangan', judul: 'X', sebelum: '', sesudah: 'Ngawur', catatan: '' },
+    { idPemeriksaan: 'email', judul: 'Email', sebelum: '', sesudah: 'Duplikat', catatan: '' },
+  ],
+})
+const auditFixParsed = parseAiJson(AUDIT_FIX_JSON, ['email', 'linkedin'])
+check(
+  'Audit AI: perbaikanLengkap direkonsiliasi — id asing & duplikat dibuang, nol valid = gagal',
+  auditFixParsed !== null &&
+    auditFixParsed.perbaikanLengkap.length === 1 &&
+    auditFixParsed.perbaikanLengkap[0].sesudah === 'Tambahkan email' &&
+    parseAiJson(JSON.stringify({ ringkasan: 'Ok.', perbaikanLengkap: [{ idPemeriksaan: 'asing', sesudah: 'x' }] }), ['email']) === null,
+  `tersisa: ${auditFixParsed?.perbaikanLengkap.map((f) => f.idPemeriksaan).join(', ')}`,
+)
+check(
+  'Audit AI: parseFailedChecks membuang id duplikat',
+  parseFailedChecks([
+    { id: 'email', judul: 'Email' },
+    { id: 'email', judul: 'Email lagi' },
+    { id: 'hp', judul: 'HP' },
+  ]).length === 2,
+  'id yang sama hanya boleh masuk prompt satu kali',
+)
+
+// --- Audit 12: validasi hasil AI di sisi klien ---
+let auditClientThrew = 0
+for (const bad of [null, 'teks', [], { ringkasan: '' }, { ringkasan: '  ', saranPenulisanUlang: [{}] }]) {
+  try {
+    validateAiAnalysis(bad)
+  } catch {
+    auditClientThrew++
+  }
+}
+let auditClientFixThrew = false
+try {
+  validateAiAnalysis({ ringkasan: 'Ok.' }, 3)
+} catch {
+  auditClientFixThrew = true
+}
+check(
+  'Audit klien AI: hasil sampah/kosong ditolak; diminta perbaikan tapi kosong ditolak; hasil sah lolos',
+  auditClientThrew === 5 &&
+    auditClientFixThrew &&
+    validateAiAnalysis({ ringkasan: 'Bagus.', perbaikanLengkap: [{ idPemeriksaan: 'email', sesudah: 'Tambahkan email' }] }, 1)
+      .perbaikanLengkap.length === 1,
+  `ditolak ${auditClientThrew}/5 bentuk sampah`,
+)
+
+// --- Audit 13: sanitasi teks PDF (encoding WinAnsi jsPDF) ---
+check(
+  'Audit PDF: karakter di luar WinAnsi dipetakan aman, karakter sah utuh',
+  sanitizePdfText('a → b') === 'a -> b' &&
+    sanitizePdfText('✓ selesai') === 'v selesai' &&
+    sanitizePdfText('★5') === '*5' &&
+    sanitizePdfText('3×4') === '3x4' &&
+    !sanitizePdfText('kerja 🚀 keras').includes('🚀') &&
+    sanitizePdfText('Halo — dunia • “kutip” é') === 'Halo — dunia • “kutip” é',
+  `"→"→"${sanitizePdfText('→')}", "✓"→"${sanitizePdfText('✓')}", emoji hilang`,
+)
+
+// --- Audit 14: readFile berbatas ukuran + pesan ramah (teks sumber) ---
+// readFile.ts tidak bisa diimpor di lingkungan uji Node (impor worker
+// "?url" khas Vite), jadi kuncinya berupa pemeriksaan teks sumber —
+// perilaku runtime-nya terverifikasi lewat build Vite + probe manual.
+const readFileTsText = readFileSync(
+  resolve(dirname(fileURLToPath(import.meta.url)), '../src/lib/readFile.ts'),
+  'utf8',
+)
+check(
+  'Audit readFile: batas 10 MB + pesan error Bahasa Indonesia terpasang',
+  readFileTsText.includes('MAX_FILE_BYTES = 10 * 1024 * 1024') &&
+    readFileTsText.includes('File terlalu besar') &&
+    readFileTsText.includes('File PDF tidak bisa dibaca') &&
+    readFileTsText.includes('File DOCX tidak bisa dibaca'),
+  'berkas raksasa ditolak sebelum diurai; error parser mentah tidak tampil ke pengguna',
+)
+
+// --- Audit 15: halaman privasi sesuai alur QRIS manual (bukan Midtrans) ---
+const privacyHtmlText = readFileSync(
+  resolve(dirname(fileURLToPath(import.meta.url)), '../public/privacy.html'),
+  'utf8',
+)
+check(
+  'Audit privasi: tidak lagi menyebut Midtrans; alur QRIS manual + kode sekali pakai dijelaskan',
+  !privacyHtmlText.includes('Midtrans') &&
+    privacyHtmlText.includes('QRIS merchant GoPay pemilik situs') &&
+    privacyHtmlText.includes('kode sekali pakai') &&
+    privacyHtmlText.includes('24 November 2026'),
+  'halaman privasi publik harus cocok dengan alur pembayaran yang benar-benar berjalan',
 )
 
 if (failures > 0) {

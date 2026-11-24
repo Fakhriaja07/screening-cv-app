@@ -41,6 +41,50 @@ function styleOf(line: string, isFirst: boolean): LineStyle {
   return 'body'
 }
 
+// Sanitasi teks untuk font helvetica jsPDF (encoding WinAnsi).
+// Probe audit 2026-11-24 membuktikan karakter di luar WinAnsi dirender
+// RUSAK oleh jsPDF: "→" tercetak "!’", "✓" menjadi "'", "🚀" menjadi
+// "Ø=Þ€", "★" menjadi "&". Jawaban AI sering memakai panah/centang/
+// bintang seperti itu — petakan ke padanan aman dan buang sisanya.
+// Yang terbukti aman dipertahankan: ASCII, Latin-1 (é, ñ, …), dan
+// tanda baca WinAnsi seperti — – • “ ” ‘ ’ € ™. Sanitasi hanya di
+// lapisan PDF ini; teks sumber di report.ts tidak diubah.
+const PDF_CHAR_MAP: Record<string, string> = {
+  '→': '->',
+  '⇒': '->',
+  '➜': '->',
+  '➔': '->',
+  '➡': '->',
+  '←': '<-',
+  '⇐': '<-',
+  '⬅': '<-',
+  '✓': 'v',
+  '✔': 'v',
+  '☑': 'v',
+  '★': '*',
+  '☆': '*',
+  '×': 'x',
+  '\t': ' ',
+}
+const WINANSI_PUNCT = new Set([...'•–—‘’“”‚„†‡…‰‹›€™'])
+
+export function sanitizePdfText(text: string): string {
+  let out = ''
+  for (const ch of text) {
+    const mapped = PDF_CHAR_MAP[ch]
+    if (mapped !== undefined) {
+      out += mapped
+      continue
+    }
+    const cp = ch.codePointAt(0) ?? 0
+    if ((cp >= 0x20 && cp <= 0x7e) || (cp >= 0xa0 && cp <= 0xff) || WINANSI_PUNCT.has(ch)) {
+      out += ch
+    }
+    // Karakter lain (emoji, simbol di luar WinAnsi) dibuang.
+  }
+  return out
+}
+
 const FONT_SIZE: Record<LineStyle, number> = {
   title: 17,
   meta: 10.5,
@@ -79,7 +123,7 @@ export function buildReportPdfDoc(result: AnalysisResult, opts: ReportOptions = 
     const style = styleOf(raw, i === 0)
     // Baris kelanjutan (mis. "   Saran: …" pada saran AI) diberi indentasi.
     const indent = /^\s/.test(raw) ? 5 : 0
-    const text = raw.trim()
+    const text = sanitizePdfText(raw.trim())
 
     doc.setFont('helvetica', style === 'body' || style === 'meta' ? 'normal' : 'bold')
     doc.setFontSize(FONT_SIZE[style])

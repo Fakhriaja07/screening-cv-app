@@ -30,7 +30,7 @@ import {
   findTypos,
   findWeakPhraseOccurrences,
   getExperienceEntryDetails,
-  getExperienceSectionRange,
+  getExperienceSectionRanges,
   getLanguageItems,
   getPeriodExprs,
   getRoleWords,
@@ -173,26 +173,53 @@ const FILLER_STARTERS = new Set(['bagian', 'tugas', 'pekerjaan', 'jobdesk', 'des
 
 function personalActionVerb(result: AnalysisResult, cvText: string): PersonalExample | null {
   if (!needsFix(result, 'kata-kerja-aksi')) return null
-  const range = getExperienceSectionRange(cvText)
-  if (!range) return null
-  const section = cvText.slice(range.start, range.end)
-  const bullets = section
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => BULLET_LINE.test(l))
-  for (const bullet of bullets) {
+  // Kandidat = baris ISI entri pengalaman (bullet maupun narasi), dari
+  // rincian entri yang sama dengan yang dinilai — bukan hanya baris
+  // bullet di bagian pertama. Baris judul entri (baris pertama) dan baris
+  // jangkar berperiode dilewati. Audit 2026-11-24: versi lama hanya
+  // menerima awalan "saya"/pengisi/"bertanggung jawab" pada baris bullet,
+  // sehingga pada CV yang poinnya diawali kata kerja sah di luar daftar
+  // kata kerja kuat (mis. "Melayani", "Mencatat") contoh personal tidak
+  // pernah muncul padahal pemeriksaannya gagal dan buktinya jelas —
+  // sekarang awalan kata kerja lemah seperti itu pun menjadi kandidat
+  // dengan perbaikan berupa placeholder kata kerja kuat.
+  const candidateLines: string[] = []
+  for (const entry of getExperienceEntryDetails(cvText)) {
+    for (const l of entry.lines.slice(1)) {
+      if (/\b(19|20)\d{2}\b/.test(l)) continue
+      candidateLines.push(l)
+    }
+  }
+  for (const bullet of candidateLines) {
     const body = bullet.replace(BULLET_LINE, '').trim()
     if (!body) continue
+    if (body.split(/\s+/).length < 2) continue
     const firstMatch = body.match(/^[A-Za-zÀ-ÿ]+/)
     if (!firstMatch) continue
     const firstWord = firstMatch[0].toLowerCase()
     if (ACTION_VERBS.includes(firstWord)) continue
-    if (/^me/i.test(firstWord) || /^ber(?!tanggung)/i.test(firstWord)) continue // sudah kata kerja
-    const isCandidate =
+    const isSpecial =
       firstWord === 'saya' ||
       FILLER_STARTERS.has(firstWord) ||
       /^bertanggung\s+jawab/i.test(body)
-    if (!isCandidate) continue
+    if (!isSpecial) {
+      // Kasus umum: kata pertama adalah kata kerja/kata lain yang tidak
+      // termasuk kata kerja aksi kuat yang dihitung pemeriksaan. Tukar
+      // kata pertama dengan placeholder kata kerja kuat — kata pengguna
+      // selebihnya tidak diubah sama sekali.
+      const rest = body.slice(firstMatch[0].length).trim()
+      if (!rest) continue
+      return {
+        kutipanAsli: truncate(bullet, 240),
+        versiPerbaikan: truncate(
+          `• [kata kerja aksi yang lebih kuat — mis. Mengelola / Meningkatkan / Membangun] ${rest}`,
+          300,
+        ),
+        catatan:
+          `Poin ini diawali "${firstMatch[0]}" — kata kerja yang sah, tetapi belum termasuk kata kerja aksi kuat yang dihitung pemeriksaan (mis. mengelola, meningkatkan, membangun, memimpin, menganalisis). ` +
+          'Ganti kata pertama dengan kata kerja aksi yang benar-benar sesuai tugasmu, lalu hapus kurung sikunya.',
+      }
+    }
 
     let fixed: string
     if (firstWord === 'saya') {
@@ -247,9 +274,16 @@ function personalNeatness(result: AnalysisResult, cvText: string): PersonalExamp
       .map((l) => l.trim())
       .find((l) => re.test(l))
     if (line) {
-      const fixed = line.replace(re, (m) =>
-        m[0] === m[0].toUpperCase() ? capitalize(typo.right) : typo.right,
-      )
+      // Betulkan SEMUA kata salah eja yang ada di baris kutipan ini, bukan
+      // hanya yang pertama (audit 2026-11-24: baris berisi "aktifitas …
+      // merubah …" sebelumnya hanya membetulkan "aktifitas" dan membiarkan
+      // "merubah" tetap salah di dalam "versi perbaikan").
+      let fixed = line
+      for (const t of typos) {
+        fixed = fixed.replace(new RegExp(`\\b${t.wrong}\\b`, 'gi'), (m) =>
+          m[0] === m[0].toUpperCase() ? capitalize(t.right) : t.right,
+        )
+      }
       return {
         kutipanAsli: truncate(line, 240),
         versiPerbaikan: truncate(fixed, 260),
@@ -267,10 +301,11 @@ function personalNeatness(result: AnalysisResult, cvText: string): PersonalExamp
   // sendiri (kata berikutnya menjadi awal kalimat).
   const occurrences = findSayaOccurrences(cvText)
   if (occurrences.length >= SAYA_OVERUSE_THRESHOLD) {
-    const range = getExperienceSectionRange(cvText)
-    if (range) {
-      const sectionLines = cvText
-        .slice(range.start, range.end)
+    const ranges = getExperienceSectionRanges(cvText)
+    if (ranges.length > 0) {
+      const sectionLines = ranges
+        .map((r) => cvText.slice(r.start, r.end))
+        .join('\n')
         .split('\n')
         .map((l) => l.trim())
       const sayaBullets = sectionLines.filter((l) => {
@@ -441,13 +476,16 @@ function normalizeHeaderPeriod(header: string, entry: ExperienceEntryDetail): st
 
 function personalConsistency(result: AnalysisResult, cvText: string): PersonalExample | null {
   if (!needsFix(result, 'konsistensi-format')) return null
-  const range = getExperienceSectionRange(cvText)
-  if (!range) return null
-  // Bukti dibatasi pada bagian pengalaman: contoh ini menata entri
+  const ranges = getExperienceSectionRanges(cvText)
+  if (ranges.length === 0) return null
+  // Bukti dibatasi pada bagian pengalaman (SEMUA bagian pengalaman bila
+  // CV memisahkannya menjadi beberapa bagian): contoh ini menata entri
   // pengalaman, jadi hanya gaya & urutan di bagian itu yang dikutip.
   // Campuran gaya yang sumbernya di bagian lain tidak dipaksakan ke
   // contoh ini — pemeriksaan itu tetap memakai contoh generik.
-  const exprs = getPeriodExprs(cvText.slice(range.start, range.end))
+  const exprs = getPeriodExprs(
+    ranges.map((r) => cvText.slice(r.start, r.end)).join('\n'),
+  )
   const families = [...new Set(exprs.map((e) => e.family))]
   const entries = getExperienceEntryDetails(cvText).filter((e) => e.startYear !== null)
   if (entries.length < 2) return null
@@ -687,11 +725,14 @@ function personalExperienceRelevance(
   if (!role) return null
   const roleWords = getRoleWords(role)
   if (roleWords.length === 0) return null
-  const range = getExperienceSectionRange(cvText)
-  if (!range) return null
+  const ranges = getExperienceSectionRanges(cvText)
+  if (ranges.length === 0) return null
   // Kata kunci yang belum terbaca di bagian pengalaman — dihitung dari
   // bagian dan kata yang sama dengan pemeriksaannya.
-  const sectionLower = cvText.slice(range.start, range.end).toLowerCase()
+  const sectionLower = ranges
+    .map((r) => cvText.slice(r.start, r.end))
+    .join('\n')
+    .toLowerCase()
   const missing = roleWords.filter((w) => !sectionLower.includes(w))
   const entries = getExperienceEntryDetails(cvText).filter((e) => e.hasContent)
   if (entries.length === 0) return null

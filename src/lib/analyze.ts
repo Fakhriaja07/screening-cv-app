@@ -104,6 +104,21 @@ export function findPhone(text: string): string | null {
     // 628xx: total 11-15 digit
     if (/^628\d{8,12}$/.test(digits)) return candidate.trim()
   }
+  // Lintasan kedua (audit 2026-11-24): kandidat rakus di atas menelan
+  // rangkaian digit lain yang sebaris tanpa koma — "2020 - 2022
+  // 081234567890" menjadi satu kandidat 20 digit yang gagal uji, sehingga
+  // nomor sah tidak pernah dicoba sendiri. Cari pola yang berjangkar pada
+  // awalan nomor HP Indonesia (08 / 628) di mana pun di teks, lalu uji
+  // digitnya dengan aturan yang sama persis. Jangkar awalan + penjaga
+  // "tidak didahului digit" membuat rentang tahun ("2015-2020") dan
+  // angka lain tetap tidak terbaca sebagai nomor HP.
+  const anchored =
+    text.match(/(?<!\d)(?:\+?\(?62[\s().-]?|0)8(?:[\s().-]?\d){8,12}(?!\d)/g) ?? []
+  for (const candidate of anchored) {
+    const digits = candidate.replace(/\D/g, '')
+    if (/^08\d{8,12}$/.test(digits)) return candidate.trim()
+    if (/^628\d{8,12}$/.test(digits)) return candidate.trim()
+  }
   return null
 }
 
@@ -193,12 +208,54 @@ const ALL_HEADING_WORDS = [
   'certification',
   'kontak',
   'contact',
+  'bahasa',
+  'language',
+  'languages',
 ]
 
+// Kosakata kata yang lazim menyusun baris heading bagian CV. Sebuah baris
+// hanya dianggap heading bila SELURUH katanya berasal dari kosakata ini
+// (angka tahun diperbolehkan) DAN baris itu memuat salah satu kata/frasa
+// target sebagai kata utuh. Aturan ini memperbaiki bug audit 2026-11-24:
+// pencocokan substring lama ("includes") membuat kalimat narasi pendek
+// seperti "Saya profesional berpengalaman." dianggap heading (potongan
+// "pengalaman" di dalam "berpengalaman"), sehingga bagian ringkasan dan
+// pengalaman terpotong hilang; bullet seperti "- Led training…" juga
+// bisa menyamar menjadi heading bagian lain. Kalimat narasi hampir selalu
+// memuat kata kerja/kata di luar kosakata ini, jadi aturan kata-utuh +
+// kosakata penuh aman untuk heading sungguhan ("Pengalaman Kerja",
+// "Riwayat Pendidikan", "Keahlian & Tools", "Bahasa", …).
+const HEADING_VOCAB = new Set([
+  ...ALL_HEADING_WORDS.flatMap((w) => w.split(' ')),
+  // Kata penyusun daftar heading lain (proyek/magang) + penghubung dan
+  // kata pelengkap yang lazim pada baris heading sungguhan.
+  'magang', 'internship', 'kepanitiaan', 'pkl', 'volunteer', 'relawan',
+  'kegiatan', 'dan', 'and', 'asing', 'organisasi', 'praktik', 'praktek',
+  'singkat', 'diri', 'teknis', 'pribadi', 'profesional', 'pelatihan',
+  'kursus', 'komputer', 'inggris', 'mandarin', 'jepang', 'korea', 'arab',
+  'jerman', 'prancis', 'belanda', 'spanyol',
+])
+
 function isHeadingLine(line: string, words: string[]): boolean {
-  const trimmed = line.trim().toLowerCase()
+  if (BULLET_LINE.test(line)) return false
+  const trimmed = line
+    .trim()
+    .toLowerCase()
+    .replace(/^#+\s*/, '')
+    .replace(/[:：]\s*$/, '')
+    .trim()
   if (trimmed.length === 0 || trimmed.length > 60) return false
-  return words.some((w) => trimmed.includes(w))
+  const tokens: string[] = trimmed.match(/[a-z]+|\d+/g) ?? []
+  if (tokens.length === 0) return false
+  if (!tokens.every((t) => /^\d+$/.test(t) || HEADING_VOCAB.has(t))) return false
+  return words.some((w) => {
+    const wt = w.toLowerCase().split(' ')
+    if (wt.length === 1) return tokens.includes(wt[0])
+    for (let i = 0; i + wt.length <= tokens.length; i++) {
+      if (wt.every((x, k) => tokens[i + k] === x)) return true
+    }
+    return false
+  })
 }
 
 // Kata heading bagian ringkasan/profil — satu-satunya daftar yang
@@ -290,36 +347,55 @@ export interface SectionRange {
   end: number
 }
 
-export function getExperienceSectionRange(text: string): SectionRange | null {
+// SEMUA rentang bagian pengalaman di teks. CV nyata sering memisahkan
+// "Pengalaman Kerja" dan "Pengalaman Organisasi/Magang" menjadi dua
+// bagian berheading sendiri — audit 2026-11-24 menemukan versi lama yang
+// hanya membaca bagian pertama membuat kedalaman entri & linimasa
+// mengabaikan peran di bagian kedua dan mengeluh peran terakhir sudah
+// lama berakhir padahal ada peran baru di bagian berikutnya.
+export function getExperienceSectionRanges(text: string): SectionRange[] {
   const targets = ['pengalaman', 'experience', 'pekerjaan', 'work history', 'riwayat kerja']
   const lines = splitLinesWithOffsets(text)
-  let start = -1
-  for (let i = 0; i < lines.length; i++) {
+  const ranges: SectionRange[] = []
+  let i = 0
+  while (i < lines.length) {
     if (!BULLET_LINE.test(lines[i].line) && isHeadingLine(lines[i].line, targets)) {
-      start = i
-      break
+      let last = -1
+      let j = i + 1
+      for (; j < lines.length; j++) {
+        if (!BULLET_LINE.test(lines[j].line) && isHeadingLine(lines[j].line, ALL_HEADING_WORDS)) break
+        last = j
+      }
+      if (last >= i + 1) {
+        ranges.push({
+          start: lines[i + 1].start,
+          end: lines[last].start + lines[last].line.length,
+        })
+      }
+      i = j
+    } else {
+      i++
     }
   }
-  if (start === -1) return null
-  let last = -1
-  for (let i = start + 1; i < lines.length; i++) {
-    if (!BULLET_LINE.test(lines[i].line) && isHeadingLine(lines[i].line, ALL_HEADING_WORDS)) break
-    last = i
-  }
-  if (last === -1) return null
-  return {
-    start: lines[start + 1].start,
-    end: lines[last].start + lines[last].line.length,
-  }
+  return ranges
+}
+
+export function getExperienceSectionRange(text: string): SectionRange | null {
+  return getExperienceSectionRanges(text)[0] ?? null
 }
 
 // Varian ekstraksi khusus bagian pengalaman: baris bullet tidak pernah
 // dianggap heading (bullet yang menyebut kata "proyek" dsb. tidak memotong
-// bagian secara keliru).
+// bagian secara keliru). Isi SEMUA bagian pengalaman digabungkan agar
+// setiap pemeriksaan menilai keseluruhan riwayat, bukan bagian pertama
+// saja.
 function getExperienceSection(text: string): string {
-  const range = getExperienceSectionRange(text)
-  if (!range) return ''
-  return text.slice(range.start, range.end).trim()
+  const ranges = getExperienceSectionRanges(text)
+  if (ranges.length === 0) return ''
+  return ranges
+    .map((r) => text.slice(r.start, r.end))
+    .join('\n')
+    .trim()
 }
 
 // ---------- Kata kerja aksi & hasil terukur ----------
@@ -441,16 +517,33 @@ function parseExperienceBlocks(section: string): ExperienceBlock[] {
   })
   if (anchors.length === 0) return []
 
+  // Baris judul yang masuk akal: pendek dan bukan kalimat (tidak diakhiri
+  // tanda titik). Audit 2026-11-24: tanpa penjaga ini, baris paragraf
+  // uraian entri sebelumnya dicuri sebagai "judul" entri berikutnya
+  // (pengelompokan entri bergeser — uraian Kasir terbaca sebagai judul
+  // entri Staf Gudang), terutama bila baris jangkar berikutnya sebenarnya
+  // sudah memuat judul + perusahaan sendiri.
+  const isPlausibleTitle = (l: string) => {
+    const t = l.trim()
+    return t.length > 0 && t.length <= 60 && !BULLET_LINE.test(l) && !/[.!?…]$/.test(t)
+  }
+  const anchorSelfTitled = (idx: number) => {
+    const info = parseExperienceEntry(lines[idx])
+    return info.hasTitle && info.hasCompany
+  }
+
   // Judul entri pertama bisa berada pada baris tepat sebelum jangkar pertama.
   let pendingTitle = ''
   let pendingTitleIdx = -1
-  for (let i = anchors[0] - 1; i >= 0; i--) {
-    if (lines[i].trim() === '') continue
-    if (!BULLET_LINE.test(lines[i])) {
-      pendingTitle = lines[i]
-      pendingTitleIdx = i
+  if (!anchorSelfTitled(anchors[0])) {
+    for (let i = anchors[0] - 1; i >= 0; i--) {
+      if (lines[i].trim() === '') continue
+      if (isPlausibleTitle(lines[i])) {
+        pendingTitle = lines[i]
+        pendingTitleIdx = i
+      }
+      break
     }
-    break
   }
 
   const blocks: ExperienceBlock[] = []
@@ -460,7 +553,7 @@ function parseExperienceBlocks(section: string): ExperienceBlock[] {
     let body = lines.slice(a + 1, end)
     let nextTitle = ''
     let nextTitleIdx = -1
-    if (k + 1 < anchors.length) {
+    if (k + 1 < anchors.length && !anchorSelfTitled(anchors[k + 1])) {
       let lastIdx = -1
       for (let i = body.length - 1; i >= 0; i--) {
         if (body[i].trim() !== '') {
@@ -468,7 +561,7 @@ function parseExperienceBlocks(section: string): ExperienceBlock[] {
           break
         }
       }
-      if (lastIdx >= 0 && !BULLET_LINE.test(body[lastIdx])) {
+      if (lastIdx >= 0 && isPlausibleTitle(body[lastIdx])) {
         nextTitle = body[lastIdx]
         nextTitleIdx = a + 1 + lastIdx
         body = body.slice(0, lastIdx)
@@ -570,17 +663,17 @@ export const SAYA_OVERUSE_THRESHOLD = 4
 // dihitung pemeriksaan kerapian bahasa (getExperienceSection), jadi
 // jumlahnya selalu sama dengan angka pada pesan pemeriksaan itu.
 export function findSayaOccurrences(rawText: string): TextOccurrence[] {
-  const range = getExperienceSectionRange(rawText)
-  if (!range) return []
-  const rawSection = rawText.slice(range.start, range.end)
-  const lead = rawSection.length - rawSection.trimStart().length
-  const section = rawSection.trim()
-  if (!section) return []
-  const base = range.start + lead
   const out: TextOccurrence[] = []
-  for (const m of section.matchAll(/\bsaya\b/gi)) {
-    const idx = m.index ?? 0
-    out.push({ start: base + idx, end: base + idx + m[0].length })
+  for (const range of getExperienceSectionRanges(rawText)) {
+    const rawSection = rawText.slice(range.start, range.end)
+    const lead = rawSection.length - rawSection.trimStart().length
+    const section = rawSection.trim()
+    if (!section) continue
+    const base = range.start + lead
+    for (const m of section.matchAll(/\bsaya\b/gi)) {
+      const idx = m.index ?? 0
+      out.push({ start: base + idx, end: base + idx + m[0].length })
+    }
   }
   return out
 }
@@ -617,7 +710,21 @@ function extractPeriodExprs(text: string): PeriodExpr[] {
   for (const m of text.matchAll(numRe)) {
     exprs.push({ family: 'angka', raw: m[0], index: m.index ?? 0 })
   }
-  return exprs.sort((a, b) => a.index - b.index)
+  // Audit 2026-11-24: satu periode "Jan 2020 - Present" tertangkap DUA
+  // kali — sebagai bulan ("Jan 2020") dan sebagai rentang tahun
+  // ("2020 - Present") — sehingga CV yang formatnya konsisten pun
+  // dituduh campur aduk. Ekspresi rentang tahun yang rentangnya tumpang
+  // tindih dengan ekspresi bulan adalah ekspresi bulan yang sama (diawali
+  // nama bulan), jadi yang rentang tahun dibuang.
+  const monthSpans = exprs
+    .filter((e) => e.family === 'bulan')
+    .map((e) => ({ start: e.index, end: e.index + e.raw.length }))
+  const deduped = exprs.filter((e) => {
+    if (e.family !== 'tahun') return true
+    const end = e.index + e.raw.length
+    return !monthSpans.some((s) => e.index < s.end && s.start < end)
+  })
+  return deduped.sort((a, b) => a.index - b.index)
 }
 
 // Ekspresi periode yang terbaca di teks, dari penemu yang sama persis
@@ -1104,7 +1211,23 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   const role = options.targetRole?.trim() ?? ''
 
   // ===== KONTAK (maks 20) =====
-  const emailMatch = lower.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/)
+  // Kandidat email pertama yang BENAR-BENAR valid strukturnya: regex saja
+  // menerima domain rusak seperti "gmail..com" (audit 2026-11-24), jadi
+  // tiap kandidat diperiksa label domain dan titik gandanya.
+  const emailCandidates =
+    lower.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/g) ?? []
+  const emailFound = emailCandidates.find((cand) => {
+    const at = cand.indexOf('@')
+    const local = cand.slice(0, at)
+    const domain = cand.slice(at + 1)
+    if (!local || !domain) return false
+    if (local.includes('..') || domain.includes('..')) return false
+    if (local.startsWith('.') || local.endsWith('.')) return false
+    return domain
+      .split('.')
+      .every((label) => label.length > 0 && !label.startsWith('-') && !label.endsWith('-'))
+  })
+  const emailMatch = emailFound ?? null
   const emailScore = emailMatch ? 7 : 0
 
   const phone = findPhone(text)
@@ -1125,7 +1248,7 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
     makeCheck(
       'email', 'Kontak', 'Email valid', emailScore, 7,
       emailMatch
-        ? `Email terbaca: ${emailMatch[0]}`
+        ? `Email terbaca: ${emailMatch}`
         : 'Alamat email tidak ditemukan atau formatnya tidak valid. Cantumkan email profesional yang aktif.',
     ),
     makeCheck(
@@ -1433,14 +1556,20 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   ]
 
   // ===== FORMAT & ATS (maks 20) =====
+  // Teks kosong (0 kata) tidak mendapat poin panjang sama sekali — cabang
+  // akhir skala (1 poin) hanya untuk CV berisi yang panjangnya di luar
+  // rentang berskor (audit 2026-11-24: CV kosong sebelumnya tetap
+  // menerima 1 poin panjang + 2 poin kerapian = total 3).
   const lengthScore =
-    totalWords >= 220 && totalWords <= 900
-      ? 8
-      : (totalWords >= 130 && totalWords <= 219) || (totalWords >= 901 && totalWords <= 1100)
-        ? 5
-        : totalWords >= 60 && totalWords <= 129
-          ? 2
-          : 1
+    totalWords === 0
+      ? 0
+      : totalWords >= 220 && totalWords <= 900
+        ? 8
+        : (totalWords >= 130 && totalWords <= 219) || (totalWords >= 901 && totalWords <= 1100)
+          ? 5
+          : totalWords >= 60 && totalWords <= 129
+            ? 2
+            : 1
   const hasYears = /\b(19|20)\d{2}\b/.test(text)
   const yearsScore = hasYears ? 4 : 0
   const bulletCount = text
@@ -1502,7 +1631,16 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   // Jumlah kata "saya" diambil dari penemu kemunculan bersama di atas.
   const sayaCount = findSayaOccurrences(text).length
   const sayaOverused = sayaCount >= SAYA_OVERUSE_THRESHOLD
-  const neatnessScore = Math.max(0, 2 - (typos.length > 0 ? 1 : 0) - (sayaOverused ? 1 : 0))
+  // Teks yang benar-benar kosong (0 kata) tidak bisa dinilai kerapiannya —
+  // jangan beri nilai penuh yang lalu tampil sebagai "kekuatan" (audit
+  // 2026-11-24: CV kosong sebelumnya menerima total 3 dari panjang +
+  // kerapian). Penjaga sengaja dipersempit ke kasus kosong persis: CV
+  // naratif tanpa heading (seperti CV lemah patokan) tetap dinilai seperti
+  // sebelumnya agar patokan terkunci tidak bergeser.
+  const neatnessScore =
+    totalWords === 0
+      ? 0
+      : Math.max(0, 2 - (typos.length > 0 ? 1 : 0) - (sayaOverused ? 1 : 0))
   const neatnessParts: string[] = []
   if (typos.length > 0) {
     neatnessParts.push(
@@ -1518,7 +1656,9 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
     )
   }
   const neatnessMessage =
-    neatnessParts.length > 0
+    totalWords === 0
+      ? 'Belum ada teks yang bisa dinilai kerapiannya. Tulis isi CV dulu — kerapian bahasa dinilai dari teks tersebut.'
+      : neatnessParts.length > 0
       ? neatnessParts.join(' ')
       : 'Tidak ditemukan kata yang sering salah eja dari daftar periksa dasar, dan pemakaian kata ganti "saya" di bagian pengalaman masih wajar. (Pemeriksaan ini hanya menandai contoh dari daftar kecil kata yang sering salah eja — bukan pemeriksaan tata bahasa menyeluruh.)'
 

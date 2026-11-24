@@ -5,6 +5,12 @@ import mammoth from 'mammoth'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 
+// Batas ukuran berkas (audit 2026-11-24: sebelumnya TANPA batas — PDF
+// raksasa/rusak bisa membuat tab membeku kehabisan memori saat diurai
+// pdf.js/mammoth, tanpa pesan apa pun). 10 MB jauh di atas CV wajar
+// mana pun (CV PDF umumnya < 1 MB).
+export const MAX_FILE_BYTES = 10 * 1024 * 1024
+
 async function extractPdf(file: File): Promise<string> {
   const buffer = await file.arrayBuffer()
   const pdf = await pdfjsLib.getDocument({ data: buffer }).promise
@@ -38,9 +44,35 @@ async function extractDocx(file: File): Promise<string> {
 }
 
 export async function extractTextFromFile(file: File): Promise<string> {
+  if (file.size > MAX_FILE_BYTES) {
+    throw new Error(
+      `File terlalu besar (${(file.size / (1024 * 1024)).toFixed(1)} MB). Batas maksimal 10 MB — kompres dulu atau tempel teks CV secara manual.`,
+    )
+  }
+  if (file.size === 0) {
+    throw new Error('File kosong (0 byte). Pilih file CV yang berisi teks.')
+  }
   const name = file.name.toLowerCase()
-  if (name.endsWith('.pdf')) return extractPdf(file)
-  if (name.endsWith('.docx')) return extractDocx(file)
+  // Error mentah dari pdf.js/mammoth (bahasa Inggris, istilah teknis)
+  // tidak ditampilkan ke pengguna — dibungkus pesan yang bisa ditindak.
+  if (name.endsWith('.pdf')) {
+    try {
+      return await extractPdf(file)
+    } catch {
+      throw new Error(
+        'File PDF tidak bisa dibaca — file mungkin rusak atau terproteksi kata sandi. Coba file lain, atau tempel teks CV secara manual.',
+      )
+    }
+  }
+  if (name.endsWith('.docx')) {
+    try {
+      return await extractDocx(file)
+    } catch {
+      throw new Error(
+        'File DOCX tidak bisa dibaca — file mungkin rusak atau bukan dokumen Word yang sah. Coba file lain, atau tempel teks CV secara manual.',
+      )
+    }
+  }
   if (name.endsWith('.txt') || file.type.startsWith('text/')) return file.text()
   throw new Error('Format file tidak didukung. Gunakan PDF, DOCX, atau TXT.')
 }

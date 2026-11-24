@@ -134,11 +134,14 @@ for (const entry of JOB_GLOSSARY) {
   if (!GLOSSARY_BY_KEY.has(key)) GLOSSARY_BY_KEY.set(key, entry)
 }
 
-// Token = rangkaian yang diawali huruf dan boleh memuat angka, &, /, .,
-// atau - (mis. "QC", "Q.C.", "R&D", "UI/UX", "QA/QC"). Tanda baca lain
-// (koma, kurung) menjadi batas token, jadi singkatan di dalamnya tetap
-// dikenali sebagai kata utuh.
-const TOKEN_PATTERN = /[A-Za-z][A-Za-z0-9&./-]*/g
+// Token = rangkaian yang diawali huruf dan boleh memuat angka, &, /, atau
+// . (mis. "QC", "Q.C.", "R&D", "UI/UX", "QA/QC"). Tanda baca lain (koma,
+// kurung, dan tanda hubung) menjadi batas token, jadi singkatan di
+// dalamnya tetap dikenali sebagai kata utuh. Tanda hubung SENGAJA menjadi
+// batas (audit 2026-11-24): sebelumnya "QC-Inspector" dan "SPV-Produksi"
+// menjadi satu token utuh yang tidak cocok singkatan mana pun sehingga
+// tidak pernah ter-expand.
+const TOKEN_PATTERN = /[A-Za-z][A-Za-z0-9&./]*/g
 
 function expandToken(token: string): string {
   const direct = GLOSSARY_BY_KEY.get(normalizeAbbrKey(token))
@@ -233,7 +236,33 @@ export function expandJobTitle(input: string): string {
   // semula — kata pengisi TIDAK dibuang dari teks biasa.
   if (!anyExpanded) return raw
 
-  const composed = segments
+  // Audit 2026-11-24: kata sisa yang persis sama dengan kata TERAKHIR
+  // nama lengkap hasil perluasan adalah duplikasi, bukan kata bermuatan —
+  // "DevOps Engineer" (DevOps → "DevOps Engineer", sisa "Engineer"),
+  // "SMM Specialist", "WH Gudang", "QA Assurance" sebelumnya menghasilkan
+  // judul cacat "DevOps Engineer Engineer" / "Social Media Specialist
+  // Specialist" yang tampil di kartu Daftar Skill. Kata sisa duplikat
+  // seperti itu dibuang; kata sisa lain ("QC Inspector" → "Quality
+  // Control Inspector") tetap dipertahankan.
+  const dedupedSegments: TitleSegment[] = []
+  for (const seg of segments) {
+    if (seg.kind === 'leftover') {
+      let prev: TitleSegment | undefined
+      for (let i = dedupedSegments.length - 1; i >= 0; i--) {
+        if (dedupedSegments[i].kind !== 'sep') {
+          prev = dedupedSegments[i]
+          break
+        }
+      }
+      if (prev?.kind === 'glossary') {
+        const lastWord = prev.text.split(' ').pop()?.toLowerCase()
+        if (lastWord && seg.text.toLowerCase() === lastWord) continue
+      }
+    }
+    dedupedSegments.push(seg)
+  }
+
+  const composed = dedupedSegments
     .filter(
       (s) =>
         !(s.kind === 'leftover' && TITLE_FILLER_WORDS.has(s.text.toLowerCase())),
