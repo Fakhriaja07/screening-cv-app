@@ -235,9 +235,9 @@ function splitLinesWithOffsets(text: string): { line: string; start: number }[] 
 // Rentang isi bagian pengalaman di teks asli: dari awal baris pertama
 // sesudah heading sampai akhir baris terakhir sebelum heading bagian
 // berikutnya. Inilah SATU-SATUNYA logika penentu batas bagian pengalaman:
-// getExperienceSection (isi bagian untuk penilaian) dan fitur penanda
-// teks (offset kemunculan di dalam bagian) sama-sama memakainya, jadi
-// tanda tidak pernah dihitung dari bagian yang berbeda dari yang dinilai.
+// getExperienceSection (isi bagian untuk penilaian) dan penemu
+// kemunculan bersama di bawah sama-sama memakainya, jadi kemunculan
+// tidak pernah dihitung dari bagian yang berbeda dari yang dinilai.
 export interface SectionRange {
   start: number
   end: number
@@ -368,8 +368,7 @@ interface ExperienceBlock {
   isCurrent: boolean
   // Indeks baris (di dalam baris-baris bagian pengalaman) yang menjadi
   // awal entri (baris judul bila ada, jika tidak baris jangkar) dan baris
-  // isi terakhir entri. Dipakai fitur penanda teks untuk menaruh penanda
-  // di awal baris entri yang sama yang dinilai parser ini.
+  // isi terakhir entri.
   firstLine: number
   lastLine: number
 }
@@ -446,54 +445,19 @@ function parseExperienceBlocks(section: string): ExperienceBlock[] {
   return blocks
 }
 
-// ---------- Bukti bersama untuk fitur penanda teks ----------
+// ---------- Penemu kemunculan bersama ----------
 
 // Kemunculan sebuah teks di CV, sebagai rentang offset karakter di teks
-// asli. Fitur penanda (src/lib/marks.ts) hanya memakai penemu kemunculan
-// dari modul ini — yang berbagi kamus, regex, ambang, dan parser yang
-// persis sama dengan pemeriksaan — agar tanda selalu cocok dengan skor.
+// asli. Pemeriksaan memakai penemu kemunculan dari modul ini — yang
+// berbagi kamus, regex, ambang, dan parser yang persis sama — agar
+// bukti yang dihitung selalu konsisten antar-pemeriksaan.
 export interface TextOccurrence {
   start: number
   end: number
 }
 
-export interface ExperienceEntrySpan {
-  // Offset awal baris pertama entri di teks asli (baris judul bila ada,
-  // jika tidak baris jangkar/periode entri).
-  start: number
-  // Teks entri: baris judul/jangkar + baris isi entri.
-  text: string
-  // true bila teks entri memuat ≥1 hasil terukur, dihitung dengan
-  // penghitung yang sama persis dengan pemeriksaan "hasil-terukur".
-  hasMeasurableResult: boolean
-}
-
-// Rentang tiap entri pengalaman di teks asli, dari parser entri yang sama
-// yang dipakai pemeriksaan kedalaman entri & linimasa.
-export function getExperienceEntrySpans(rawText: string): ExperienceEntrySpan[] {
-  const range = getExperienceSectionRange(rawText)
-  if (!range) return []
-  const rawSection = rawText.slice(range.start, range.end)
-  const lead = rawSection.length - rawSection.trimStart().length
-  const section = rawSection.trim()
-  if (!section) return []
-  const base = range.start + lead
-  const lineOffsets = splitLinesWithOffsets(section)
-  return parseExperienceBlocks(section).map((b) => {
-    const entryText = lineOffsets
-      .slice(b.firstLine, b.lastLine + 1)
-      .map((l) => l.line)
-      .join('\n')
-    return {
-      start: base + (lineOffsets[b.firstLine]?.start ?? 0),
-      text: entryText,
-      hasMeasurableResult: countMeasurableResults(entryText) > 0,
-    }
-  })
-}
-
 // Ambang kata "saya" di bagian pengalaman mulai dianggap berlebihan —
-// dipakai pemeriksaan kerapian bahasa DAN penanda teks dari sumber ini.
+// dipakai pemeriksaan kerapian bahasa dari sumber ini.
 export const SAYA_OVERUSE_THRESHOLD = 4
 
 // Semua kemunculan kata "saya" di bagian pengalaman, sebagai offset di
@@ -582,8 +546,8 @@ export interface WeakPhraseOccurrence extends TextOccurrence {
 
 // Semua kemunculan frasa lemah di teks, sebagai offset di teks asli.
 // Pencariannya persis seperti pemeriksaan frasa lemah: substring frasa
-// inti di teks huruf-kecil — jadi frasa yang ditandai selalu frasa yang
-// sama yang mengurangi poin pemeriksaan itu.
+// inti di teks huruf-kecil — jadi kemunculan yang ditemukan selalu
+// frasa yang sama yang mengurangi poin pemeriksaan itu.
 export function findWeakPhraseOccurrences(rawText: string): WeakPhraseOccurrence[] {
   const lower = rawText.toLowerCase()
   const out: WeakPhraseOccurrence[] = []
@@ -629,27 +593,6 @@ export const TYPO_WORDS: { wrong: string; right: string }[] = [
 
 function findTypos(lowerText: string): { wrong: string; right: string }[] {
   return TYPO_WORDS.filter((t) => new RegExp(`\\b${t.wrong}\\b`).test(lowerText))
-}
-
-export interface TypoOccurrence extends TextOccurrence {
-  wrong: string
-  right: string
-}
-
-// Semua kemunculan kata salah eja di teks, sebagai offset di teks asli.
-// Memakai kamus dan regex batas kata yang sama dengan findTypos, dicari
-// di teks huruf-kecil yang sama — kata yang ditandai selalu kata yang
-// sama yang mengurangi poin pemeriksaan kerapian bahasa.
-export function findTypoOccurrences(rawText: string): TypoOccurrence[] {
-  const lower = rawText.toLowerCase()
-  const out: TypoOccurrence[] = []
-  for (const t of TYPO_WORDS) {
-    for (const m of lower.matchAll(new RegExp(`\\b${t.wrong}\\b`, 'g'))) {
-      const idx = m.index ?? 0
-      out.push({ start: idx, end: idx + t.wrong.length, wrong: t.wrong, right: t.right })
-    }
-  }
-  return out
 }
 
 // ---------- Lokasi domisili (kelengkapan kontak) ----------
@@ -953,7 +896,7 @@ const ROLE_GENERIC_WORDS = new Set([
 // (seri dipecahkan oleh bobot aspek yang lebih besar). INI satu-satunya
 // tempat kriteria prioritas didefinisikan: daftar "Prioritas Perbaikan"
 // di UI dirender dari AnalysisResult.priorities hasil fungsi ini, dan
-// peringkat untuk penanda teks diturunkan dari daftar yang sama lewat
+// peringkat per pemeriksaan diturunkan dari daftar yang sama lewat
 // priorityRanks di bawah — jangan duplikasi kriterianya di tempat lain.
 export function selectPriorities(checks: CheckItem[], aspects: AspectResult[]): CheckItem[] {
   const aspectMaxByName = new Map(aspects.map((a) => [a.name, a.max]))
@@ -967,9 +910,8 @@ export function selectPriorities(checks: CheckItem[], aspects: AspectResult[]): 
 }
 
 // Peringkat prioritas per id pemeriksaan (1 = prioritas tertinggi),
-// diturunkan dari daftar prioritas yang sudah terurut. Dipakai penanda
-// teks (marks.ts) agar nomor "Prioritas perbaikan #N" pada tanda selalu
-// sama dengan urutan daftar "Prioritas Perbaikan".
+// diturunkan dari daftar prioritas yang sudah terurut, agar nomor
+// prioritas selalu sama dengan urutan daftar "Prioritas Perbaikan".
 export function priorityRanks(priorities: CheckItem[]): Map<string, number> {
   const ranks = new Map<string, number>()
   priorities.forEach((c, i) => {
@@ -1407,8 +1349,7 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   // kata yang sering salah eja. Ini pemeriksaan dasar dari daftar kecil,
   // bukan pemeriksaan tata bahasa menyeluruh.
   const typos = findTypos(lower)
-  // Jumlah kata "saya" diambil dari penemu kemunculan bersama — angka
-  // yang sama yang menjadi dasar tanda "saya" pada fitur penanda teks.
+  // Jumlah kata "saya" diambil dari penemu kemunculan bersama di atas.
   const sayaCount = findSayaOccurrences(text).length
   const sayaOverused = sayaCount >= SAYA_OVERUSE_THRESHOLD
   const neatnessScore = Math.max(0, 2 - (typos.length > 0 ? 1 : 0) - (sayaOverused ? 1 : 0))

@@ -1,27 +1,12 @@
 // Uji logika penilaian: 3 CV (kuat/menengah/lemah) + deteksi HP.
 // Jalankan: npx tsx scripts/run-tests.ts
 import {
-  SAYA_OVERUSE_THRESHOLD,
-  TYPO_WORDS,
-  WEAK_PHRASES,
   analyzeCv,
   detectPhone,
   findPortfolio,
-  findSayaOccurrences,
-  findTypoOccurrences,
-  findWeakPhraseOccurrences,
-  getExperienceEntrySpans,
   priorityRanks,
   selectPriorities,
 } from '../src/lib/analyze'
-import {
-  applyPriorityRanks,
-  buildAiMarks,
-  buildMarks,
-  buildSegments,
-  buildStandardMarks,
-  findAiQuoteRange,
-} from '../src/lib/marks'
 import {
   addHistoryEntry,
   aspectDeltas,
@@ -88,16 +73,9 @@ import {
 import {
   buildReportText,
   formatReportDate,
-  markedTextFileName,
   reportFileName,
 } from '../src/lib/report'
-import {
-  buildMarkedTextPdf,
-  buildMarkedTextPdfBytes,
-  buildMarkedTextPdfDoc,
-  buildReportPdf,
-  buildReportPdfBytes,
-} from '../src/lib/pdf'
+import { buildReportPdf, buildReportPdfBytes } from '../src/lib/pdf'
 import type { AiAnalysis } from '../src/lib/ai'
 const MEDIUM_CV = `Budi Santoso
 budi.santoso@gmail.com | 0812-9876-5432 | linkedin.com/in/budisantoso
@@ -1215,273 +1193,6 @@ check(
   'tidak ada lagi tombol/handler salin template; kotak teks template tetap tampil',
 )
 
-// ---------- Uji penanda teks CV (2026-11-21) ----------
-// Prinsip yang diuji: tanda berasal dari bukti yang SAMA dengan penilaian
-// (kamus/parser/ambang bersama di analyze.ts), offset-nya persis, dan
-// patokan skor tidak berubah oleh penambahan fitur ini.
-check(
-  'Penanda: patokan skor persis tidak berubah (96/61/16, fresh graduate 53)',
-  strong.total === 96 && medium.total === 61 && weak.total === 16 && fresh.total === 53,
-  `kuat ${strong.total}, menengah ${medium.total}, lemah ${weak.total}, fresh ${fresh.total}`,
-)
-
-const MARKED_CV = `Rina Wijaya
-rina.wijaya@gmail.com | 0812-3456-7890 | linkedin.com/in/rinawijaya | Jakarta
-
-Ringkasan
-Saya pekerja keras, mampu bekerja di bawah tekanan, dan bertanggung jawab atas kebersihan toko selama bekerja.
-
-Pengalaman
-Kasir — Toko Berkah (2023–2024)
-- Saya melayani pembeli setiap hari di kasir.
-- Saya merubah jadwal piket kasir setiap minggu.
-- Saya melakukan aktifitas pencatatan stok barang.
-- Saya mengecek uang kas setiap malam.
-
-Staf Administrasi — PT Sinar Abadi (2024–Sekarang)
-- Meningkatkan penjualan sebesar 30% dalam 6 bulan.
-- Mengelola 15 orang anggota tim gudang.
-
-Pendidikan
-SMA Negeri 1 Jakarta (2019–2022)
-
-Keahlian
-Microsoft Word, Microsoft Excel, Kasir, Komunikasi`
-
-const markedResult = analyzeCv(MARKED_CV)
-const markedCheck = (id: string) =>
-  markedResult.aspects.flatMap((a) => a.checks).find((c) => c.id === id)
-const stdMarks = buildStandardMarks(MARKED_CV)
-
-// Frasa lemah: offset persis menunjuk frasa inti kamus bersama, dan
-// jumlahnya sama dengan bukti pemeriksaan frasa-lemah (skor 0/3).
-const weakMarks = stdMarks.filter((m) => m.kind === 'frasa-lemah')
-const weakOccurrences = findWeakPhraseOccurrences(MARKED_CV)
-check(
-  'Penanda: frasa lemah ditemukan dengan offset yang benar',
-  weakMarks.length === 3 &&
-    weakOccurrences.length === 3 &&
-    weakMarks.every((m) =>
-      WEAK_PHRASES.some((p) => p.core === MARKED_CV.slice(m.start, m.end).toLowerCase()),
-    ) &&
-    markedCheck('frasa-lemah')?.score === 0,
-  `${weakMarks.length} tanda frasa; teks pada rentang: ${weakMarks
-    .map((m) => `"${MARKED_CV.slice(m.start, m.end)}"`)
-    .join(', ')}; skor frasa-lemah ${markedCheck('frasa-lemah')?.score}/3`,
-)
-
-// Salah eja: offset persis menunjuk kata tidak baku kamus bersama,
-// lengkap dengan bentuk bakunya.
-const typoMarks = stdMarks.filter((m) => m.kind === 'salah-eja')
-check(
-  'Penanda: salah eja ditemukan dengan offset yang benar + bentuk baku',
-  typoMarks.length === 2 &&
-    findTypoOccurrences(MARKED_CV).length === 2 &&
-    typoMarks.every((m) =>
-      TYPO_WORDS.some(
-        (t) =>
-          t.wrong === MARKED_CV.slice(m.start, m.end).toLowerCase() &&
-          t.right === m.correction,
-      ),
-    ) &&
-    typoMarks.some((m) => m.correction === 'aktivitas') &&
-    typoMarks.some((m) => m.correction === 'mengubah'),
-  `${typoMarks.length} tanda salah eja: ${typoMarks
-    .map((m) => `"${MARKED_CV.slice(m.start, m.end)}"→"${m.correction}"`)
-    .join(', ')}`,
-)
-
-// Kata "saya": hanya kemunculan di bagian pengalaman yang dihitung
-// (kata "Saya" di ringkasan tidak ikut), dan ditandai hanya karena
-// jumlahnya mencapai ambang berlebihan yang sama dengan pemeriksaan.
-const sayaMarks = stdMarks.filter((m) => m.kind === 'saya')
-check(
-  'Penanda: kata "saya" ditandai hanya saat berlebihan (ambang bersama)',
-  findSayaOccurrences(MARKED_CV).length === 4 &&
-    findSayaOccurrences(MARKED_CV).length >= SAYA_OVERUSE_THRESHOLD &&
-    sayaMarks.length === 4 &&
-    sayaMarks.every((m) => MARKED_CV.slice(m.start, m.end).toLowerCase() === 'saya') &&
-    markedCheck('kerapian-bahasa')?.score === 0,
-  `${sayaMarks.length} tanda "saya" dari ${findSayaOccurrences(MARKED_CV).length} kemunculan di bagian pengalaman; skor kerapian ${markedCheck('kerapian-bahasa')?.score}/2`,
-)
-const FEW_SAYA_CV = `Pengalaman
-Kasir — Toko Berkah (2023–2024)
-- Saya melayani pembeli setiap hari.
-- Saya menutup kasir setiap malam.`
-check(
-  'Penanda: kata "saya" wajar (di bawah ambang) tidak ditandai',
-  findSayaOccurrences(FEW_SAYA_CV).length === 2 &&
-    buildStandardMarks(FEW_SAYA_CV).filter((m) => m.kind === 'saya').length === 0,
-  `2 kemunculan < ambang ${SAYA_OVERUSE_THRESHOLD} → 0 tanda`,
-)
-
-// Penanda baris entri: entri tanpa angka hasil ditandai di awal baris
-// judulnya; entri berangka (30%, 15 orang) tidak ditandai. Entri yang
-// sama yang diurai parser penilaian (getExperienceEntrySpans).
-const entrySpans = getExperienceEntrySpans(MARKED_CV)
-const entryMarks = stdMarks.filter((m) => m.kind === 'entri')
-check(
-  'Penanda: entri pengalaman tanpa hasil terukur ditandai di awal barisnya',
-  entrySpans.length === 2 &&
-    entrySpans[0].hasMeasurableResult === false &&
-    entrySpans[1].hasMeasurableResult === true &&
-    entryMarks.length === 1 &&
-    entryMarks[0].start === entrySpans[0].start &&
-    entryMarks[0].start === entryMarks[0].end &&
-    MARKED_CV.startsWith('Kasir — Toko Berkah', entryMarks[0].start) &&
-    MARKED_CV[entryMarks[0].start - 1] === '\n',
-  `penanda di offset ${entryMarks[0]?.start} (awal baris "${entrySpans[0]?.text.split('\n')[0]}"); entri berangka tidak ditandai`,
-)
-
-// Tanda AI: kutipan persis ketemu, kutipan beda huruf/spasi ketemu lewat
-// pencocokan ternormalisasi, kutipan yang tidak ada dilewati diam-diam.
-const MARKED_AI: AiAnalysis = {
-  ringkasan: 'Ringkasan uji.',
-  saranPenulisanUlang: [
-    {
-      asli: 'Saya melayani pembeli setiap hari di kasir.',
-      saran: 'Melayani [50+] pembeli per hari di kasir.',
-      alasan: 'Awali dengan kata kerja dan tambahkan angka.',
-    },
-    {
-      asli: 'saya   MENGECEK uang kas setiap malam',
-      saran: 'Mengecek dan mencocokkan uang kas setiap malam.',
-      alasan: 'Lebih spesifik.',
-    },
-    {
-      asli: 'Kalimat ini tidak ada di CV sama sekali.',
-      saran: 'Tidak dipakai.',
-      alasan: 'Tidak dipakai.',
-    },
-  ],
-  kekurangan: [],
-  saranRingkasan: '',
-}
-const aiMarks = buildAiMarks(MARKED_CV, MARKED_AI)
-check(
-  'Penanda AI: persis + ternormalisasi ketemu, tidak ditemukan dilewati',
-  aiMarks.length === 2 &&
-    aiMarks[0].aiIndex === 0 &&
-    MARKED_CV.slice(aiMarks[0].start, aiMarks[0].end) ===
-      'Saya melayani pembeli setiap hari di kasir.' &&
-    aiMarks[1].aiIndex === 1 &&
-    MARKED_CV.slice(aiMarks[1].start, aiMarks[1].end) ===
-      'Saya mengecek uang kas setiap malam' &&
-    findAiQuoteRange(MARKED_CV, 'Kalimat ini tidak ada di CV sama sekali.') === null &&
-    findAiQuoteRange(MARKED_CV, '   ') === null,
-  `${aiMarks.length} dari 3 kutipan tertandai (1 memang tidak ada di CV)`,
-)
-
-// Resolusi tumpang tindih: sorotan AI menang atas tanda "saya" di
-// dalamnya; tidak ada dua sorotan rentang yang tumpang tindih.
-const allMarks = buildMarks(MARKED_CV, MARKED_AI)
-const rangeMarks = allMarks
-  .filter((m) => m.end > m.start)
-  .sort((a, b) => a.start - b.start)
-check(
-  'Penanda: tumpang tindih terselesaikan deterministik (AI > eja > frasa > saya)',
-  allMarks.filter((m) => m.kind === 'ai').length === 2 &&
-    allMarks.filter((m) => m.kind === 'saya').length === 2 &&
-    rangeMarks.every(
-      (m, i) => i === 0 || m.start >= rangeMarks[i - 1].end,
-    ),
-  `total ${allMarks.length} tanda; "saya" tersisa ${allMarks.filter((m) => m.kind === 'saya').length} (2 tertutup sorotan AI)`,
-)
-
-// Segmen render: gabungan teks segmen persis teks asli, teks segmen
-// bertanda persis potongan pada rentang tandanya.
-const segments = buildSegments(MARKED_CV, buildMarks(MARKED_CV, null))
-check(
-  'Penanda: segmen render menyusun ulang teks asli persis',
-  segments.map((s) => (s.type === 'point' ? '' : s.text)).join('') === MARKED_CV &&
-    segments
-      .filter((s) => s.type === 'mark')
-      .every(
-        (s) =>
-          s.type === 'mark' &&
-          s.text === MARKED_CV.slice(s.mark.start, s.mark.end),
-      ) &&
-    segments.filter((s) => s.type === 'point').length === 1,
-  `${segments.length} segmen, ${segments.filter((s) => s.type === 'point').length} penanda titik`,
-)
-
-// Pengawatan UI: panel ada di App.tsx dan memakai modul marks.
-check(
-  'Penanda: panel "Teks CV dengan Tanda" terpasang di App.tsx',
-  appTsxText.includes('Teks CV dengan Tanda') &&
-    appTsxText.includes("from './lib/marks'") &&
-    appTsxText.includes('buildMarks') &&
-    appTsxText.includes('markSegments') &&
-    appTsxText.includes('analyzedText'),
-  'panel dirender dari analyzedText + buildMarks/buildSegments',
-)
-check(
-  'Penanda: gaya sorotan ada di App.css',
-  appCssText.includes('.marked-text') &&
-    appCssText.includes('.mark-weak') &&
-    appCssText.includes('.mark-typo') &&
-    appCssText.includes('.mark-ai') &&
-    appCssText.includes('.entry-flag'),
-  'kelas .marked-text/.mark-weak/.mark-typo/.mark-ai/.entry-flag tersedia',
-)
-
-// ---------- Uji unduhan PDF teks bertanda (2026-11-21) ----------
-// Permintaan pengguna: hasil panel "Teks CV dengan Tanda" bisa diunduh
-// sebagai PDF seperti laporan Analisis AI. PDF-nya digambar dari
-// buildMarks/buildSegments yang sama — tidak ada logika tanda baru.
-const markedPdfBytes = buildMarkedTextPdfBytes(markedResult, MARKED_CV, {
-  ai: MARKED_AI,
-  targetRole: 'Kasir',
-  date: REPORT_DATE,
-})
-check(
-  'Teks Bertanda PDF: berkas sungguhan berawalan %PDF dan berukuran wajar',
-  new TextDecoder().decode(markedPdfBytes.slice(0, 4)) === '%PDF' &&
-    markedPdfBytes.length > 2000 &&
-    markedPdfBytes.length < 500_000,
-  `${markedPdfBytes.length} byte (dengan tanda AI)`,
-)
-const markedPdfStdBytes = buildMarkedTextPdfBytes(markedResult, MARKED_CV, {
-  date: REPORT_DATE,
-})
-check(
-  'Teks Bertanda PDF: tetap terbuat dari tanda standar saja tanpa hasil AI',
-  new TextDecoder().decode(markedPdfStdBytes.slice(0, 4)) === '%PDF' &&
-    markedPdfStdBytes.length > 1500 &&
-    markedPdfStdBytes.length < 500_000,
-  `${markedPdfStdBytes.length} byte (tanpa AI)`,
-)
-const markedPdfFile = buildMarkedTextPdf(markedResult, MARKED_CV, {
-  ai: MARKED_AI,
-  date: REPORT_DATE,
-})
-check(
-  'Teks Bertanda PDF: Blob application/pdf + nama berkas teks-cv-bertanda-<tanggal>.pdf',
-  markedPdfFile.blob.type === 'application/pdf' &&
-    markedPdfFile.fileName === 'teks-cv-bertanda-2026-11-21.pdf' &&
-    markedTextFileName(REPORT_DATE) === 'teks-cv-bertanda-2026-11-21.pdf' &&
-    markedTextFileName(new Date(2026, 0, 5)) === 'teks-cv-bertanda-2026-01-05.pdf',
-  `${markedPdfFile.blob.type}, ${markedPdfFile.fileName}`,
-)
-const longMarkedDoc = buildMarkedTextPdfDoc(
-  analyzeCv(SAMPLE_CV),
-  `${MARKED_CV}\n\n${SAMPLE_CV}\n\n${MARKED_CV}`,
-  { date: REPORT_DATE },
-)
-check(
-  'Teks Bertanda PDF: teks panjang mengalir ke halaman lanjut otomatis',
-  longMarkedDoc.getNumberOfPages() >= 2,
-  `${longMarkedDoc.getNumberOfPages()} halaman`,
-)
-check(
-  'Teks Bertanda PDF: tombol + handler terpasang di panel penanda App.tsx',
-  appTsxText.includes('Unduh Teks Bertanda (PDF)') &&
-    appTsxText.includes('onClick={handleDownloadMarkedPdf}') &&
-    appTsxText.includes('buildMarkedTextPdf') &&
-    appTsxText.includes('marks-actions'),
-  'tombol di panel "Teks CV dengan Tanda" mengunduh PDF teks bertanda langsung (jsPDF)',
-)
-
 // ---------- Uji contoh hasil beranda + artikel SEO (2026-11-24) ----------
 // Bagian "Lihat Contoh Hasil" WAJIB memakai mesin asli atas teks contoh
 // yang sama yang dirender App.tsx — bukan angka yang diketik manual.
@@ -1497,18 +1208,8 @@ check(
   appTsxText.includes('Lihat Contoh Hasil') &&
     appTsxText.includes('analyzeCv(DEMO_WEAK_CV)') &&
     appTsxText.includes('analyzeCv(SAMPLE_CV)') &&
-    appTsxText.includes('buildMarks(DEMO_WEAK_CV, null, DEMO_BEFORE.priorities)') &&
     appTsxText.includes('Analisis CV-mu'),
-  'bagian contoh memakai mesin asli + tanda asli, berlabel jujur "Contoh"',
-)
-const demoMarks = buildMarks(DEMO_WEAK_CV, null)
-check(
-  'Contoh hasil: teks lemah demo menghasilkan tanda frasa lemah, salah eja, dan entri',
-  demoMarks.some((m) => m.kind === 'frasa-lemah') &&
-    demoMarks.some((m) => m.kind === 'salah-eja') &&
-    demoMarks.some((m) => m.kind === 'entri') &&
-    demoMarks.some((m) => m.kind === 'saya'),
-  `${demoMarks.length} tanda pada CV demo`,
+  'bagian contoh memakai mesin asli, berlabel jujur "Contoh"',
 )
 const artikelPath = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -1545,8 +1246,32 @@ check(
 const srcText = (rel: string) =>
   readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), rel), 'utf8')
 const analyzeTsText = srcText('../src/lib/analyze.ts')
-const marksTsText = srcText('../src/lib/marks.ts')
-const pdfTsText = srcText('../src/lib/pdf.ts')
+
+// CV uji untuk dua pemeriksaan sumber prioritas bersama di bawah.
+const MARKED_CV = `Rina Wijaya
+rina.wijaya@gmail.com | 0812-3456-7890 | linkedin.com/in/rinawijaya | Jakarta
+
+Ringkasan
+Saya pekerja keras, mampu bekerja di bawah tekanan, dan bertanggung jawab atas kebersihan toko selama bekerja.
+
+Pengalaman
+Kasir — Toko Berkah (2023–2024)
+- Saya melayani pembeli setiap hari di kasir.
+- Saya merubah jadwal piket kasir setiap minggu.
+- Saya melakukan aktifitas pencatatan stok barang.
+- Saya mengecek uang kas setiap malam.
+
+Staf Administrasi — PT Sinar Abadi (2024–Sekarang)
+- Meningkatkan penjualan sebesar 30% dalam 6 bulan.
+- Mengelola 15 orang anggota tim gudang.
+
+Pendidikan
+SMA Negeri 1 Jakarta (2019–2022)
+
+Keahlian
+Microsoft Word, Microsoft Excel, Kasir, Komunikasi`
+
+const markedResult = analyzeCv(MARKED_CV)
 
 const recomputedPriorities = selectPriorities(
   markedResult.aspects.flatMap((a) => a.checks),
@@ -1573,92 +1298,45 @@ check(
   `frasa-lemah #${markedRanks.get('frasa-lemah')}, kerapian-bahasa #${markedRanks.get('kerapian-bahasa')}; hasil-terukur tidak termasuk prioritas CV uji ini`,
 )
 
-const rankedMarks = buildMarks(MARKED_CV, MARKED_AI, markedResult.priorities)
+// ---------- Uji penghapusan fitur penanda teks CV (2026-11-24) ----------
+// Perintah pengguna: fitur "Teks CV dengan Tanda" dihapus total karena
+// dinilai tidak efektif — panel, modul marks.ts, unduhan PDF bertanda,
+// dan cuplikan bertanda di demo tidak boleh tersisa; fitur hasil lain
+// (daftar Prioritas Perbaikan, unduh laporan PDF) tetap utuh.
 check(
-  'Penanda prioritas: tanda pemeriksaan prioritas membawa peringkat daftar yang benar',
-  rankedMarks.filter((m) => m.kind === 'frasa-lemah').length > 0 &&
-    rankedMarks
-      .filter((m) => m.kind === 'frasa-lemah')
-      .every((m) => m.priorityRank === priorityRankOf(markedResult.priorities, 'frasa-lemah')) &&
-    rankedMarks
-      .filter((m) => m.kind === 'salah-eja' || m.kind === 'saya')
-      .every(
-        (m) => m.priorityRank === priorityRankOf(markedResult.priorities, 'kerapian-bahasa'),
-      ) &&
-    marksTsText.includes('applyPriorityRanks') &&
-    marksTsText.includes('priorityRanks(priorities)'),
-  `frasa-lemah → #${priorityRankOf(markedResult.priorities, 'frasa-lemah')}, eja/"saya" → #${priorityRankOf(markedResult.priorities, 'kerapian-bahasa')}`,
+  'Penghapusan penanda: patokan skor persis tidak berubah (96/61/16, fresh graduate 53)',
+  strong.total === 96 && medium.total === 61 && weak.total === 16 && fresh.total === 53,
+  `kuat ${strong.total}, menengah ${medium.total}, lemah ${weak.total}, fresh ${fresh.total}`,
 )
 check(
-  'Penanda prioritas: tanda AI & tanda pemeriksaan bukan prioritas tidak berperingkat',
-  rankedMarks.filter((m) => m.kind === 'ai').length > 0 &&
-    rankedMarks.filter((m) => m.kind === 'ai').every((m) => m.priorityRank === undefined) &&
-    rankedMarks.filter((m) => m.kind === 'entri').length === 1 &&
-    rankedMarks
-      .filter((m) => m.kind === 'entri')
-      .every((m) => m.priorityRank === undefined) &&
-    buildMarks(MARKED_CV, null).every((m) => m.priorityRank === undefined),
-  'AI tidak pernah berperingkat; entri hasil-terukur CV uji ini bukan prioritas; tanpa daftar prioritas tidak ada peringkat (perilaku lama utuh)',
-)
-const frasaPriorityCheck = markedResult.priorities.find((c) => c.id === 'frasa-lemah')
-const singlyRanked = frasaPriorityCheck
-  ? applyPriorityRanks(buildStandardMarks(MARKED_CV), [frasaPriorityCheck])
-  : []
-check(
-  'Penanda prioritas: applyPriorityRanks hanya menempelkan peringkat pada pemeriksaan terdaftar',
-  singlyRanked.length > 0 &&
-    singlyRanked
-      .filter((m) => m.kind === 'frasa-lemah')
-      .every((m) => m.priorityRank === 1) &&
-    singlyRanked
-      .filter((m) => m.kind !== 'frasa-lemah')
-      .every((m) => m.priorityRank === undefined),
-  'dengan daftar berisi satu pemeriksaan, hanya tandanya yang berperingkat (sebagai #1)',
+  'Penghapusan penanda: App.tsx bebas panel & unduhan bertanda',
+  !appTsxText.includes('Teks CV dengan Tanda') &&
+    !appTsxText.includes('Unduh Teks Bertanda') &&
+    !appTsxText.includes("from './lib/marks'") &&
+    !appTsxText.includes('handleDownloadMarkedPdf'),
+  'tidak ada panel, tombol, impor marks, atau handler unduh bertanda',
 )
 check(
-  'Penanda prioritas: demo — entri hasil-terukur prioritas #1 dan tandanya berperingkat 1',
-  demoBefore.priorities[0]?.id === 'hasil-terukur' &&
-    demoMarks.length > 0 &&
-    buildMarks(DEMO_WEAK_CV, null, demoBefore.priorities)
-      .filter((m) => m.kind === 'entri')
-      .every((m) => m.priorityRank === 1) &&
-    buildMarks(DEMO_WEAK_CV, null, demoBefore.priorities)
-      .filter((m) => m.kind === 'frasa-lemah')
-      .every(
-        (m) => m.priorityRank === priorityRankOf(demoBefore.priorities, 'frasa-lemah'),
-      ),
-  `prioritas demo: ${demoBefore.priorities.slice(0, 3).map((c) => c.id).join(' > ')} …`,
+  'Penghapusan penanda: modul marks.ts sudah tidak ada & pdf/report bersih',
+  !existsSync(resolve(dirname(fileURLToPath(import.meta.url)), '../src/lib/marks.ts')) &&
+    !srcText('../src/lib/pdf.ts').includes('buildMarkedTextPdf') &&
+    !srcText('../src/lib/report.ts').includes('markedTextFileName'),
+  'marks.ts terhapus; builder PDF bertanda & helper nama berkasnya ikut hilang',
 )
 check(
-  'Penanda prioritas: panel App.tsx meneruskan prioritas hasil & menampilkan label peringkat',
-  appTsxText.includes('buildMarks(analyzedText, aiResult, result.priorities)') &&
-    appTsxText.includes('Prioritas perbaikan #') &&
-    appTsxText.includes('sw-priority') &&
-    appTsxText.includes('mark-priority'),
-  'panel memakai peringkat bersama; legenda oranye + label "Prioritas perbaikan #N" terpasang',
+  'Penghapusan penanda: App.css bebas gaya penanda',
+  !appCssText.includes('.marked-text') &&
+    !appCssText.includes('.mark-priority') &&
+    !appCssText.includes('.mark-explain') &&
+    !appCssText.includes('.marks-legend'),
+  'kelas .marked-text/.mark-priority/.mark-explain/.marks-legend tidak ada lagi',
 )
 check(
-  'Penanda prioritas: gaya oranye ada di App.css',
-  appCssText.includes('.mark-priority') &&
-    appCssText.includes('#fdba74') &&
-    appCssText.includes('.sw-priority') &&
-    appCssText.includes('.mark-priority-label'),
-  '.mark-priority #fdba74 (garis bawah #ea580c) + swatch legenda + label penjelasan',
-)
-const priorityPdfBytes = buildMarkedTextPdfBytes(markedResult, MARKED_CV, {
-  ai: MARKED_AI,
-  date: REPORT_DATE,
-})
-check(
-  'Teks Bertanda PDF: gaya prioritas ikut — %PDF valid + pdf.ts memakai peringkat bersama',
-  new TextDecoder().decode(priorityPdfBytes.slice(0, 4)) === '%PDF' &&
-    priorityPdfBytes.length > 2000 &&
-    priorityPdfBytes.length < 500_000 &&
-    pdfTsText.includes('buildMarks(cvText, ai, result.priorities)') &&
-    pdfTsText.includes('Prioritas #') &&
-    pdfTsText.includes('Oranye — prioritas perbaikan') &&
-    pdfTsText.includes('[253, 186, 116]'),
-  `${priorityPdfBytes.length} byte; legenda "Oranye — prioritas perbaikan" + awalan "Prioritas #N —" pada keterangan tanda`,
+  'Penghapusan penanda: fitur hasil lain tetap terpasang',
+  appTsxText.includes('Prioritas Perbaikan') &&
+    appTsxText.includes('Unduh Laporan (PDF)') &&
+    appTsxText.includes('Lihat Contoh Hasil'),
+  'daftar prioritas, unduh laporan PDF, dan bagian contoh hasil tetap ada',
 )
 
 if (failures > 0) {

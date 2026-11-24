@@ -624,6 +624,34 @@ perbaikan diberi tanda warna khusus.
   tanda prioritas. Prioritas tanpa lokasi teks (bagian/kontak yang
   hilang) memang tidak tertandai — tetap hanya tampil sebagai daftar.
 
+## Fitur penanda teks CV DIHAPUS (2026-11-24)
+
+Atas perintah pengguna pada 2026-11-24 ("hapus saja fiturnya, karena
+tidak efektif bekerja fiturnya"), seluruh fitur penanda yang dibangun
+pada 2026-11-21 s/d 2026-11-24 di atas **dihapus total** — pola yang
+sama seperti penghapusan kartu "Bagikan Hasil" dulu:
+
+- Panel "Teks CV dengan Tanda" di App.tsx (judul, legenda, teks
+  bertanda, kotak penjelasan tanda) beserta seluruh state/handler-nya.
+- Tombol "Unduh Teks Bertanda (PDF)" dan builder PDF bertanda di
+  `src/lib/pdf.ts` + helper `markedTextFileName` di `src/lib/report.ts`.
+- Modul `src/lib/marks.ts` dihapus dari repo.
+- Cuplikan teks bertanda di bagian "Lihat Contoh Hasil" — bagian demo
+  itu sendiri **tetap ada** dengan skor Sebelum/Sesudah + daftar
+  prioritasnya.
+- Gaya CSS khusus penanda di App.css dan uji-uji khusus penanda/PDF
+  bertanda di `scripts/run-tests.ts`.
+- Di `analyze.ts` hanya dibersihkan ekspor yang murni untuk penanda
+  dan terbukti tidak dipakai pemeriksaan (`getExperienceEntrySpans`,
+  `findTypoOccurrences`); perilaku skor identik — patokan tetap
+  96/61/16, mode lowongan 89/79 & 60/48, fresh graduate 53, demo
+  55→96. `selectPriorities`/`priorityRanks` dan daftar "Prioritas
+  Perbaikan" di kartu hasil adalah fitur HASIL dan **tetap ada**.
+
+**Jangan bangun ulang fitur penanda teks CV ini tanpa persetujuan baru
+dari pengguna.** Unduhan PDF yang tersisa hanyalah "Unduh Laporan
+(PDF)" di kartu Analisis AI — itu fitur berbeda dan tetap dipertahankan.
+
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
 - Akurasi yang terasa benar: hasil cocok dengan intuisi pengguna.
