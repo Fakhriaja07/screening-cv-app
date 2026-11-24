@@ -84,7 +84,8 @@ import {
 } from '../src/lib/report'
 import { buildPersonalExamples } from '../src/lib/personalExamples'
 import { buildReportPdf, buildReportPdfBytes } from '../src/lib/pdf'
-import type { AiAnalysis } from '../src/lib/ai'
+import { buildAiFixContext, type AiAnalysis } from '../src/lib/ai'
+import { parseAiJson, parseFailedChecks } from '../api/analyze-ai.js'
 const MEDIUM_CV = `Budi Santoso
 budi.santoso@gmail.com | 0812-9876-5432 | linkedin.com/in/budisantoso
 
@@ -1656,6 +1657,22 @@ const FAKE_AI: AiAnalysis = {
   ],
   kekurangan: ['Belum ada sertifikasi pendukung.'],
   saranRingkasan: 'Data analyst pemula yang terbiasa mengolah data penjualan.',
+  perbaikanLengkap: [
+    {
+      idPemeriksaan: 'hasil-terukur',
+      judul: 'Hasil terukur',
+      sebelum: 'Membuat laporan penjualan',
+      sesudah: 'Menyusun laporan penjualan mingguan untuk [jumlah] cabang dengan Microsoft Excel',
+      catatan: 'Isi [jumlah] dengan angka aslimu.',
+    },
+    {
+      idPemeriksaan: 'linkedin',
+      judul: 'LinkedIn',
+      sebelum: '',
+      sesudah: 'linkedin.com/in/[nama-kamu] — cantumkan di bawah nama, sejajar email & nomor HP',
+      catatan: 'Buat/aktifkan profil LinkedIn lalu salin tautannya persis seperti format ini.',
+    },
+  ],
 }
 const reportAi = buildReportText(analyzeCv(SAMPLE_CV), { ai: FAKE_AI, date: REPORT_DATE })
 check(
@@ -1668,6 +1685,113 @@ check(
     reportAi.includes('Contoh Ringkasan Profil: Data analyst pemula'),
   'ringkasan, saran penulisan ulang, kekurangan & contoh ringkasan tercantum',
 )
+check(
+  'Laporan: bagian Perbaikan Lengkap dari AI tercantum bila ada isinya',
+  reportAi.includes('PERBAIKAN LENGKAP DARI AI:') &&
+    reportAi.includes('1. Hasil terukur') &&
+    reportAi.includes('Sebelum: Membuat laporan penjualan') &&
+    reportAi.includes('Sesudah: Menyusun laporan penjualan mingguan untuk [jumlah] cabang') &&
+    reportAi.includes('Catatan: Isi [jumlah] dengan angka aslimu.') &&
+    reportAi.includes('2. LinkedIn') &&
+    reportAi.includes('Sesudah: linkedin.com/in/[nama-kamu]'),
+  'judul, sebelum, sesudah & catatan tiap item perbaikan masuk laporan (item ketiadaan tanpa baris Sebelum)',
+)
+
+// ---------- Uji Perbaikan Lengkap AI (2026-11-24) ----------
+// Keputusan pengguna: TIDAK ada teaser AI gratis; sebagai gantinya AI
+// berbayar wajib memperbaiki SEMUA pemeriksaan standar yang gagal.
+// Frontend mengirim konteks pemeriksa yang gagal; backend memvalidasinya
+// dan memasukkannya ke prompt; parser menerima bagian skema baru.
+const parsedFullFix = parseAiJson(
+  JSON.stringify({
+    ringkasan: 'CV menengah dengan beberapa kekurangan struktural.',
+    saranPenulisanUlang: [],
+    kekurangan: ['Belum ada hasil terukur.'],
+    saranRingkasan: 'Lulusan baru administrasi.',
+    perbaikanLengkap: [
+      {
+        idPemeriksaan: 'hasil-terukur',
+        judul: 'Hasil terukur',
+        sebelum: 'Membantu mengelola arsip dokumen perusahaan setiap hari.',
+        sesudah: 'Mengelola arsip [jumlah] dokumen perusahaan setiap hari dengan sistem pengindeksan rapi.',
+        catatan: 'Isi [jumlah] dengan angka aslimu.',
+      },
+      {
+        idPemeriksaan: 'linkedin',
+        judul: 'LinkedIn',
+        sebelum: '',
+        sesudah: 'linkedin.com/in/[nama-kamu]',
+        catatan: 'Aktifkan profil LinkedIn lalu cantumkan tautannya.',
+      },
+      { idPemeriksaan: 'tanpa-sesudah', judul: 'Item rusak', sebelum: 'x', sesudah: '  ', catatan: '' },
+      'bukan objek',
+    ],
+  }),
+)
+check(
+  'AI lengkap: parser menerima bagian perbaikanLengkap & membuang item tanpa sesudah',
+  parsedFullFix !== null &&
+    parsedFullFix.perbaikanLengkap.length === 2 &&
+    parsedFullFix.perbaikanLengkap[0].idPemeriksaan === 'hasil-terukur' &&
+    parsedFullFix.perbaikanLengkap[0].sesudah.includes('[jumlah] dokumen') &&
+    parsedFullFix.perbaikanLengkap[1].sebelum === '',
+  `terparse ${parsedFullFix?.perbaikanLengkap.length ?? 'null'} item valid dari 4 mentah`,
+)
+const parsedOldSchema = parseAiJson(
+  JSON.stringify({
+    ringkasan: 'Jawaban skema lama.',
+    saranPenulisanUlang: [{ asli: 'a', saran: 'b', alasan: 'c' }],
+    kekurangan: [],
+    saranRingkasan: 'Ringkasan lama.',
+  }),
+)
+check(
+  'AI lengkap: skema lama tanpa perbaikanLengkap tetap terparse (array kosong)',
+  parsedOldSchema !== null &&
+    parsedOldSchema.perbaikanLengkap.length === 0 &&
+    parsedOldSchema.saranPenulisanUlang.length === 1,
+  'kompatibilitas mundur parser terjaga',
+)
+const sanitizedChecks = parseFailedChecks([
+  { id: 'hasil-terukur', judul: 'Hasil terukur', pesan: 'Belum ada angka.', kutipan: 'Membantu arsip.' },
+  { id: '', judul: 'Tanpa id' },
+  { judul: 'Tanpa id juga' },
+  'bukan objek',
+  { id: 'linkedin', judul: 'LinkedIn' },
+])
+check(
+  'AI lengkap: parseFailedChecks membuang item tak valid & menoleransi field hilang',
+  sanitizedChecks.length === 2 &&
+    sanitizedChecks[0].kutipan === 'Membantu arsip.' &&
+    sanitizedChecks[1].id === 'linkedin' &&
+    sanitizedChecks[1].pesan === '' &&
+    parseFailedChecks('bukan array').length === 0 &&
+    parseFailedChecks(undefined).length === 0,
+  `${sanitizedChecks.length} item valid dari 5 mentah`,
+)
+const mediumPersonal = buildPersonalExamples(medium, MEDIUM_CV, '')
+const fixContext = buildAiFixContext(medium, mediumPersonal)
+const failedCheckIds = new Set<string>()
+for (const aspect of medium.aspects) {
+  for (const c of aspect.checks) if (c.status !== 'baik') failedCheckIds.add(c.id)
+}
+check(
+  'AI lengkap: konteks frontend memuat SEMUA pemeriksaan gagal, prioritas lebih dulu',
+  fixContext.length === failedCheckIds.size &&
+    fixContext.every((c) => failedCheckIds.has(c.id)) &&
+    medium.priorities.every((p, i) => fixContext[i]?.id === p.id) &&
+    fixContext.every((c) => c.judul.length > 0 && c.pesan.length > 0),
+  `${fixContext.length} konteks terkirim untuk ${failedCheckIds.size} pemeriksaan gagal; urutan awal = prioritas`,
+)
+check(
+  'AI lengkap: kutipan konteks berasal dari contoh personal CV pengguna sendiri',
+  fixContext.some((c) => c.kutipan.length > 0) &&
+    fixContext
+      .filter((c) => c.kutipan.length > 0)
+      .every((c) => mediumPersonal[c.id]?.kutipanAsli === c.kutipan),
+  'kutipan terisi hanya dari lapisan contoh personal, tidak dikarang di ai.ts',
+)
+
 check(
   'Laporan: nama berkas unduhan berpola laporan-cv-<tanggal>.pdf',
   reportFileName(REPORT_DATE) === 'laporan-cv-2026-11-21.pdf' &&
@@ -1728,6 +1852,15 @@ check(
   appTsxText.includes('Tombol unduh laporan akan muncul setelah Analisis AI selesai.') &&
     /aiResult \? \([\s\S]{0,400}Unduh Laporan \(PDF\)/.test(appTsxText),
   'blok .ai-report-actions dirender kondisional pada aiResult; sebelum itu tampil petunjuk pengganti',
+)
+check(
+  'AI lengkap: kartu AI menampilkan bagian Perbaikan Lengkap + janji token tidak hangus',
+  appTsxText.includes('Perbaikan Lengkap dari AI') &&
+    appTsxText.includes('aiResult.perbaikanLengkap') &&
+    appTsxText.includes('buildAiFixContext') &&
+    appTsxText.includes('tokenmu tidak hangus') &&
+    appTsxText.includes('bukan langganan'),
+  'bagian baru dirender dari aiResult.perbaikanLengkap; teks nilai jual + garansi token ada di kartu AI',
 )
 check(
   'Template: tombol Salin Template sudah dihapus (keputusan 2026-11-21)',

@@ -28,11 +28,34 @@ interface RewriteItem {
   alasan: string
 }
 
+// Satu item perbaikan menyeluruh untuk satu pemeriksaan standar yang
+// gagal: versi perbaikan JADI (siap salin) atas temuan pemeriksa situs,
+// bukan lagi sekadar contoh umum.
+interface FixItem {
+  idPemeriksaan: string
+  judul: string
+  sebelum: string
+  sesudah: string
+  catatan: string
+}
+
 interface AiResult {
   ringkasan: string
   saranPenulisanUlang: RewriteItem[]
   kekurangan: string[]
   saranRingkasan: string
+  perbaikanLengkap: FixItem[]
+}
+
+// Konteks satu pemeriksaan standar yang gagal, dikirim frontend dari
+// hasil analyzeCv yang sedang tampil (id + label + pesan + kutipan bukti
+// dari lapisan contoh personal bila ada). AI memperbaiki temuan ini —
+// bukan menebak ulang dari nol.
+export interface FailedCheckContext {
+  id: string
+  judul: string
+  pesan: string
+  kutipan: string
 }
 
 const MAX_CV_CHARS = 12_000
@@ -40,16 +63,25 @@ const MIN_CV_CHARS = 50
 const MAX_JOBDESC_CHARS = 6_000
 const MAX_ROLE_CHARS = 200
 
+// Konteks pemeriksaan yang gagal dari frontend: dibatasi jumlah dan
+// panjang tiap field-nya agar prompt tidak membengkak tanpa kendali.
+const MAX_FIX_CHECKS = 20
+const MAX_FIX_ITEMS = 20
+
 // Batas waktu menunggu respons OpenRouter per permintaan. Model gratis bisa
 // sangat lambat; tanpa batas ini fungsi serverless menggantung sampai
-// diputus platform dan pengguna tidak mendapat pesan yang jelas.
-const UPSTREAM_TIMEOUT_MS = 55_000
+// diputus platform dan pengguna tidak mendapat pesan yang jelas. Jawaban
+// kini memuat perbaikan untuk SEMUA pemeriksaan yang gagal (JSON jauh
+// lebih besar), jadi batas waktu dan jatah token dinaikkan dari nilai
+// lama (55 detik / 3000 token).
+const UPSTREAM_TIMEOUT_MS = 75_000
+const NONSTREAM_MAX_TOKENS = 6500
 
 // Mode streaming: batas waktu keseluruhan aliran lebih longgar karena proses
 // berpikir model ditampilkan langsung ke pengguna, dan jatah token keluaran
 // lebih besar agar penalaran + JSON jawaban sama-sama muat.
 const STREAM_TIMEOUT_MS = 90_000
-const STREAM_MAX_TOKENS = 6000
+const STREAM_MAX_TOKENS = 9000
 
 class UpstreamTimeoutError extends Error {
   constructor() {
@@ -88,13 +120,55 @@ function clientIp(req: AiRequest): string {
 const SYSTEM_PROMPT =
   'Kamu adalah konsultan karier berbahasa Indonesia. Balas HANYA dengan JSON valid sesuai skema yang diminta — tanpa markdown, tanpa pagar kode, tanpa teks pembuka/penutup. Jangan mengarang pengalaman, perusahaan, atau angka yang tidak ada di CV.'
 
-function buildPrompt(cvText: string, targetRole: string, jobDesc: string): string {
+// Validasi + sanitasi daftar pemeriksaan gagal dari body permintaan.
+// Item tanpa id/judul dibuang; tiap field dipotong ke batasnya; jumlah
+// dibatasi. Body yang tidak memuat daftar valid menghasilkan array
+// kosong (perilaku lama: AI menilai tanpa konteks pemeriksa).
+export function parseFailedChecks(value: unknown): FailedCheckContext[] {
+  if (!Array.isArray(value)) return []
+  const out: FailedCheckContext[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue
+    const obj = item as Record<string, unknown>
+    const id = asString(obj.id).trim().slice(0, 60)
+    const judul = asString(obj.judul).trim().slice(0, 120)
+    if (!id || !judul) continue
+    out.push({
+      id,
+      judul,
+      pesan: asString(obj.pesan).trim().slice(0, 500),
+      kutipan: asString(obj.kutipan).trim().slice(0, 600),
+    })
+    if (out.length >= MAX_FIX_CHECKS) break
+  }
+  return out
+}
+
+function buildPrompt(
+  cvText: string,
+  targetRole: string,
+  jobDesc: string,
+  checks: FailedCheckContext[],
+): string {
   const rolePart = targetRole
     ? `\nPOSISI YANG DILAMAR: ${targetRole}\n`
     : ''
   const jobPart = jobDesc
     ? `\nDESKRIPSI LOWONGAN:\n${jobDesc}\n`
     : '\n(Tidak ada deskripsi lowongan — nilai kekurangan umum CV saja.)\n'
+  const checksPart = checks.length
+    ? [
+        '',
+        'PEMERIKSAAN STANDAR YANG GAGAL (hasil mesin penilaian situs atas CV ini — perbaiki SEMUANYA di "perbaikanLengkap"):',
+        ...checks.map((c, i) => {
+          const lines = [`${i + 1}. [id: ${c.id}] ${c.judul}`]
+          if (c.pesan) lines.push(`   Temuan pemeriksa: ${c.pesan}`)
+          if (c.kutipan) lines.push(`   Kutipan dari CV pengguna: "${c.kutipan}"`)
+          return lines.join('\n')
+        }),
+        '',
+      ].join('\n')
+    : '\n(Tidak ada daftar pemeriksaan yang dikirim — "perbaikanLengkap" boleh berupa array kosong.)\n'
   return [
     'Kamu adalah konsultan karier berbahasa Indonesia yang membantu pencari kerja dan fresh graduate memperbaiki CV.',
     'Analisis CV berikut dan balas HANYA dengan JSON valid (tanpa markdown, tanpa teks lain) dengan skema persis ini:',
@@ -102,11 +176,17 @@ function buildPrompt(cvText: string, targetRole: string, jobDesc: string): strin
     '  "ringkasan": "penilaian kualitatif CV dalam 2-3 kalimat",',
     '  "saranPenulisanUlang": [ { "asli": "kalimat/poin asli dari CV", "saran": "versi penulisan ulang", "alasan": "kenapa versi baru lebih baik" } ],',
     '  "kekurangan": [ "kekurangan CV, maksimal 6 butir" ],',
-    '  "saranRingkasan": "contoh ringkasan profil 2-3 kalimat berdasarkan isi CV"',
+    '  "saranRingkasan": "contoh ringkasan profil 2-3 kalimat berdasarkan isi CV",',
+    '  "perbaikanLengkap": [ { "idPemeriksaan": "id pemeriksaan persis seperti pada daftar di bawah", "judul": "nama pemeriksaan", "sebelum": "kutipan asli dari CV yang diperbaiki — kosongkan bila masalahnya sesuatu yang belum ada di CV", "sesudah": "versi perbaikan JADI yang siap disalin pengguna", "catatan": "penjelasan singkat 1 kalimat" } ]',
     '}',
     '',
     'Aturan ketat:',
     '- saranPenulisanUlang: ambil maksimal 5 poin dari bagian pengalaman CV. Tulis ulang dengan kata kerja aksi yang kuat dan struktur pencapaian.',
+    '- perbaikanLengkap: buat SATU item untuk SETIAP pemeriksaan pada daftar "PEMERIKSAAN STANDAR YANG GAGAL" di bawah — tidak boleh ada yang terlewat dan jangan menambah pemeriksaan di luar daftar itu. Urutannya sama seperti daftar.',
+    '- "sesudah" pada perbaikanLengkap harus teks FINAL yang utuh dan siap disalin ke CV, ditulis dari teks pengguna sendiri — bukan contoh umum dan bukan placeholder umum. Placeholder kurung siku HANYA untuk fakta yang memang tidak ada di CV (angka pencapaian, nama, tanggal) dan harus spesifik, mis. [jumlah dokumen yang diproses per bulan], bukan [angka].',
+    '- Bila masalahnya sesuatu yang BELUM ADA di CV (mis. belum ada tautan LinkedIn, sertifikasi, atau bagian yang hilang): "sebelum" dikosongkan dan "sesudah" berisi templat konkret yang siap diisi pengguna (format persisnya) + di "catatan" satu kalimat cara mengisinya.',
+    '- "sebelum" pada perbaikanLengkap: pakai kutipan yang tercantum pada daftar pemeriksaan bila ada; bila tidak ada, ambil kalimat/bagian CV yang persis diperbaiki; kosongkan hanya untuk masalah ketiadaan.',
+    '- Jaga setiap item perbaikanLengkap ringkas: "sesudah" maksimal sekitar 3 baris/kalimat, "catatan" 1 kalimat. Jawaban memuat banyak item, jadi jangan bertele-tele.',
     '- JANGAN mengarang pengalaman, perusahaan, atau angka baru. Bila angka pencapaian tidak ada di CV, pakai placeholder seperti [X%], [jumlah], atau [angka] di dalam saran, dan jelaskan di alasan bahwa pengguna harus mengisi angka aslinya sendiri.',
     jobDesc
       ? '- kekurangan: nilai kesenjangan (gap) CV terhadap deskripsi lowongan secara MAKNA — skill/pengalaman yang dituntut lowongan tapi belum tampak di CV, bukan sekadar daftar kata kunci yang hilang.'
@@ -115,6 +195,7 @@ function buildPrompt(cvText: string, targetRole: string, jobDesc: string): strin
     '- Seluruh jawaban dalam Bahasa Indonesia yang jelas dan suportif.',
     rolePart,
     jobPart,
+    checksPart,
     'TEKS CV:',
     cvText,
   ].join('\n')
@@ -157,14 +238,35 @@ function normalizeRewrite(item: unknown): RewriteItem | null {
   return null
 }
 
+// Item perbaikan lengkap tanpa "sesudah" tidak berguna bagi pengguna —
+// dibuang. Field lain ditoleransi kosong (judul jatuh ke id bila kosong).
+function normalizeFix(item: unknown): FixItem | null {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return null
+  const it = item as Record<string, unknown>
+  const sesudah = asString(it.sesudah).trim()
+  if (!sesudah) return null
+  const idPemeriksaan = asString(it.idPemeriksaan).trim()
+  return {
+    idPemeriksaan,
+    judul: asString(it.judul).trim() || idPemeriksaan,
+    sebelum: asString(it.sebelum),
+    sesudah,
+    catatan: asString(it.catatan),
+  }
+}
+
 function normalizeResult(raw: unknown): AiResult | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const obj = raw as Record<string, unknown>
   // Objek JSON yang sama sekali tidak memuat field skema dianggap bukan
   // jawaban analisis (mis. JSON lain yang kebetulan valid) → gagal parse.
-  const hasKnownField = ['ringkasan', 'saranPenulisanUlang', 'kekurangan', 'saranRingkasan'].some(
-    (key) => obj[key] !== undefined && obj[key] !== null,
-  )
+  const hasKnownField = [
+    'ringkasan',
+    'saranPenulisanUlang',
+    'kekurangan',
+    'saranRingkasan',
+    'perbaikanLengkap',
+  ].some((key) => obj[key] !== undefined && obj[key] !== null)
   if (!hasKnownField) return null
 
   const rewriteSource =
@@ -180,11 +282,25 @@ function normalizeResult(raw: unknown): AiResult | null {
     if (rewrites.length >= 5) break
   }
 
+  const fixSource =
+    obj.perbaikanLengkap === null || obj.perbaikanLengkap === undefined
+      ? []
+      : Array.isArray(obj.perbaikanLengkap)
+        ? obj.perbaikanLengkap
+        : [obj.perbaikanLengkap]
+  const fixes: FixItem[] = []
+  for (const item of fixSource) {
+    const normalized = normalizeFix(item)
+    if (normalized) fixes.push(normalized)
+    if (fixes.length >= MAX_FIX_ITEMS) break
+  }
+
   return {
     ringkasan: asString(obj.ringkasan),
     saranPenulisanUlang: rewrites,
     kekurangan: asStringList(obj.kekurangan, 6),
     saranRingkasan: asString(obj.saranRingkasan),
+    perbaikanLengkap: fixes,
   }
 }
 
@@ -358,6 +474,7 @@ interface StreamOptions {
   cvText: string
   targetRole: string
   jobDesc: string
+  checks: FailedCheckContext[]
 }
 
 // Menjalankan analisis dalam mode streaming: meneruskan penalaran model
@@ -367,7 +484,7 @@ interface StreamOptions {
 // fungsi ini hanya dipanggil setelah validasi lolos dan aliran adalah
 // satu-satunya keluaran yang tersisa untuk kegagalan di tengah proses.
 async function streamAnalysis(res: AiResponse, opts: StreamOptions): Promise<void> {
-  const { apiKey, model, cvText, targetRole, jobDesc } = opts
+  const { apiKey, model, cvText, targetRole, jobDesc, checks } = opts
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS)
 
@@ -388,7 +505,7 @@ async function streamAnalysis(res: AiResponse, opts: StreamOptions): Promise<voi
           model,
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: buildPrompt(cvText, targetRole, jobDesc) },
+            { role: 'user', content: buildPrompt(cvText, targetRole, jobDesc, checks) },
           ],
           stream: true,
           ...(options.withResponseFormat ? { response_format: { type: 'json_object' } } : {}),
@@ -694,6 +811,9 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
   const cvText = asString(payload.cvText).trim()
   const targetRole = asString(payload.targetRole).trim().slice(0, MAX_ROLE_CHARS)
   const jobDesc = asString(payload.jobDesc).trim()
+  // Konteks pemeriksaan standar yang gagal (opsional): AI memperbaiki
+  // temuan pemeriksa yang sedang tampil di layar pengguna.
+  const failedChecks = parseFailedChecks(payload.perbaikan)
 
   if (cvText.length < MIN_CV_CHARS) {
     res.status(400).json({
@@ -728,7 +848,7 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
   // rate limit, dan pemeriksaan key di atas sudah berjalan sama seperti
   // mode biasa — error sebelum aliran dimulai dibalas JSON biasa.
   if (payload.stream === true) {
-    await streamAnalysis(res, { apiKey, model, cvText, targetRole, jobDesc })
+    await streamAnalysis(res, { apiKey, model, cvText, targetRole, jobDesc, checks: failedChecks })
     return
   }
 
@@ -751,7 +871,7 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
           model,
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: buildPrompt(cvText, targetRole, jobDesc) },
+            { role: 'user', content: buildPrompt(cvText, targetRole, jobDesc, failedChecks) },
           ],
           ...(options.withResponseFormat ? { response_format: { type: 'json_object' } } : {}),
           // Model reasoning bisa menghabiskan seluruh jatah token hanya
@@ -760,8 +880,9 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
           // effort-nya agar jawaban JSON sempat ditulis.
           ...(options.withReasoning ? { reasoning: { effort: 'low' } } : {}),
           temperature: 0.4,
-          // 3000 token agar JSON jawaban tidak terpotong batas default provider.
-          max_tokens: 3000,
+          // Jatah token besar agar JSON jawaban — kini termasuk perbaikan
+          // untuk semua pemeriksaan yang gagal — tidak terpotong.
+          max_tokens: NONSTREAM_MAX_TOKENS,
         }),
       })
     } catch (err) {
@@ -837,7 +958,7 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
       console.error(`[analyze-ai] Timeout ${UPSTREAM_TIMEOUT_MS / 1000} detik menunggu OpenRouter`)
       res.status(502).json({
         error: 'Layanan AI terlalu lama merespons. Coba lagi — hasil analisis standar tetap bisa dipakai.',
-        detail: 'Timeout 55 detik menunggu OpenRouter',
+        detail: `Timeout ${UPSTREAM_TIMEOUT_MS / 1000} detik menunggu OpenRouter`,
       })
       return
     }

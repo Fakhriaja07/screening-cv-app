@@ -1,5 +1,7 @@
 // Klien untuk backend Analisis AI (POST /api/analyze-ai → OpenRouter).
 // Dipakai hanya bila pengguna mencentang persetujuan pengiriman teks CV.
+import type { AnalysisResult } from './analyze'
+import type { PersonalExample } from './personalExamples'
 
 export interface AiRewrite {
   asli: string
@@ -7,17 +9,66 @@ export interface AiRewrite {
   alasan: string
 }
 
+// Satu item "Perbaikan Lengkap dari AI": versi perbaikan JADI untuk satu
+// pemeriksaan standar yang gagal — siap disalin pengguna ke CV-nya.
+export interface AiFix {
+  idPemeriksaan: string
+  judul: string
+  sebelum: string
+  sesudah: string
+  catatan: string
+}
+
 export interface AiAnalysis {
   ringkasan: string
   saranPenulisanUlang: AiRewrite[]
   kekurangan: string[]
   saranRingkasan: string
+  perbaikanLengkap: AiFix[]
+}
+
+// Konteks satu pemeriksaan standar yang gagal, dikirim ke backend agar
+// AI memperbaiki temuan pemeriksa yang sedang tampil — bukan menebak
+// ulang. Kutipan diisi dari contoh personal (CV pengguna sendiri) bila ada.
+export interface AiCheckContext {
+  id: string
+  judul: string
+  pesan: string
+  kutipan: string
 }
 
 export interface AiRequestInput {
   cvText: string
   targetRole?: string
   jobDesc?: string
+  perbaikan?: AiCheckContext[]
+}
+
+// Susun daftar pemeriksaan yang gagal dari hasil analisis standar yang
+// sedang tampil: prioritas perbaikan lebih dulu (sesuai urutan tampil),
+// lalu sisa pemeriksaan yang belum "baik", tanpa duplikat id. Inilah
+// daftar yang wajib diperbaiki AI satu per satu di perbaikanLengkap.
+export function buildAiFixContext(
+  result: AnalysisResult,
+  personalExamples: Partial<Record<string, PersonalExample>> = {},
+): AiCheckContext[] {
+  const seen = new Set<string>()
+  const out: AiCheckContext[] = []
+  const push = (check: AnalysisResult['priorities'][number]) => {
+    if (check.status === 'baik' || seen.has(check.id)) return
+    seen.add(check.id)
+    out.push({
+      id: check.id,
+      judul: check.title,
+      pesan: check.message,
+      kutipan: personalExamples[check.id]?.kutipanAsli ?? '',
+    })
+  }
+  for (const check of result.priorities) push(check)
+  for (const aspect of result.aspects) {
+    for (const check of aspect.checks) push(check)
+  }
+  return out.slice(0, 20)
 }
 
 export async function requestAiAnalysis(input: AiRequestInput): Promise<AiAnalysis> {

@@ -888,6 +888,45 @@ posisi target. Sebelumnya singkatan jatuh ke fallback nama mentah.
   langsung ke kamus seperti sebelumnya. Entri glosarium lain tidak
   berubah; 1 blok uji baru, total 158 uji lolos, patokan skor utuh.
 
+## Analisis AI: perbaikan lengkap untuk semua prioritas (2026-11-24)
+
+Keputusan pengguna (2026-11-24): TIDAK ada contoh/teaser Analisis AI
+gratis — contoh personal gratis di hasil standar sudah cukup sebagai
+pratinjau, jadi hasil AI tetap hanya untuk pemegang token. Sebagai
+gantinya, AI berbayar wajib memberikan perbaikan yang LENGKAP:
+
+- Frontend kini mengirim konteks hasil analisis standar yang sedang
+  tampil ke endpoint: daftar SEMUA pemeriksaan yang gagal (prioritas
+  lebih dulu) berisi id + label + pesan pemeriksa + kutipan bukti dari
+  lapisan contoh personal bila ada (`buildAiFixContext` di
+  `src/lib/ai.ts`; divalidasi/disanitasi server oleh
+  `parseFailedChecks`, maks 20 item).
+- Skema jawaban AI bertambah `perbaikanLengkap`: satu item per
+  pemeriksaan yang dikirim — {idPemeriksaan, judul, sebelum, sesudah,
+  catatan}. "Sesudah" adalah versi perbaikan JADI siap salin dari teks
+  pengguna sendiri; placeholder kurung hanya untuk fakta yang memang
+  tidak ada di CV dan harus spesifik; masalah ketiadaan (LinkedIn,
+  sertifikasi, bagian hilang) dijawab templat konkret + instruksi satu
+  kalimat. Bidang lama (ringkasan, saranPenulisanUlang, kekurangan,
+  saranRingkasan) dipertahankan.
+- Batas disesuaikan agar JSON yang lebih besar selesai utuh:
+  non-streaming 3000 → 6500 token & timeout 55 → 75 detik; streaming
+  6000 → 9000 token (batas aliran 90 detik tetap). Token pengguna tetap
+  hanya terpakai bila analisis berhasil.
+- Kartu Analisis AI menampilkan daftar "Perbaikan Lengkap dari AI"
+  (judul + sebelum → sesudah + catatan) dan laporan PDF memuat bagian
+  "PERBAIKAN LENGKAP DARI AI" juga.
+- Teks nilai jual di kartu AI kini menyatakan perbaikan lengkap untuk
+  semua prioritas, janji eksplisit "token hanya terpakai bila analisis
+  berhasil — kalau AI gagal, tokenmu tidak hangus", dan jangkar harga
+  (Rp5.000 sekali analisis, bukan langganan; lebih murah dari sekali
+  print + fotokopi CV). Tanpa teaser/buka-sebagian apa pun.
+- 7 uji baru (parser skema baru + kompatibilitas skema lama, sanitasi
+  konteks, konteks memuat semua pemeriksaan gagal dengan prioritas
+  lebih dulu, laporan memuat bagian baru, teks kartu); total 165 uji
+  lolos; patokan skor standar utuh: 96/61/16, mode lowongan 89/79 &
+  60/48, fresh graduate 53, demo 55→96.
+
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
 - Akurasi yang terasa benar: hasil cocok dengan intuisi pengguna.

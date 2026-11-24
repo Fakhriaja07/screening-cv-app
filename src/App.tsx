@@ -12,7 +12,12 @@ import {
   scoreDelta,
   type ScoreHistoryEntry,
 } from './lib/history'
-import { requestAiAnalysis, requestAiAnalysisStreaming, type AiAnalysis } from './lib/ai'
+import {
+  buildAiFixContext,
+  requestAiAnalysis,
+  requestAiAnalysisStreaming,
+  type AiAnalysis,
+} from './lib/ai'
 import {
   ADMIN_CONTACT_URL,
   AI_PRICE,
@@ -580,7 +585,13 @@ export default function App() {
     setAiDuration(null)
     setAiElapsed(0)
     aiStartRef.current = Date.now()
-    const input = { cvText, targetRole, jobDesc }
+    // Konteks pemeriksaan yang gagal dari hasil standar yang sedang
+    // tampil: AI wajib memperbaiki semuanya satu per satu (bagian
+    // "Perbaikan Lengkap dari AI"), bukan menebak ulang dari nol.
+    const perbaikan = result
+      ? buildAiFixContext(result, buildPersonalExamples(result, analyzedText, analyzedRole))
+      : []
+    const input = { cvText, targetRole, jobDesc, ...(perbaikan.length ? { perbaikan } : {}) }
     let receivedEvent = false
     let succeeded = false
     try {
@@ -1163,9 +1174,15 @@ export default function App() {
                   Mau saran yang lebih dalam dari skor di atas? AI lewat OpenRouter bisa membaca
                   CV-mu secara kualitatif: menulis ulang poin pengalamanmu, menunjukkan
                   kekurangan terhadap lowongan, dan memberi contoh ringkasan profil.
+                  Yang terpenting: AI <strong>menuliskan versi perbaikan lengkap untuk semua
+                  prioritas perbaikanmu</strong> — satu per satu sesuai temuan pemeriksa di atas,
+                  dalam bentuk jadi yang siap disalin ke CV, bukan sekadar contoh umum.
                   Bagian ini terpisah dan <strong>tidak mengubah skor utama</strong>.
                   Analisis AI berbayar <strong>{formatRupiah(AI_PRICE)} per analisis</strong> lewat
-                  QRIS — analisis standar di atas tetap gratis.
+                  QRIS — analisis standar di atas tetap gratis. {formatRupiah(AI_PRICE)} itu
+                  sekali analisis, <strong>bukan langganan</strong> — lebih murah dari sekali
+                  print + fotokopi CV. Dan <strong>token hanya terpakai bila analisis berhasil —
+                  kalau AI gagal, tokenmu tidak hangus.</strong>
                 </p>
 
                 {aiCredits > 0 ? (
@@ -1279,6 +1296,32 @@ export default function App() {
                       <div className="ai-block">
                         <h4>Ringkasan Penilaian AI</h4>
                         <p>{aiResult.ringkasan}</p>
+                      </div>
+                    )}
+
+                    {aiResult.perbaikanLengkap && aiResult.perbaikanLengkap.length > 0 && (
+                      <div className="ai-block">
+                        <h4>Perbaikan Lengkap dari AI</h4>
+                        <p className="ai-note">
+                          Satu versi perbaikan jadi untuk setiap prioritas perbaikanmu —
+                          salin ke CV, lalu isi bagian dalam [kurung siku] dengan fakta aslimu.
+                        </p>
+                        <ul className="rewrite-list">
+                          {aiResult.perbaikanLengkap.map((f, i) => (
+                            <li className="rewrite-item" key={f.idPemeriksaan || i}>
+                              <span className="rewrite-label">{f.judul}</span>
+                              {f.sebelum && (
+                                <>
+                                  <span className="rewrite-label">Sebelum</span>
+                                  <p className="rewrite-asli">{f.sebelum}</p>
+                                </>
+                              )}
+                              <span className="rewrite-label">Sesudah</span>
+                              <p className="rewrite-saran">{f.sesudah}</p>
+                              {f.catatan && <p className="rewrite-alasan">{f.catatan}</p>}
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     )}
 

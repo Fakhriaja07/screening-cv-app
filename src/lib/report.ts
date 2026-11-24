@@ -84,6 +84,15 @@ export function buildReportText(result: AnalysisResult, opts: ReportOptions = {}
       ai.kekurangan.forEach((k) => lines.push(`- ${k}`))
     }
     if (ai.saranRingkasan) lines.push('', `Contoh Ringkasan Profil: ${ai.saranRingkasan}`)
+    if (ai.perbaikanLengkap && ai.perbaikanLengkap.length > 0) {
+      lines.push('', 'PERBAIKAN LENGKAP DARI AI:')
+      ai.perbaikanLengkap.forEach((f, i) => {
+        lines.push(`${i + 1}. ${f.judul}`)
+        if (f.sebelum) lines.push(`   Sebelum: ${f.sebelum}`)
+        lines.push(`   Sesudah: ${f.sesudah}`)
+        if (f.catatan) lines.push(`   Catatan: ${f.catatan}`)
+      })
+    }
   }
   return lines.join('\n')
 }
