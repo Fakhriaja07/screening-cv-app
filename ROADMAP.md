@@ -652,6 +652,33 @@ sama seperti penghapusan kartu "Bagikan Hasil" dulu:
 dari pengguna.** Unduhan PDF yang tersisa hanyalah "Unduh Laporan
 (PDF)" di kartu Analisis AI — itu fitur berbeda dan tetap dipertahankan.
 
+## Section penjelasan lepas DIHAPUS (2026-11-24)
+
+Atas perintah pengguna pada 2026-11-24 — pertama bagian "Bagaimana skor
+dihitung?" (dengan tangkapan layarnya), lalu perintah lanjutan "hapus
+saja section penjelasan yang dianggap tidak penting menurut kamu" yang
+menyerahkan penilaian ke agen — tiga section penjelasan murni dihapus
+dari halaman utama:
+
+- **"Bagaimana skor dihitung?"** — kartu transparansi berisi rincian
+  bobot per aspek (Kontak 20, Ringkasan 10, Pengalaman 28, dst.) beserta
+  gaya `.rules-list`-nya. Yang dihapus hanya section penjelasannya;
+  logika penilaian tidak berubah sama sekali.
+- **Langkah "Cara kerja" 1-2-3** ("Masukkan CV" → "Isi posisi &
+  lowongan" → "Lihat hasil & perbaiki") beserta gaya `.steps`/`.step-*`
+  — alur situs cukup jelas dari formulirnya sendiri.
+- **"Tips lolos ATS"** — daftar tips generik lepas beserta konstanta
+  `ATS_TIPS` dan gaya `.tips-list` — pengguna sudah mendapat saran
+  personal dari hasil pemeriksaannya sendiri.
+
+Yang sengaja **dipertahankan** (fungsional atau penopang kepercayaan,
+bukan hiasan): hero + janji privasi "berjalan 100% di browser", bagian
+"Lihat Contoh Hasil", formulir, seluruh isi hasil (Prioritas Perbaikan,
+contoh sebelum→sesudah, Template Ringkasan, Daftar Skill, Riwayat
+Skor), instruksi pembayaran token + persetujuan Analisis AI di kartu
+AI, dan footer + tautan artikel/privacy/terms. Patokan skor identik:
+96/61/16, mode lowongan 89/79 & 60/48, fresh graduate 53, demo 55→96.
+
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
 - Akurasi yang terasa benar: hasil cocok dengan intuisi pengguna.

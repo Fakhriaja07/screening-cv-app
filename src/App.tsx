@@ -177,15 +177,6 @@ function PriorityRow({ check }: { check: CheckItem }) {
   )
 }
 
-const ATS_TIPS = [
-  'Gunakan heading standar yang mudah dikenali sistem ATS: Ringkasan, Pengalaman, Pendidikan, Keahlian.',
-  'Tulis pencapaian dengan angka: persen, jumlah orang/proyek, atau nominal — bukan hanya daftar tugas.',
-  'Mulai setiap poin pengalaman dengan kata kerja aksi, misalnya meningkatkan, mengelola, membangun.',
-  'Samakan kata kunci penting dari deskripsi lowongan dengan isi CV-mu secara jujur.',
-  'Jaga panjang CV di kisaran 220–900 kata (1–2 halaman) dan susun dengan bullet yang rapi.',
-  'Cantumkan kontak lengkap: email, nomor HP, LinkedIn, dan link portofolio.',
-]
-
 // ---------- Contoh hasil analisis (beranda) ----------
 // Dua CV contoh dianalisis langsung oleh mesin penilaian yang sama
 // (analyzeCv) saat modul dimuat — skor dan prioritasnya adalah keluaran
@@ -799,28 +790,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* ===== CARA KERJA ===== */}
-      <section className="steps">
-        <div className="step-card">
-          <span className="step-num">1</span>
-          <Icon d={I.upload} size={22} />
-          <h3>Masukkan CV</h3>
-          <p>Upload PDF, DOCX, atau TXT — atau tempel teks CV langsung di form.</p>
-        </div>
-        <div className="step-card">
-          <span className="step-num">2</span>
-          <Icon d={I.target} size={22} />
-          <h3>Isi posisi &amp; lowongan</h3>
-          <p>Opsional: posisi target dan deskripsi lowongan — relevansi dan kecocokannya kini ikut dinilai dalam skor.</p>
-        </div>
-        <div className="step-card">
-          <span className="step-num">3</span>
-          <Icon d={I.list} size={22} />
-          <h3>Lihat hasil &amp; perbaiki</h3>
-          <p>Skor per aspek, kekuatan, dan prioritas perbaikan yang terurut.</p>
-        </div>
-      </section>
-
       {/* ===== CONTOH HASIL ===== */}
       <DemoSection />
 
@@ -1306,44 +1275,6 @@ export default function App() {
             </>
           )}
 
-          {/* ----- TRANSPARANSI ----- */}
-          <div className="card">
-            <h3><Icon d={I.book} size={18} /> Bagaimana skor dihitung?</h3>
-            <p>
-              Penilaian berbasis aturan (rule-based) dengan total <strong>100 poin</strong> dari
-              <strong> 6 aspek</strong> dan <strong>23 pemeriksaan</strong>, ditambah pemeriksaan
-              kondisional bila kamu mengisi posisi target, dan satu aspek kondisional bila kamu
-              menempel deskripsi lowongan. Poin hanya diberikan
-              untuk bukti isi yang benar-benar ada di CV:
-            </p>
-            <ul className="rules-list">
-              <li><strong>Kontak — 20 poin:</strong> email valid (7), nomor HP Indonesia (6), LinkedIn (4), link portofolio (2), dan lokasi domisili (1) — perekrut menyaring kandidat berdasarkan domisili, jadi kota yang tertera di area kontak ikut dinilai. Format HP 08xx, +62, maupun bertanda kurung dengan spasi/strip/titik tetap terbaca.</li>
-              <li><strong>Ringkasan — 10 poin:</strong> dinilai dari panjang isi ringkasan; 40 kata atau lebih = poin penuh. Bila kamu mengisi posisi target, sebagian poin (3) dialihkan untuk menilai relevansi ringkasan: apakah ringkasanmu menyebut posisi/bidang yang dituju.</li>
-              <li><strong>Pengalaman — 28 poin:</strong> bagian pengalaman (5), variasi kata kerja aksi (5), angka pencapaian seperti persen/jumlah/nominal (6) — tahun dan nomor HP tidak dihitung sebagai pencapaian — kedalaman entri (4: setiap entri dinilai kelengkapannya: jabatan + perusahaan + periode + uraian isi), frasa lemah &amp; klise (3: frasa generik tanpa bukti seperti "pekerja keras" atau "bertanggung jawab atas" menurunkan poin), linimasa pengalaman (3: kesenjangan panjang antar-entri tanpa penjelasan dan peran terakhir yang sudah lama berakhir menurunkan poin), dan proyek/magang/organisasi sebagai bukti pengalaman (2: proyek yang diuraikan isinya dihitung sebagai pengalaman — terutama penting bagi fresh graduate; bila pengalaman formal sudah ada, pemeriksaan ini netral). Bila posisi target diisi, 3 poin dialihkan untuk relevansi pengalaman: apakah jabatan dan isi pengalamanmu berkaitan dengan bidang yang dituju.</li>
-              <li><strong>Pendidikan — 12 poin:</strong> pendidikan tercantum (6), IPK/GPA (3), dan sertifikasi &amp; pelatihan sebagai bagian tersendiri (3).</li>
-              <li><strong>Keahlian — 10 poin:</strong> daftar skill (8; 8 item atau lebih = poin penuh) dan bahasa asing beserta tingkat kemahirannya (2).</li>
-              <li><strong>Format &amp; ATS — 20 poin:</strong> panjang ideal 220–900 kata (8), tahun/periode tercantum (4), struktur bullet (3), konsistensi format &amp; urutan (3: satu format periode untuk semua entri, entri pengalaman diurutkan dari yang terbaru), dan kerapian bahasa (2: kata ganti "saya" yang berlebihan di poin pengalaman dan kata yang sering salah eja dari daftar periksa dasar).</li>
-              <li><strong>Kecocokan dengan Lowongan — 20 poin (kondisional):</strong> hanya muncul bila kamu menempel deskripsi lowongan. Dinilai dari berapa banyak kata kunci teratas lowongan yang ditemukan di CV-mu. Bila aspek ini aktif, keenam aspek di atas diskalakan proporsional (×0,8) sehingga total tetap 100 — dan skormu berarti "kualitas CV + kecocokannya dengan lowongan ini". Tanpa deskripsi lowongan, komposisi skor persis seperti daftar di atas.</li>
-            </ul>
-            <p>
-              Label skor: 85+ Sangat Siap Dilamar • 70–84 Sudah Bagus • 50–69 Perlu Perbaikan •
-              di bawah 50 Perlu Dirombak Dulu. Standar penilaian dinaikkan lewat
-              aspek yang dinilai, bukan lewat menaikkan kuota angka: 2026-11-19 ditambah
-              kedalaman entri, frasa klise, sertifikasi, bahasa asing, konsistensi format,
-              kerapian bahasa, dan relevansi ringkasan; 2026-11-21 ditambah lokasi domisili,
-              linimasa pengalaman, proyek/magang sebagai bukti pengalaman, relevansi
-              pengalaman terhadap posisi target, dan kecocokan kata kunci lowongan yang
-              kini masuk skor.
-            </p>
-          </div>
-
-          {/* ----- TIPS ATS ----- */}
-          <div className="card">
-            <h3><Icon d={I.list} size={18} /> Tips lolos ATS</h3>
-            <ol className="tips-list">
-              {ATS_TIPS.map((tip) => <li key={tip}>{tip}</li>)}
-            </ol>
-          </div>
         </section>
       </main>
 

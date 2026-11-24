@@ -1339,6 +1339,43 @@ check(
   'daftar prioritas, unduh laporan PDF, dan bagian contoh hasil tetap ada',
 )
 
+// ---------- Uji penghapusan bagian "Bagaimana skor dihitung?" (2026-11-24) ----------
+// Perintah pengguna: section penjelasan cara hitung skor dihapus dari
+// halaman — hanya tampilannya; logika penilaian tidak berubah sama sekali.
+check(
+  'Penghapusan transparansi: App.tsx bebas bagian "Bagaimana skor dihitung?"',
+  !appTsxText.includes('Bagaimana skor dihitung') &&
+    !appTsxText.includes('rules-list') &&
+    !appCssText.includes('.rules-list'),
+  'tidak ada judul section, daftar aturan, atau gaya .rules-list',
+)
+
+// ---------- Uji penghapusan section penjelasan lepas (2026-11-24) ----------
+// Perintah pengguna: section penjelasan yang tidak penting ikut dihapus —
+// langkah "Cara kerja" (alur sudah jelas dari formulir) dan "Tips lolos
+// ATS" (tips generik; saran personal sudah ada di hasil pemeriksaan).
+// Yang fungsional/penopang kepercayaan (hero, contoh hasil, pembayaran
+// token, persetujuan AI, janji privasi, isi hasil) TIDAK boleh ikut hilang.
+check(
+  'Penghapusan section lepas: tidak ada lagi langkah Cara Kerja & Tips ATS',
+  !appTsxText.includes('CARA KERJA') &&
+    !appTsxText.includes('step-card') &&
+    !appTsxText.includes('Tips lolos ATS') &&
+    !appTsxText.includes('ATS_TIPS') &&
+    !appCssText.includes('.step-card') &&
+    !appCssText.includes('.tips-list'),
+  'tidak ada markup, konstanta, atau gaya untuk kedua section itu',
+)
+check(
+  'Penghapusan section lepas: bagian penting tetap terpasang',
+  appTsxText.includes('Penilaian CV Bahasa Indonesia') &&
+    appTsxText.includes('berjalan 100% di browser') &&
+    appTsxText.includes('Lihat Contoh Hasil') &&
+    appTsxText.includes('Minta Kode Token via WhatsApp') &&
+    appTsxText.includes('Saya setuju teks CV dikirim ke OpenRouter'),
+  'hero + janji privasi, contoh hasil, instruksi token, dan persetujuan AI tetap ada',
+)
+
 if (failures > 0) {
   console.error(`\n${failures} uji GAGAL`)
   process.exit(1)
