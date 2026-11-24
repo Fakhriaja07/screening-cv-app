@@ -679,6 +679,47 @@ Skor), instruksi pembayaran token + persetujuan Analisis AI di kartu
 AI, dan footer + tautan artikel/privacy/terms. Patokan skor identik:
 96/61/16, mode lowongan 89/79 & 60/48, fresh graduate 53, demo 55→96.
 
+## Contoh personal "Contoh dari CV-mu" di "Lihat contoh" (2026-11-24)
+
+Atas persetujuan pengguna, isi tombol "Lihat contoh" pada daftar
+Prioritas Perbaikan kini dipersonalisasi dari CV yang sedang dianalisis
+— bukan lagi contoh generik yang sama untuk semua orang, bila buktinya
+bisa dikutip secara andal. Ini BUKAN menghidupkan lagi fitur penanda
+teks yang dihapus di atas; panel penanda tetap terhapus. Yang berubah
+hanya isi contoh di dalam tombol yang sudah ada.
+
+- Modul baru `src/lib/personalExamples.ts`: menerima hasil analisis +
+  snapshot teks persis yang dianalisis (state `analyzedText` di App,
+  hanya di memori halaman — teks CV tetap tidak disimpan ke
+  localStorage) + posisi target, dan mengembalikan contoh per id
+  pemeriksaan: kutipan asli, versi perbaikan, catatan.
+- Pemeriksaan yang dipersonalisasi: **frasa-lemah** (kutip baris
+  berfrasa lemah, frasanya diganti tempat bukti), **hasil-terukur**
+  (kutip poin entri tanpa angka + placeholder hasil terukur),
+  **kedalaman-entri** (kutip entri belum lengkap, komponen hilang
+  ditandai placeholder), **kata-kerja-aksi** (kutip poin berawalan
+  lemah — "Saya…", "Bagian…", "bertanggung jawab atas…"),
+  **kerapian-bahasa** (salah eja → koreksi baku pada baris pengguna
+  sendiri; "saya" berlebihan → poin yang sama tanpa kata ganti),
+  **ringkasan** dan **relevansi-ringkasan** (ringkasan pengguna sendiri
+  + posisi target yang ia isi).
+- Bukti dikutip memakai kamus/logika yang SAMA dengan pemeriksaannya:
+  analyze.ts mengekspor penemu bersama (`findWeakPhraseOccurrences`,
+  `findTypos`, `findSayaOccurrences`) dan menambah
+  `getExperienceEntryDetails` + `getSummarySection` dari parser yang
+  sama — tidak ada kamus kedua. Perubahan analyze.ts murni aditif;
+  logika dan patokan skor tidak berubah.
+- Anti-karang wajib: versi perbaikan hanya memakai kata-kata pengguna,
+  koreksi ejaan baku, atau placeholder [kurung siku]. Uji menegaskan
+  versi perbaikan hasil-terukur tidak memuat angka apa pun yang tidak
+  ada di kutipan aslinya.
+- Pemeriksaan ketiadaan (LinkedIn, bagian hilang, dsb.) dan bukti yang
+  ekstraksinya tidak andal tetap menampilkan contoh generik seperti
+  sebelumnya. Blok personal berlabel "Contoh dari CV-mu" dengan aksen
+  biru menggantikan blok generik untuk pemeriksaan itu.
+- 9 uji baru; total 131 uji lolos. Patokan identik: 96/61/16, mode
+  lowongan 89/79 & 60/48, fresh graduate 53, demo 55→96.
+
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
 - Akurasi yang terasa benar: hasil cocok dengan intuisi pengguna.

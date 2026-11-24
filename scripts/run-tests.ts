@@ -75,6 +75,7 @@ import {
   formatReportDate,
   reportFileName,
 } from '../src/lib/report'
+import { buildPersonalExamples } from '../src/lib/personalExamples'
 import { buildReportPdf, buildReportPdfBytes } from '../src/lib/pdf'
 import type { AiAnalysis } from '../src/lib/ai'
 const MEDIUM_CV = `Budi Santoso
@@ -467,6 +468,156 @@ check(
   'Fase 2: template tanpa posisi → placeholder peran',
   tplEmpty.includes('[posisi yang dilamar]'),
   'placeholder [posisi yang dilamar] tampil',
+)
+
+// ---------- Uji contoh personal "Contoh dari CV-mu" (2026-11-24) ----------
+// Kutipan harus berasal dari teks CV yang dianalisis sendiri (bukan
+// contoh generik), versi perbaikan hanya boleh berisi kata-kata
+// pengguna + placeholder kurung — tidak ada angka pencapaian karangan.
+
+const demoResult = analyzeCv(DEMO_WEAK_CV)
+const demoPersonal = buildPersonalExamples(demoResult, DEMO_WEAK_CV, '')
+
+const pWeak = demoPersonal['frasa-lemah']
+check(
+  'Personal: frasa-lemah mengutip baris CV sendiri yang memuat frasa lemah',
+  !!pWeak &&
+    pWeak.kutipanAsli.includes('bertanggung jawab atas') &&
+    DEMO_WEAK_CV.includes(pWeak.kutipanAsli) &&
+    !pWeak.versiPerbaikan.toLowerCase().includes('bertanggung jawab atas') &&
+    pWeak.versiPerbaikan.includes('[bukti konkretmu]'),
+  pWeak ? `kutipan: "${pWeak.kutipanAsli.slice(0, 60)}…"` : 'contoh personal tidak ada',
+)
+
+const pMeasurable = demoPersonal['hasil-terukur']
+const numbersIn = (s: string) => s.match(/\d+/g) ?? []
+check(
+  'Personal: hasil-terukur mengutip poin tanpa angka + placeholder, tanpa angka karangan',
+  !!pMeasurable &&
+    DEMO_WEAK_CV.includes(pMeasurable.kutipanAsli) &&
+    pMeasurable.versiPerbaikan.includes('[tambahkan hasil terukurmu') &&
+    numbersIn(pMeasurable.versiPerbaikan).every((n) => numbersIn(pMeasurable.kutipanAsli).includes(n)),
+  pMeasurable
+    ? `kutipan tanpa angka → sesudah memuat angka: [${numbersIn(pMeasurable.versiPerbaikan).join(', ')}]`
+    : 'contoh personal tidak ada',
+)
+
+const pVerb = demoPersonal['kata-kerja-aksi']
+check(
+  'Personal: kata-kerja-aksi mengutip poin berawalan lemah dari CV sendiri',
+  !!pVerb &&
+    DEMO_WEAK_CV.includes(pVerb.kutipanAsli) &&
+    pVerb.versiPerbaikan.startsWith('• [kata kerja aksi'),
+  pVerb ? `sesudah: "${pVerb.versiPerbaikan.slice(0, 60)}…"` : 'contoh personal tidak ada',
+)
+
+const pTypo = demoPersonal['kerapian-bahasa']
+check(
+  'Personal: kerapian-bahasa menampilkan koreksi baku dari baris CV sendiri',
+  !!pTypo &&
+    pTypo.kutipanAsli.includes('aktifitas') &&
+    pTypo.versiPerbaikan.includes('aktivitas') &&
+    !/\baktifitas\b/.test(pTypo.versiPerbaikan) &&
+    pTypo.catatan.includes('"aktivitas"'),
+  pTypo ? `sesudah: "${pTypo.versiPerbaikan.slice(0, 60)}…"` : 'contoh personal tidak ada',
+)
+
+// "Saya" berlebihan tanpa salah eja → contoh personal membuang kata
+// ganti dari kata-kata pengguna sendiri.
+const SAYA_CV = `Rani Wijaya
+rani.wijaya@gmail.com | 0813-2222-3333 | linkedin.com/in/raniwijaya
+
+Ringkasan
+Lulusan SMK yang terbiasa bekerja rapi dan tepat waktu dalam pelayanan pelanggan.
+
+Pengalaman
+Kasir — Toko Berkah (2023 - 2024)
+- Saya melayani pembeli setiap hari.
+- Saya mencatat stok barang di gudang.
+- Saya membersihkan area kasir setiap pagi.
+- Saya menyusun laporan penjualan harian.
+
+Pendidikan
+SMK Negeri 1 Bandung — Jurusan Akuntansi (2020 - 2023)
+
+Keahlian
+Microsoft Word, Microsoft Excel, Kasir, Pelayanan, Komunikasi, Kerja Tim, Ketelitian, Bahasa Inggris`
+const sayaResult = analyzeCv(SAYA_CV)
+const pSaya = buildPersonalExamples(sayaResult, SAYA_CV, '')['kerapian-bahasa']
+check(
+  'Personal: "saya" berlebihan → versi perbaikan membuang kata ganti, isi tetap kata pengguna',
+  !!pSaya &&
+    pSaya.kutipanAsli.includes('Saya melayani pembeli') &&
+    pSaya.versiPerbaikan.includes('Melayani pembeli setiap hari.') &&
+    !/^- Saya/m.test(pSaya.versiPerbaikan) &&
+    pSaya.catatan.includes('kali di bagian pengalaman'),
+  pSaya ? `sesudah: "${pSaya.versiPerbaikan.split('\n')[0]}"` : 'contoh personal tidak ada',
+)
+
+// Entri dangkal (tanpa perusahaan + tanpa uraian) → contoh kedalaman
+// mengutip entri itu dan menandai komponen yang hilang sebagai placeholder.
+const NO_COMPANY_CV = `Dedi Kurnia
+dedi.kurnia@gmail.com | 0821-4444-5555 | linkedin.com/in/dedikurnia
+
+Ringkasan
+Lulusan SMK jurusan logistik yang terbiasa dengan pekerjaan gudang dan pencatatan stok barang.
+
+Pengalaman
+Kasir — Toko Berkah (2023 - 2024)
+- Melayani 50 pembeli setiap hari dan mencatat kas.
+
+Staf Gudang (2021 - 2022)
+
+Pendidikan
+SMK Negeri 3 Bandung — Jurusan Logistik (2018 - 2021)
+
+Keahlian
+Microsoft Word, Microsoft Excel, Stok Opname, Pengarsipan, Komunikasi, Kerja Tim, Ketelitian, Bahasa Inggris`
+const shallowResult = analyzeCv(NO_COMPANY_CV)
+const pDepth = buildPersonalExamples(shallowResult, NO_COMPANY_CV, '')['kedalaman-entri']
+check(
+  'Personal: kedalaman-entri mengutip entri dangkal + placeholder komponen hilang',
+  !!pDepth &&
+    pDepth.kutipanAsli.includes('Staf Gudang') &&
+    pDepth.versiPerbaikan.includes('[nama perusahaan/tempat kerja]') &&
+    pDepth.versiPerbaikan.includes('[uraian tugas dan hasilmu'),
+  pDepth ? `sesudah: "${pDepth.versiPerbaikan.replace(/\n/g, ' / ').slice(0, 80)}…"` : 'contoh personal tidak ada',
+)
+
+// Ringkasan + relevansi ringkasan memakai ringkasan pengguna sendiri
+// dan posisi target yang ia isi.
+const demoRoleResult = analyzeCv(DEMO_WEAK_CV, { targetRole: 'Kasir' })
+const demoRolePersonal = buildPersonalExamples(demoRoleResult, DEMO_WEAK_CV, 'Kasir')
+const pSummary = demoRolePersonal['ringkasan']
+const pRelevance = demoRolePersonal['relevansi-ringkasan']
+check(
+  'Personal: ringkasan & relevansi memakai teks ringkasan + posisi target pengguna',
+  !!pSummary &&
+    pSummary.kutipanAsli.startsWith('Saya adalah lulusan baru') &&
+    pSummary.catatan.includes('34 kata') &&
+    !!pRelevance &&
+    pRelevance.versiPerbaikan.endsWith('Saat ini saya mencari posisi Kasir.'),
+  `ringkasan: ${pSummary ? 'ada' : 'TIDAK ADA'}, relevansi: ${pRelevance ? 'ada' : 'TIDAK ADA'}`,
+)
+
+// Pemeriksaan ketiadaan (LinkedIn belum tercantum) TIDAK dipersonalisasi
+// — contoh generik tetap dipakai untuknya.
+check(
+  'Personal: pemeriksaan ketiadaan (LinkedIn) tetap generik',
+  demoPersonal['linkedin'] === undefined && getCheckExample('linkedin') !== null,
+  `personal linkedin: ${demoPersonal['linkedin'] === undefined ? 'tidak ada (benar)' : 'ADA (salah)'}, generik: ${getCheckExample('linkedin') ? 'ada' : 'tidak ada'}`,
+)
+
+// CV kuat: pemeriksaan yang dipersonalisasi sudah "baik" semua →
+// tidak ada contoh personal (tidak ada yang perlu dicontohkan).
+const strongPersonal = buildPersonalExamples(strong, SAMPLE_CV, '')
+check(
+  'Personal: CV kuat tanpa contoh personal untuk pemeriksaan inti',
+  strongPersonal['frasa-lemah'] === undefined &&
+    strongPersonal['hasil-terukur'] === undefined &&
+    strongPersonal['kerapian-bahasa'] === undefined &&
+    strongPersonal['ringkasan'] === undefined,
+  `kunci personal CV kuat: [${Object.keys(strongPersonal).join(', ')}]`,
 )
 
 check(

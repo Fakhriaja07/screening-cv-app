@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { analyzeCv, countWords, type AnalysisResult, type CheckItem } from './lib/analyze'
 import {
@@ -43,6 +43,10 @@ import {
   getCheckExample,
   getRoleSkills,
 } from './lib/examples'
+import {
+  buildPersonalExamples,
+  type PersonalExample,
+} from './lib/personalExamples'
 import { SAMPLE_CV } from './lib/sampleCv'
 import { DEMO_WEAK_CV } from './lib/demoCv'
 import { extractTextFromFile } from './lib/readFile'
@@ -132,11 +136,20 @@ function CheckRow({ check }: { check: CheckItem }) {
 }
 
 // Baris prioritas perbaikan + contoh kalimat "sebelum → sesudah" (Fase 2).
-// Contoh bersifat generik-ilustratif dari modul examples.ts — hanya tampil
-// untuk pemeriksaan yang memang punya contoh yang cocok.
-function PriorityRow({ check }: { check: CheckItem }) {
+// Bila contoh PERSONAL tersedia untuk pemeriksaan ini (kutipan dari CV
+// pengguna sendiri, dari modul personalExamples.ts), contoh generik
+// digantikan blok "Contoh dari CV-mu". Bila tidak, contoh generik dari
+// examples.ts tampil seperti sebelumnya.
+function PriorityRow({
+  check,
+  personal,
+}: {
+  check: CheckItem
+  personal?: PersonalExample | null
+}) {
   const [open, setOpen] = useState(false)
-  const example = getCheckExample(check.id)
+  const generic = getCheckExample(check.id)
+  const example = personal ?? generic
   return (
     <li className={`check-row status-${check.status}`}>
       <span className="check-icon">
@@ -158,18 +171,30 @@ function PriorityRow({ check }: { check: CheckItem }) {
             >
               {open ? 'Sembunyikan contoh' : 'Lihat contoh'}
             </button>
-            {open && (
-              <div className="example-box">
-                <span className="example-label">Contoh:</span>
-                <p className="example-before">
-                  <span className="example-tag">Sebelum:</span> {example.sebelum}
-                </p>
-                <p className="example-after">
-                  <span className="example-tag">Sesudah:</span> {example.sesudah}
-                </p>
-                <p className="example-note">{example.catatan}</p>
-              </div>
-            )}
+            {open &&
+              (personal ? (
+                <div className="example-box example-box-personal">
+                  <span className="example-label">Contoh dari CV-mu:</span>
+                  <p className="example-before">
+                    <span className="example-tag">Sebelum:</span> {personal.kutipanAsli}
+                  </p>
+                  <p className="example-after">
+                    <span className="example-tag">Sesudah:</span> {personal.versiPerbaikan}
+                  </p>
+                  <p className="example-note">{personal.catatan}</p>
+                </div>
+              ) : generic ? (
+                <div className="example-box">
+                  <span className="example-label">Contoh:</span>
+                  <p className="example-before">
+                    <span className="example-tag">Sebelum:</span> {generic.sebelum}
+                  </p>
+                  <p className="example-after">
+                    <span className="example-tag">Sesudah:</span> {generic.sesudah}
+                  </p>
+                  <p className="example-note">{generic.catatan}</p>
+                </div>
+              ) : null)}
           </div>
         )}
       </div>
@@ -263,6 +288,12 @@ export default function App() {
   const [targetRole, setTargetRole] = useState('')
   const [jobDesc, setJobDesc] = useState('')
   const [result, setResult] = useState<AnalysisResult | null>(null)
+  // Snapshot teks CV + posisi target PERSIS saat analisis dijalankan —
+  // contoh personal di "Lihat contoh" dikutip dari snapshot ini, jadi
+  // tetap cocok dengan hasil walau kotak teks diedit sesudahnya. Hanya
+  // di memori halaman (state), tidak pernah disimpan ke localStorage.
+  const [analyzedText, setAnalyzedText] = useState('')
+  const [analyzedRole, setAnalyzedRole] = useState('')
   // Tanggal analisis terakhir — dipakai di kepala laporan PDF unduhan.
   const [analysisDate, setAnalysisDate] = useState<Date | null>(null)
   const [fileName, setFileName] = useState('')
@@ -363,6 +394,8 @@ export default function App() {
     }
     const res = analyzeCv(cvText, { targetRole, jobDesc })
     setResult(res)
+    setAnalyzedText(cvText)
+    setAnalyzedRole(targetRole)
     setAnalysisDate(new Date())
     // Fase 1: simpan skor ke riwayat perangkat (hanya skor — teks CV tidak
     // disimpan) dan ingat entri sebelumnya untuk perbandingan sebelum → sesudah.
@@ -390,6 +423,8 @@ export default function App() {
     setTargetRole('')
     setJobDesc('')
     setResult(null)
+    setAnalyzedText('')
+    setAnalyzedRole('')
     setAnalysisDate(null)
     setFileName('')
     setError('')
@@ -761,6 +796,14 @@ export default function App() {
   )
   const activePaySection = autoAvailable ? autoPaySection : paymentSection
 
+  // Contoh personal untuk "Lihat contoh": dikutip dari snapshot teks
+  // yang dianalisis (analyzedText), bukan dari kotak teks yang mungkin
+  // sudah diedit sesudahnya.
+  const personalExamples = useMemo(
+    () => (result ? buildPersonalExamples(result, analyzedText, analyzedRole) : {}),
+    [result, analyzedText, analyzedRole],
+  )
+
   return (
     <div className="page">
       {/* ===== HERO ===== */}
@@ -1016,7 +1059,13 @@ export default function App() {
                   <p>Semua pemeriksaan lolos dengan poin penuh. CV-mu sudah kuat — tinggal sesuaikan kata kunci untuk tiap lowongan.</p>
                 ) : (
                   <ul className="check-list">
-                    {result.priorities.map((c) => <PriorityRow key={c.id} check={c} />)}
+                    {result.priorities.map((c) => (
+                      <PriorityRow
+                        key={c.id}
+                        check={c}
+                        personal={personalExamples[c.id] ?? null}
+                      />
+                    ))}
                   </ul>
                 )}
               </div>

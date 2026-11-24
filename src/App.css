@@ -912,6 +912,15 @@
   text-transform: uppercase;
   color: #94a3b8;
 }
+/* Contoh personal ("Contoh dari CV-mu") — aksen biru agar terbedakan
+   dari contoh generik. */
+.example-box-personal {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+.example-box-personal .example-label {
+  color: #1d4ed8;
+}
 .example-before, .example-after {
   font-size: 13.5px;
   line-height: 1.55;

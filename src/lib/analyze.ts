@@ -199,6 +199,18 @@ function isHeadingLine(line: string, words: string[]): boolean {
   return words.some((w) => trimmed.includes(w))
 }
 
+// Kata heading bagian ringkasan/profil — satu-satunya daftar yang
+// dipakai penilaian (analyzeCv) dan pembaca bagian ringkasan lain
+// (contoh personal), agar keduanya selalu membaca bagian yang sama.
+const SUMMARY_HEADINGS = [
+  'ringkasan', 'tentang saya', 'profil', 'summary', 'profile', 'objective', 'tentang',
+]
+
+// Isi bagian ringkasan/profil dari teks CV (string kosong bila tidak ada).
+export function getSummarySection(text: string): string {
+  return getSection(text, SUMMARY_HEADINGS)
+}
+
 function getSection(text: string, targets: string[]): string {
   const lines = text.split('\n')
   let start = -1
@@ -217,7 +229,7 @@ function getSection(text: string, targets: string[]): string {
   return collected.join('\n').trim()
 }
 
-const BULLET_LINE = /^\s*(?:[-•*·]|\d+[.)])\s+/
+export const BULLET_LINE = /^\s*(?:[-•*·]|\d+[.)])\s+/
 
 // Memecah teks menjadi baris beserta offset awal tiap baris di teks asli.
 function splitLinesWithOffsets(text: string): { line: string; start: number }[] {
@@ -277,7 +289,7 @@ function getExperienceSection(text: string): string {
 
 // ---------- Kata kerja aksi & hasil terukur ----------
 
-const ACTION_VERBS = [
+export const ACTION_VERBS = [
   'meningkatkan',
   'mengelola',
   'membangun',
@@ -363,6 +375,10 @@ function parseExperienceEntry(line: string): ExperienceEntryInfo {
 interface ExperienceBlock {
   complete: boolean
   hasContent: boolean
+  // Kelengkapan komponen entri dari parseExperienceEntry (judul /
+  // perusahaan / periode) — disimpan agar lapisan tampilan bisa
+  // menyebut komponen yang kurang tanpa menghitung ulang.
+  info: ExperienceEntryInfo
   startYear: number | null
   endYear: number | null // null bila peran masih berjalan (saat ini)
   isCurrent: boolean
@@ -435,6 +451,7 @@ function parseExperienceBlocks(section: string): ExperienceBlock[] {
     blocks.push({
       complete: info.hasTitle && info.hasCompany && info.hasPeriod && contentCount >= 1,
       hasContent: contentCount >= 1,
+      info,
       startYear: years.length > 0 ? years[0] : null,
       endYear: isCurrent ? null : years.length > 1 ? years[years.length - 1] : (years[0] ?? null),
       isCurrent,
@@ -443,6 +460,50 @@ function parseExperienceBlocks(section: string): ExperienceBlock[] {
     })
   }
   return blocks
+}
+
+// ---------- Rincian entri pengalaman untuk lapisan tampilan ----------
+
+export interface ExperienceEntryDetail {
+  // Baris-baris entri (judul/jangkar pertama sampai isi terakhir),
+  // sudah di-trim dan tanpa baris kosong.
+  lines: string[]
+  text: string
+  hasTitle: boolean
+  hasCompany: boolean
+  hasPeriod: boolean
+  hasContent: boolean
+  complete: boolean
+  // Hasil terukur di dalam teks entri ini saja — dihitung dengan
+  // penghitung yang sama persis dengan pemeriksaan hasil terukur.
+  measurableCount: number
+}
+
+// Entri pengalaman beserta kelengkapan komponen dan isinya, dari parser
+// entri yang sama dengan pemeriksaan kedalaman entri. Dipakai lapisan
+// tampilan (contoh personal di "Lihat contoh") agar kutipan selalu
+// menunjuk entri yang sama dengan yang dinilai — bukan hasil parse kedua.
+export function getExperienceEntryDetails(rawText: string): ExperienceEntryDetail[] {
+  const section = getExperienceSection(rawText)
+  if (!section) return []
+  const sectionLines = section.split('\n')
+  return parseExperienceBlocks(section).map((b) => {
+    const lines = sectionLines
+      .slice(b.firstLine, b.lastLine + 1)
+      .map((l) => l.trim())
+      .filter((l) => l !== '')
+    const text = lines.join('\n')
+    return {
+      lines,
+      text,
+      hasTitle: b.info.hasTitle,
+      hasCompany: b.info.hasCompany,
+      hasPeriod: b.info.hasPeriod,
+      hasContent: b.hasContent,
+      complete: b.complete,
+      measurableCount: countMeasurableResults(text),
+    }
+  })
 }
 
 // ---------- Penemu kemunculan bersama ----------
@@ -591,7 +652,7 @@ export const TYPO_WORDS: { wrong: string; right: string }[] = [
   { wrong: 'subyek', right: 'subjek' },
 ]
 
-function findTypos(lowerText: string): { wrong: string; right: string }[] {
+export function findTypos(lowerText: string): { wrong: string; right: string }[] {
   return TYPO_WORDS.filter((t) => new RegExp(`\\b${t.wrong}\\b`).test(lowerText))
 }
 
@@ -927,9 +988,7 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   const lower = text.toLowerCase()
   const totalWords = countWords(text)
 
-  const summarySection = getSection(text, [
-    'ringkasan', 'tentang saya', 'profil', 'summary', 'profile', 'objective', 'tentang',
-  ])
+  const summarySection = getSummarySection(text)
   const experienceSection = getExperienceSection(text)
   const role = options.targetRole?.trim() ?? ''
 
