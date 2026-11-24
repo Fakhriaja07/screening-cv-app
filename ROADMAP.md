@@ -597,6 +597,33 @@ rangkaian:
    contoh sebelum→sesudah sejalan `examples.ts`, tanpa klaim statistik
    karangan. Terdaftar di `sitemap.xml` dan tertaut dari footer beranda.
 
+## Penanda selaras prioritas perbaikan (2026-11-24)
+
+Atas persetujuan pengguna, panel "Teks CV dengan Tanda" kini diselaraskan
+dengan daftar "Prioritas Perbaikan": bagian CV yang menjadi prioritas
+perbaikan diberi tanda warna khusus.
+
+- **Satu sumber prioritas bersama.** Kriteria & urutan prioritas kini
+  didefinisikan di satu fungsi `selectPriorities` (analyze.ts) yang
+  dipakai `analyzeCv`; daftar "Prioritas Perbaikan" tampil persis sama
+  seperti sebelumnya. Peringkat per pemeriksaan diturunkan dari daftar
+  yang sama lewat `priorityRanks`, dan penanda menempelkannya lewat
+  `applyPriorityRanks` (marks.ts) — tidak ada urutan kedua.
+- **Gaya prioritas oranye.** Tanda yang pemeriksaannya termasuk daftar
+  prioritas dirender oranye tegas `#fdba74` dengan garis bawah `#ea580c`
+  (kelas `.mark-priority`), menang atas warna jenis tanda; penanda entri
+  pengalaman ikut oranye bila pemeriksaan hasil-terukur termasuk
+  prioritas. Datanya tetap utuh: jenis tanda + checkId + peringkat
+  tersimpan pada tanda. Tanda AI tidak pernah berperingkat — prioritas
+  berasal dari analisis standar.
+- **Panel & PDF selaras.** Legenda panel (dan cuplikan demo beranda)
+  bertambah entri "Prioritas perbaikan"; kotak penjelasan tanda
+  prioritas menampilkan label "Prioritas perbaikan #N". PDF teks
+  bertanda memakai warna oranye yang sama, entri legenda "Oranye —
+  prioritas perbaikan", dan awalan "Prioritas #N —" pada keterangan
+  tanda prioritas. Prioritas tanpa lokasi teks (bagian/kontak yang
+  hilang) memang tidak tertandai — tetap hanya tampil sebagai daftar.
+
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
 - Akurasi yang terasa benar: hasil cocok dengan intuisi pengguna.

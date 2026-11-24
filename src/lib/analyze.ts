@@ -946,6 +946,38 @@ const ROLE_GENERIC_WORDS = new Set([
   'intern', 'magang', 'freelance', 'konsultan', 'consultant',
 ])
 
+// ---------- Prioritas perbaikan (sumber bersama) ----------
+
+// Memilih & mengurutkan prioritas perbaikan dari semua pemeriksaan:
+// yang belum berstatus "baik", terurut dari kehilangan poin terbesar
+// (seri dipecahkan oleh bobot aspek yang lebih besar). INI satu-satunya
+// tempat kriteria prioritas didefinisikan: daftar "Prioritas Perbaikan"
+// di UI dirender dari AnalysisResult.priorities hasil fungsi ini, dan
+// peringkat untuk penanda teks diturunkan dari daftar yang sama lewat
+// priorityRanks di bawah — jangan duplikasi kriterianya di tempat lain.
+export function selectPriorities(checks: CheckItem[], aspects: AspectResult[]): CheckItem[] {
+  const aspectMaxByName = new Map(aspects.map((a) => [a.name, a.max]))
+  return checks
+    .filter((c) => c.status !== 'baik')
+    .sort(
+      (a, b) =>
+        b.max - b.score - (a.max - a.score) ||
+        (aspectMaxByName.get(b.aspect) ?? 0) - (aspectMaxByName.get(a.aspect) ?? 0),
+    )
+}
+
+// Peringkat prioritas per id pemeriksaan (1 = prioritas tertinggi),
+// diturunkan dari daftar prioritas yang sudah terurut. Dipakai penanda
+// teks (marks.ts) agar nomor "Prioritas perbaikan #N" pada tanda selalu
+// sama dengan urutan daftar "Prioritas Perbaikan".
+export function priorityRanks(priorities: CheckItem[]): Map<string, number> {
+  const ranks = new Map<string, number>()
+  priorities.forEach((c, i) => {
+    if (!ranks.has(c.id)) ranks.set(c.id, i + 1)
+  })
+  return ranks
+}
+
 // ---------- Fungsi analisis utama ----------
 
 export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): AnalysisResult {
@@ -1488,15 +1520,8 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
           ? 'Perlu Perbaikan'
           : 'Perlu Dirombak Dulu'
 
-  const aspectMaxByName = new Map(aspects.map((a) => [a.name, a.max]))
   const strengths = allChecks.filter((c) => c.status === 'baik')
-  const priorities = allChecks
-    .filter((c) => c.status !== 'baik')
-    .sort(
-      (a, b) =>
-        b.max - b.score - (a.max - a.score) ||
-        (aspectMaxByName.get(b.aspect) ?? 0) - (aspectMaxByName.get(a.aspect) ?? 0),
-    )
+  const priorities = selectPriorities(allChecks, aspects)
 
   // ===== Peringatan posisi (tidak mengubah skor) =====
   let roleWarning: string | null = null

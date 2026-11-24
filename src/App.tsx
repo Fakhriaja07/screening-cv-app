@@ -195,7 +195,8 @@ const ATS_TIPS = [
 // melihat contoh hasil sebelum mengunggah CV-nya sendiri.
 const DEMO_BEFORE = analyzeCv(DEMO_WEAK_CV)
 const DEMO_AFTER = analyzeCv(SAMPLE_CV)
-const DEMO_SEGMENTS = buildSegments(DEMO_WEAK_CV, buildMarks(DEMO_WEAK_CV, null))
+const DEMO_MARKS = buildMarks(DEMO_WEAK_CV, null, DEMO_BEFORE.priorities)
+const DEMO_SEGMENTS = buildSegments(DEMO_WEAK_CV, DEMO_MARKS)
 
 function DemoSection() {
   const delta = DEMO_AFTER.total - DEMO_BEFORE.total
@@ -237,7 +238,12 @@ function DemoSection() {
               if (seg.type === 'text') return <span key={i}>{seg.text}</span>
               if (seg.type === 'point') {
                 return (
-                  <span key={i} className="entry-flag-static" title={seg.mark.label} aria-label={seg.mark.label}>
+                  <span
+                    key={i}
+                    className={`entry-flag-static${seg.mark.priorityRank !== undefined ? ' flag-priority' : ''}`}
+                    title={seg.mark.label}
+                    aria-label={seg.mark.label}
+                  >
                     ⚑
                   </span>
                 )
@@ -249,13 +255,22 @@ function DemoSection() {
                     ? 'mark-ai'
                     : 'mark-typo'
               return (
-                <mark key={i} className={kindClass} title={seg.mark.label}>
+                <mark
+                  key={i}
+                  className={`${kindClass}${seg.mark.priorityRank !== undefined ? ' mark-priority' : ''}`}
+                  title={seg.mark.label}
+                >
                   {seg.text}
                 </mark>
               )
             })}
           </div>
           <div className="marks-legend">
+            {DEMO_MARKS.some((m) => m.priorityRank !== undefined) && (
+              <span className="legend-item">
+                <span className="legend-swatch sw-priority" /> Prioritas perbaikan
+              </span>
+            )}
             <span className="legend-item">
               <span className="legend-swatch sw-weak" /> Frasa lemah &amp; klise
             </span>
@@ -263,7 +278,12 @@ function DemoSection() {
               <span className="legend-swatch sw-typo" /> Salah eja / kata “saya” berlebihan
             </span>
             <span className="legend-item">
-              <span className="legend-flag">⚑</span> Entri pengalaman tanpa hasil terukur
+              <span
+                className={`legend-flag${DEMO_MARKS.some((m) => m.kind === 'entri' && m.priorityRank !== undefined) ? ' legend-flag-priority' : ''}`}
+              >
+                ⚑
+              </span>{' '}
+              Entri pengalaman tanpa hasil terukur
             </span>
           </div>
         </div>
@@ -841,7 +861,7 @@ export default function App() {
     setSelectedMarkId(null)
   }, [aiResult])
   const marks = useMemo(
-    () => (result ? buildMarks(analyzedText, aiResult) : []),
+    () => (result ? buildMarks(analyzedText, aiResult, result.priorities) : []),
     [result, analyzedText, aiResult],
   )
   const markSegments = useMemo(
@@ -1151,10 +1171,16 @@ export default function App() {
                 <p>
                   Ini teks CV yang kamu kirim, dengan tanda pada bagian yang perlu
                   diperbaiki. Tandanya dibuat dari bukti yang sama dengan penilaian
-                  di atas — bukan perkiraan baru. Klik tanda mana pun untuk melihat
-                  penjelasannya.
+                  di atas — bukan perkiraan baru. Tanda berwarna oranye terkait
+                  langsung dengan daftar Prioritas Perbaikan di atas; klik tanda
+                  mana pun untuk melihat penjelasannya.
                 </p>
                 <div className="marks-legend">
+                  {marks.some((m) => m.priorityRank !== undefined) && (
+                    <span className="legend-item">
+                      <span className="legend-swatch sw-priority" /> Prioritas perbaikan
+                    </span>
+                  )}
                   <span className="legend-item">
                     <span className="legend-swatch sw-weak" /> Frasa lemah &amp; klise
                   </span>
@@ -1162,7 +1188,12 @@ export default function App() {
                     <span className="legend-swatch sw-typo" /> Salah eja / kata “saya” berlebihan
                   </span>
                   <span className="legend-item">
-                    <span className="legend-flag">⚑</span> Entri pengalaman tanpa hasil terukur
+                    <span
+                      className={`legend-flag${marks.some((m) => m.kind === 'entri' && m.priorityRank !== undefined) ? ' legend-flag-priority' : ''}`}
+                    >
+                      ⚑
+                    </span>{' '}
+                    Entri pengalaman tanpa hasil terukur
                   </span>
                   {aiResult && (
                     <span className="legend-item">
@@ -1187,7 +1218,7 @@ export default function App() {
                         <button
                           key={i}
                           type="button"
-                          className={`entry-flag${selectedMarkId === seg.mark.id ? ' flag-selected' : ''}`}
+                          className={`entry-flag${seg.mark.priorityRank !== undefined ? ' flag-priority' : ''}${selectedMarkId === seg.mark.id ? ' flag-selected' : ''}`}
                           title={seg.mark.label}
                           aria-label={seg.mark.label}
                           onClick={() => setSelectedMarkId(seg.mark.id)}
@@ -1205,7 +1236,7 @@ export default function App() {
                     return (
                       <mark
                         key={i}
-                        className={`${kindClass}${selectedMarkId === seg.mark.id ? ' mark-selected' : ''}`}
+                        className={`${kindClass}${seg.mark.priorityRank !== undefined ? ' mark-priority' : ''}${selectedMarkId === seg.mark.id ? ' mark-selected' : ''}`}
                         title={seg.mark.label}
                         role="button"
                         tabIndex={0}
@@ -1245,6 +1276,13 @@ export default function App() {
                         Tutup
                       </button>
                     </div>
+                    {selectedMark.priorityRank !== undefined && (
+                      <p className="mark-priority-label">
+                        Prioritas perbaikan #{selectedMark.priorityRank} — tanda ini terkait
+                        pemeriksaan nomor {selectedMark.priorityRank} pada daftar Prioritas
+                        Perbaikan di atas.
+                      </p>
+                    )}
                     {selectedMark.kind === 'frasa-lemah' && (
                       <p>
                         Frasa yang ditandai: “{analyzedText.slice(selectedMark.start, selectedMark.end)}”

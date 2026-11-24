@@ -158,7 +158,10 @@ export function buildReportPdf(
 // sorotan warna yang sama seperti panel "Teks CV dengan Tanda" di
 // layar, ditambah legenda dan daftar keterangan semua tanda. Rentang
 // tandanya memakai hasil buildMarks/buildSegments dari marks.ts —
-// modul ini tidak punya logika tanda atau kamus sendiri. Berbeda dari
+// modul ini tidak punya logika tanda atau kamus sendiri. Tanda yang
+// pemeriksaannya termasuk daftar "Prioritas Perbaikan" digambar oranye
+// (peringkatnya diteruskan dari result.priorities ke buildMarks) dan
+// keterangannya diawali label "Prioritas #N —". Berbeda dari
 // laporan, dokumen ini memang memuat teks CV pengguna; ia hanya dibuat
 // saat pengguna sendiri menekan tombol unduhnya, dan tidak disimpan
 // ke mana pun selain berkas yang diunduh itu.
@@ -180,8 +183,14 @@ const MARK_FILL: Partial<Record<MarkKind, [number, number, number]>> = {
   saya: [254, 205, 211],
   ai: [191, 219, 254],
 }
-// Warna penanda entri — sama dengan .entry-flag di layar (#dc2626).
+// Warna gaya prioritas — sama dengan .mark-priority di layar (#fdba74):
+// tanda yang pemeriksaannya termasuk daftar "Prioritas Perbaikan"
+// digambar oranye, menang atas warna jenis tandanya.
+const PRIORITY_FILL: [number, number, number] = [253, 186, 116]
+// Warna penanda entri — sama dengan .entry-flag di layar (#dc2626),
+// dan varian prioritasnya .entry-flag.flag-priority (#ea580c).
 const FLAG_RED: [number, number, number] = [220, 38, 38]
+const FLAG_PRIORITY: [number, number, number] = [234, 88, 12]
 
 const MARK_KIND_LABEL: Record<MarkKind, string> = {
   'frasa-lemah': 'Frasa lemah & klise',
@@ -256,7 +265,9 @@ export function buildMarkedTextPdfDoc(
 ): jsPDF {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const ai = opts.ai ?? null
-  const marks = buildMarks(cvText, ai)
+  // Daftar prioritas hasil analisis diteruskan agar peringkat tanda di
+  // PDF sama persis dengan panel layar dan daftar "Prioritas Perbaikan".
+  const marks = buildMarks(cvText, ai, result.priorities)
   const segments = buildSegments(cvText, marks)
   // Tanda yang benar-benar tergambar adalah tanda pada segmen render:
   // penanda titik yang jatuh di dalam sorotan lain dilewati
@@ -322,7 +333,11 @@ export function buildMarkedTextPdfDoc(
 
   // ----- Legenda -----
   writeSection('LEGENDA:')
-  const legendRow = (fill: [number, number, number] | null, label: string) => {
+  const legendRow = (
+    fill: [number, number, number] | null,
+    label: string,
+    flagColor: [number, number, number] = FLAG_RED,
+  ) => {
     ensureSpace(5.4)
     if (fill) {
       doc.setFillColor(...fill)
@@ -332,7 +347,7 @@ export function buildMarkedTextPdfDoc(
       // WinAnsi) — simbol yang sama yang digambar di aliran teks.
       doc.setFont('helvetica', 'bold')
       doc.setFontSize(10.5)
-      doc.setTextColor(...FLAG_RED)
+      doc.setTextColor(...flagColor)
       doc.text('[!]', MARGIN, y)
       doc.setTextColor(0)
     }
@@ -341,13 +356,22 @@ export function buildMarkedTextPdfDoc(
     doc.text(label, MARGIN + 8.5, y)
     y += 5.4
   }
+  if (drawnMarks.some((m) => m.priorityRank !== undefined)) {
+    legendRow(PRIORITY_FILL, 'Oranye — prioritas perbaikan')
+  }
   legendRow([254, 240, 138], 'Kuning — frasa lemah & klise')
   legendRow([254, 205, 211], 'Merah muda — salah eja / kata "saya" berlebihan')
   if (drawnMarks.some((m) => m.kind === 'ai')) {
     legendRow([191, 219, 254], 'Biru — kalimat yang disarankan AI untuk ditulis ulang')
   }
   if (drawnMarks.some((m) => m.kind === 'entri')) {
-    legendRow(null, 'Penanda entri pengalaman tanpa hasil terukur (angka pencapaian)')
+    legendRow(
+      null,
+      'Penanda entri pengalaman tanpa hasil terukur (angka pencapaian)',
+      drawnMarks.some((m) => m.kind === 'entri' && m.priorityRank !== undefined)
+        ? FLAG_PRIORITY
+        : FLAG_RED,
+    )
   }
 
   // ----- Aliran teks CV bertanda -----
@@ -371,7 +395,9 @@ export function buildMarkedTextPdfDoc(
     let runTo = 0
     const flushRun = () => {
       if (!runMark) return
-      const fill = MARK_FILL[runMark.kind]
+      // Gaya prioritas menang atas warna jenis tanda, sama seperti panel.
+      const fill =
+        runMark.priorityRank !== undefined ? PRIORITY_FILL : MARK_FILL[runMark.kind]
       if (fill) {
         doc.setFillColor(...fill)
         doc.rect(runFrom - 0.5, y - 3.9, runTo - runFrom + 1, 5.3, 'F')
@@ -398,7 +424,9 @@ export function buildMarkedTextPdfDoc(
       doc.setFontSize(BODY)
       if (it.kind === 'flag') {
         doc.setFont('helvetica', 'bold')
-        doc.setTextColor(...FLAG_RED)
+        doc.setTextColor(
+          ...(it.mark?.priorityRank !== undefined ? FLAG_PRIORITY : FLAG_RED),
+        )
         doc.text('[!]', it.x, y)
         doc.setTextColor(0)
       } else {
@@ -474,11 +502,14 @@ export function buildMarkedTextPdfDoc(
     } else {
       quote = clipQuote(cvText.slice(mark.start, mark.end), 110)
     }
-    writeLines(`${i + 1}. ${MARK_KIND_LABEL[mark.kind]} — “${quote}”`, {
-      size: 11,
-      bold: true,
-      lineH: 5.6,
-    })
+    writeLines(
+      `${i + 1}. ${mark.priorityRank !== undefined ? `Prioritas #${mark.priorityRank} — ` : ''}${MARK_KIND_LABEL[mark.kind]} — “${quote}”`,
+      {
+        size: 11,
+        bold: true,
+        lineH: 5.6,
+      },
+    )
     const notes: string[] = []
     if (mark.kind === 'frasa-lemah') {
       notes.push('Frasa generik yang diklaim hampir semua pelamar tanpa bukti.')

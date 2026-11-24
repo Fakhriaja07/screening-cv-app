@@ -11,8 +11,11 @@ import {
   findTypoOccurrences,
   findWeakPhraseOccurrences,
   getExperienceEntrySpans,
+  priorityRanks,
+  selectPriorities,
 } from '../src/lib/analyze'
 import {
+  applyPriorityRanks,
   buildAiMarks,
   buildMarks,
   buildSegments,
@@ -1494,7 +1497,7 @@ check(
   appTsxText.includes('Lihat Contoh Hasil') &&
     appTsxText.includes('analyzeCv(DEMO_WEAK_CV)') &&
     appTsxText.includes('analyzeCv(SAMPLE_CV)') &&
-    appTsxText.includes('buildMarks(DEMO_WEAK_CV, null)') &&
+    appTsxText.includes('buildMarks(DEMO_WEAK_CV, null, DEMO_BEFORE.priorities)') &&
     appTsxText.includes('Analisis CV-mu'),
   'bagian contoh memakai mesin asli + tanda asli, berlabel jujur "Contoh"',
 )
@@ -1532,6 +1535,130 @@ check(
     appTsxText.includes('/artikel/kesalahan-cv-fresh-graduate.html') &&
     appTsxText.includes('Artikel: Kesalahan CV Fresh Graduate'),
   'sitemap.xml memuat URL artikel; footer memuat tautannya',
+)
+
+// ---------- Uji penanda selaras prioritas perbaikan (2026-11-24) ----------
+// Peringkat pada tanda berasal dari SATU sumber bersama: selectPriorities
+// memilih daftarnya di dalam analyzeCv, priorityRanks menurunkan
+// peringkatnya, dan daftar "Prioritas Perbaikan" + penanda sama-sama
+// memakainya — tidak ada kriteria/urutan kedua di mana pun.
+const srcText = (rel: string) =>
+  readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), rel), 'utf8')
+const analyzeTsText = srcText('../src/lib/analyze.ts')
+const marksTsText = srcText('../src/lib/marks.ts')
+const pdfTsText = srcText('../src/lib/pdf.ts')
+
+const recomputedPriorities = selectPriorities(
+  markedResult.aspects.flatMap((a) => a.checks),
+  markedResult.aspects,
+)
+check(
+  'Prioritas bersama: selectPriorities mereproduksi daftar prioritas hasil analisis persis',
+  recomputedPriorities.map((c) => c.id).join(',') ===
+    markedResult.priorities.map((c) => c.id).join(',') &&
+    analyzeTsText.includes('export function selectPriorities') &&
+    analyzeTsText.includes('selectPriorities(allChecks, aspects)'),
+  `urutan: ${markedResult.priorities.map((c) => c.id).join(' > ')}`,
+)
+const priorityRankOf = (list: typeof markedResult.priorities, id: string) =>
+  list.findIndex((c) => c.id === id) + 1
+const markedRanks = priorityRanks(markedResult.priorities)
+check(
+  'Prioritas bersama: priorityRanks memberi peringkat sesuai urutan daftar (1 = teratas)',
+  markedResult.priorities.every((c, i) => markedRanks.get(c.id) === i + 1) &&
+    markedRanks.get('frasa-lemah') === priorityRankOf(markedResult.priorities, 'frasa-lemah') &&
+    markedRanks.get('kerapian-bahasa') ===
+      priorityRankOf(markedResult.priorities, 'kerapian-bahasa') &&
+    !markedRanks.has('hasil-terukur'),
+  `frasa-lemah #${markedRanks.get('frasa-lemah')}, kerapian-bahasa #${markedRanks.get('kerapian-bahasa')}; hasil-terukur tidak termasuk prioritas CV uji ini`,
+)
+
+const rankedMarks = buildMarks(MARKED_CV, MARKED_AI, markedResult.priorities)
+check(
+  'Penanda prioritas: tanda pemeriksaan prioritas membawa peringkat daftar yang benar',
+  rankedMarks.filter((m) => m.kind === 'frasa-lemah').length > 0 &&
+    rankedMarks
+      .filter((m) => m.kind === 'frasa-lemah')
+      .every((m) => m.priorityRank === priorityRankOf(markedResult.priorities, 'frasa-lemah')) &&
+    rankedMarks
+      .filter((m) => m.kind === 'salah-eja' || m.kind === 'saya')
+      .every(
+        (m) => m.priorityRank === priorityRankOf(markedResult.priorities, 'kerapian-bahasa'),
+      ) &&
+    marksTsText.includes('applyPriorityRanks') &&
+    marksTsText.includes('priorityRanks(priorities)'),
+  `frasa-lemah → #${priorityRankOf(markedResult.priorities, 'frasa-lemah')}, eja/"saya" → #${priorityRankOf(markedResult.priorities, 'kerapian-bahasa')}`,
+)
+check(
+  'Penanda prioritas: tanda AI & tanda pemeriksaan bukan prioritas tidak berperingkat',
+  rankedMarks.filter((m) => m.kind === 'ai').length > 0 &&
+    rankedMarks.filter((m) => m.kind === 'ai').every((m) => m.priorityRank === undefined) &&
+    rankedMarks.filter((m) => m.kind === 'entri').length === 1 &&
+    rankedMarks
+      .filter((m) => m.kind === 'entri')
+      .every((m) => m.priorityRank === undefined) &&
+    buildMarks(MARKED_CV, null).every((m) => m.priorityRank === undefined),
+  'AI tidak pernah berperingkat; entri hasil-terukur CV uji ini bukan prioritas; tanpa daftar prioritas tidak ada peringkat (perilaku lama utuh)',
+)
+const frasaPriorityCheck = markedResult.priorities.find((c) => c.id === 'frasa-lemah')
+const singlyRanked = frasaPriorityCheck
+  ? applyPriorityRanks(buildStandardMarks(MARKED_CV), [frasaPriorityCheck])
+  : []
+check(
+  'Penanda prioritas: applyPriorityRanks hanya menempelkan peringkat pada pemeriksaan terdaftar',
+  singlyRanked.length > 0 &&
+    singlyRanked
+      .filter((m) => m.kind === 'frasa-lemah')
+      .every((m) => m.priorityRank === 1) &&
+    singlyRanked
+      .filter((m) => m.kind !== 'frasa-lemah')
+      .every((m) => m.priorityRank === undefined),
+  'dengan daftar berisi satu pemeriksaan, hanya tandanya yang berperingkat (sebagai #1)',
+)
+check(
+  'Penanda prioritas: demo — entri hasil-terukur prioritas #1 dan tandanya berperingkat 1',
+  demoBefore.priorities[0]?.id === 'hasil-terukur' &&
+    demoMarks.length > 0 &&
+    buildMarks(DEMO_WEAK_CV, null, demoBefore.priorities)
+      .filter((m) => m.kind === 'entri')
+      .every((m) => m.priorityRank === 1) &&
+    buildMarks(DEMO_WEAK_CV, null, demoBefore.priorities)
+      .filter((m) => m.kind === 'frasa-lemah')
+      .every(
+        (m) => m.priorityRank === priorityRankOf(demoBefore.priorities, 'frasa-lemah'),
+      ),
+  `prioritas demo: ${demoBefore.priorities.slice(0, 3).map((c) => c.id).join(' > ')} …`,
+)
+check(
+  'Penanda prioritas: panel App.tsx meneruskan prioritas hasil & menampilkan label peringkat',
+  appTsxText.includes('buildMarks(analyzedText, aiResult, result.priorities)') &&
+    appTsxText.includes('Prioritas perbaikan #') &&
+    appTsxText.includes('sw-priority') &&
+    appTsxText.includes('mark-priority'),
+  'panel memakai peringkat bersama; legenda oranye + label "Prioritas perbaikan #N" terpasang',
+)
+check(
+  'Penanda prioritas: gaya oranye ada di App.css',
+  appCssText.includes('.mark-priority') &&
+    appCssText.includes('#fdba74') &&
+    appCssText.includes('.sw-priority') &&
+    appCssText.includes('.mark-priority-label'),
+  '.mark-priority #fdba74 (garis bawah #ea580c) + swatch legenda + label penjelasan',
+)
+const priorityPdfBytes = buildMarkedTextPdfBytes(markedResult, MARKED_CV, {
+  ai: MARKED_AI,
+  date: REPORT_DATE,
+})
+check(
+  'Teks Bertanda PDF: gaya prioritas ikut — %PDF valid + pdf.ts memakai peringkat bersama',
+  new TextDecoder().decode(priorityPdfBytes.slice(0, 4)) === '%PDF' &&
+    priorityPdfBytes.length > 2000 &&
+    priorityPdfBytes.length < 500_000 &&
+    pdfTsText.includes('buildMarks(cvText, ai, result.priorities)') &&
+    pdfTsText.includes('Prioritas #') &&
+    pdfTsText.includes('Oranye — prioritas perbaikan') &&
+    pdfTsText.includes('[253, 186, 116]'),
+  `${priorityPdfBytes.length} byte; legenda "Oranye — prioritas perbaikan" + awalan "Prioritas #N —" pada keterangan tanda`,
 )
 
 if (failures > 0) {

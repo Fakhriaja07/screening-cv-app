@@ -14,6 +14,8 @@ import {
   findTypoOccurrences,
   findWeakPhraseOccurrences,
   getExperienceEntrySpans,
+  priorityRanks,
+  type CheckItem,
 } from './analyze'
 import type { AiAnalysis } from './ai'
 
@@ -36,6 +38,12 @@ export interface CvMark {
   correction?: string
   // Indeks ke aiResult.saranPenulisanUlang, khusus tanda AI.
   aiIndex?: number
+  // Peringkat pemeriksaan tanda ini di daftar "Prioritas Perbaikan"
+  // (1 = tertinggi), dari sumber bersama priorityRanks di analyze.ts.
+  // Hanya diisi bila daftar prioritas diberikan ke buildMarks DAN
+  // pemeriksaan tanda ini termasuk di dalamnya. Tanda AI tidak pernah
+  // berperingkat — prioritas berasal dari analisis standar.
+  priorityRank?: number
 }
 
 // ---------- Tanda dari analisis standar ----------
@@ -213,10 +221,33 @@ export function resolveMarkOverlaps(marks: CvMark[]): CvMark[] {
   )
 }
 
-export function buildMarks(cvText: string, ai: AiAnalysis | null): CvMark[] {
+// ---------- Peringkat prioritas pada tanda ----------
+
+// Menempelkan peringkat prioritas ke tanda yang pemeriksaannya termasuk
+// daftar "Prioritas Perbaikan". Peringkatnya berasal dari priorityRanks
+// (analyze.ts) atas daftar prioritas yang sama yang dirender UI — bukan
+// urutan baru. Tanda AI dilewati: prioritas berasal dari analisis
+// standar. Pemeriksaan yang tidak masuk daftar (termasuk yang tidak
+// punya lokasi teks) memang tidak tertandai berperingkat.
+export function applyPriorityRanks(marks: CvMark[], priorities: CheckItem[]): CvMark[] {
+  const ranks = priorityRanks(priorities)
+  if (ranks.size === 0) return marks
+  return marks.map((m) => {
+    if (m.kind === 'ai' || !m.checkId) return m
+    const rank = ranks.get(m.checkId)
+    return rank === undefined ? m : { ...m, priorityRank: rank }
+  })
+}
+
+export function buildMarks(
+  cvText: string,
+  ai: AiAnalysis | null,
+  priorities?: CheckItem[],
+): CvMark[] {
   const all = buildStandardMarks(cvText)
   if (ai) all.push(...buildAiMarks(cvText, ai))
-  return resolveMarkOverlaps(all)
+  const resolved = resolveMarkOverlaps(all)
+  return priorities ? applyPriorityRanks(resolved, priorities) : resolved
 }
 
 // ---------- Segmen render ----------
