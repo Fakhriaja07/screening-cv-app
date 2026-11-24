@@ -940,7 +940,6 @@ check(
   expandJobTitle('QC') === 'Quality Control' &&
     expandJobTitle('qc') === 'Quality Control' &&
     expandJobTitle('Q.C.') === 'Quality Control' &&
-    expandJobTitle('Staff QC') === 'Staff Quality Control' &&
     expandJobTitle('QC Inspector') === 'Quality Control Inspector' &&
     expandJobTitle('SPV Produksi') === 'Supervisor Produksi' &&
     expandJobTitle('QA/QC') === 'Quality Assurance / Quality Control' &&
@@ -987,6 +986,35 @@ check(
     getRoleSkills('ADM').id === 'administrasi' &&
     getRoleSkills('BE').id === 'developer',
   `HRD→"${getRoleSkills('HRD').label}", SPV→"${getRoleSkills('SPV').label}", IT→${getRoleSkills('IT').id}, ADM→${getRoleSkills('ADM').id}`,
+)
+
+check(
+  'Glosarium: kata pengisi peran tidak menempel pada judul hasil perluasan (bug "IT Support staff")',
+  expandJobTitle('it staff') === 'IT Support' &&
+    expandJobTitle('staff it') === 'IT Support' &&
+    expandJobTitle('staf IT') === 'IT Support' &&
+    expandJobTitle('IT Staff') === 'IT Support' &&
+    expandJobTitle('qc staff') === 'Quality Control' &&
+    expandJobTitle('staff qc') === 'Quality Control' &&
+    expandJobTitle('Staff QC') === 'Quality Control' &&
+    getRoleSkills('it staff').label === 'IT Support' &&
+    getRoleSkills('it staff').id === 'it-support' &&
+    getRoleSkills('it staff').skills === getRoleSkills('IT').skills &&
+    getRoleSkills('staff qc').label === 'Quality Control' &&
+    getRoleSkills('qc staff').label === 'Quality Control',
+  `it staff→"${expandJobTitle('it staff')}", staff qc→"${expandJobTitle('staff qc')}", label kartu it staff→"${getRoleSkills('it staff').label}"`,
+)
+
+check(
+  'Glosarium: kata sisa bermuatan dipertahankan & di-title-case ("SPV Produksi", "QC Inspector")',
+  expandJobTitle('SPV Produksi') === 'Supervisor Produksi' &&
+    expandJobTitle('spv produksi') === 'Supervisor Produksi' &&
+    expandJobTitle('QC Inspector') === 'Quality Control Inspector' &&
+    expandJobTitle('qc inspector') === 'Quality Control Inspector' &&
+    JSON.stringify(getRoleWords('it staff')) === JSON.stringify(['support']) &&
+    JSON.stringify(getRoleWords('karyawan QC')) ===
+      JSON.stringify(['quality', 'control']),
+  `spv produksi→"${expandJobTitle('spv produksi')}", qc inspector→"${expandJobTitle('qc inspector')}"`,
 )
 
 check(

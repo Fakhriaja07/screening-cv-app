@@ -17,7 +17,15 @@
 // - singkatan yang terlalu ambigu untuk dipetakan aman (mis. "SA" bisa
 //   System Analyst / Sales Admin / Sales Assistant) sengaja TIDAK
 //   dimasukkan. Untuk yang tetap dimasukkan, dipilih arti paling lazim di
-//   lowongan Indonesia (mis. "PM" = Product Manager di konteks digital).
+//   lowongan Indonesia (mis. "PM" = Product Manager di konteks digital);
+// - kata pengisi peran generik (staff, staf, karyawan, … — daftar
+//   TITLE_FILLER_WORDS) yang menyertai singkatan DIBUANG dari hasil
+//   perluasan: "it staff" menjadi "IT Support", bukan judul hibrida
+//   "IT Support staff" (bug yang dilaporkan pengguna 2026-11-24). Kata
+//   sisa yang bermuatan dipertahankan dan dirapikan kapitalnya:
+//   "SPV Produksi" → "Supervisor Produksi". Pembuangan hanya berlaku
+//   bila memang ada singkatan yang diperluas — input tanpa singkatan
+//   dikembalikan apa adanya.
 
 export interface JobGlossaryEntry {
   abbr: string
@@ -149,18 +157,91 @@ function expandToken(token: string): string {
   return token
 }
 
+// Kata pengisi peran generik: kata-kata ini hanya menyatakan "orang yang
+// bekerja sebagai …" tanpa menambah bidang apa pun, jadi bila muncul
+// menemani singkatan (di depan maupun di belakang), kata ini dibuang
+// dari hasil perluasan agar judulnya bersih — "it staff"/"staff qc"
+// menjadi nama lengkap kanonisnya saja. Daftar persis sesuai keputusan
+// perbaikan judul 2026-11-24; jangan tambah kata bermuatan ke sini.
+const TITLE_FILLER_WORDS = new Set([
+  'staff', 'staf', 'karyawan', 'personil', 'pegawai',
+  'tim', 'bagian', 'divisi', 'departemen', 'dept',
+])
+
+// Kata sambung/preposisi pendek yang tetap huruf kecil di tengah judul.
+const TITLE_LOWERCASE_WORDS = new Set(['dan', 'atau', 'di', 'ke', 'dari', 'untuk', '&'])
+
+// Rapikan kapital kata sisa pengguna: kata yang seluruhnya huruf kecil
+// dikapitalkan huruf pertamanya ("produksi" → "Produksi"); kata yang
+// sudah mengandung huruf besar dibiarkan apa adanya (singkatan/akronim
+// dan nama diri tidak dirusak).
+function titleCaseLeftover(token: string): string {
+  const lower = token.toLowerCase()
+  if (TITLE_LOWERCASE_WORDS.has(lower)) return lower
+  if (token === lower) return token.charAt(0).toUpperCase() + token.slice(1)
+  return token
+}
+
+type TitleSegment =
+  | { kind: 'glossary'; text: string }
+  | { kind: 'leftover'; text: string }
+  | { kind: 'sep'; text: string }
+
 /**
  * Perluas singkatan pekerjaan di dalam teks posisi target menjadi nama
- * lengkapnya: "QC" → "Quality Control", "Staff QC" → "Staff Quality
- * Control", "SPV Produksi" → "Supervisor Produksi". Teks tanpa singkatan
- * yang dikenal dikembalikan apa adanya.
+ * lengkapnya: "QC" → "Quality Control", "SPV Produksi" → "Supervisor
+ * Produksi", "QC Inspector" → "Quality Control Inspector". Kata pengisi
+ * peran (staff/staf/dst.) yang menyertai singkatan dibuang — "it staff"
+ * → "IT Support", "staff qc" → "Quality Control" — sedangkan kata sisa
+ * yang bermuatan dipertahankan. Teks tanpa singkatan yang dikenal
+ * dikembalikan apa adanya.
  */
 export function expandJobTitle(input: string): string {
   const raw = input.trim()
   if (!raw) return input
   const whole = GLOSSARY_BY_KEY.get(normalizeAbbrKey(raw))
   if (whole) return whole.fullName
-  return raw.replace(TOKEN_PATTERN, (token) => expandToken(token))
+
+  // Pecah input menjadi segmen token & pemisah, perluas per token sambil
+  // mengingat mana bagian yang berasal dari glosarium dan mana kata
+  // sisa pengguna — komposisi judul akhir bergantung pada beda itu.
+  const segments: TitleSegment[] = []
+  const tokenRe = new RegExp(TOKEN_PATTERN.source, 'g')
+  let lastIndex = 0
+  let anyExpanded = false
+  let match: RegExpExecArray | null
+  while ((match = tokenRe.exec(raw)) !== null) {
+    const token = match[0]
+    if (match.index > lastIndex) {
+      segments.push({ kind: 'sep', text: raw.slice(lastIndex, match.index) })
+    }
+    const expandedToken = expandToken(token)
+    if (expandedToken !== token) {
+      anyExpanded = true
+      segments.push({ kind: 'glossary', text: expandedToken })
+    } else {
+      segments.push({ kind: 'leftover', text: token })
+    }
+    lastIndex = match.index + token.length
+  }
+  if (lastIndex < raw.length) segments.push({ kind: 'sep', text: raw.slice(lastIndex) })
+
+  // Tanpa singkatan yang dikenal, input dikembalikan persis seperti
+  // semula — kata pengisi TIDAK dibuang dari teks biasa.
+  if (!anyExpanded) return raw
+
+  const composed = segments
+    .filter(
+      (s) =>
+        !(s.kind === 'leftover' && TITLE_FILLER_WORDS.has(s.text.toLowerCase())),
+    )
+    .map((s) => (s.kind === 'leftover' ? titleCaseLeftover(s.text) : s.text))
+    .join('')
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([,;:])/g, '$1')
+    .trim()
+    .replace(/^[,;:\s]+|[,;:\s]+$/g, '')
+  return composed || raw
 }
 
 export interface JobAbbreviationMatch {

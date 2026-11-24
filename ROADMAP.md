@@ -864,6 +864,17 @@ posisi target. Sebelumnya singkatan jatuh ke fallback nama mentah.
 - Skor & patokan TIDAK berubah (pencocokan nama lengkap persis seperti
   sebelumnya): 96/61/16, mode lowongan 89/79 & 60/48, fresh graduate
   53, demo 55→96. 7 uji baru; total 155 uji lolos.
+- Perbaikan judul hasil perluasan (2026-11-24, laporan pengguna):
+  mengetik "it staff" sempat menghasilkan judul kartu hibrida
+  "IT Support staff" karena kata sisa "staff" ditempel mentah ke nama
+  lengkap hasil perluasan. Kini `expandJobTitle` membuang kata pengisi
+  peran (staff, staf, karyawan, personil, pegawai, tim, bagian, divisi,
+  departemen, dept) yang menyertai singkatan — "it staff"/"staff qc" →
+  "IT Support"/"Quality Control" — sedangkan kata sisa bermuatan
+  dipertahankan dan di-title-case ("SPV Produksi" → "Supervisor
+  Produksi", "QC Inspector" → "Quality Control Inspector"). Peran &
+  daftar skill yang dihasilkan tidak berubah; 2 uji baru, total 157
+  uji lolos, patokan skor utuh.
 
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
