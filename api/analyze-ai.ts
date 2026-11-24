@@ -79,8 +79,12 @@ const NONSTREAM_MAX_TOKENS = 6500
 
 // Mode streaming: batas waktu keseluruhan aliran lebih longgar karena proses
 // berpikir model ditampilkan langsung ke pengguna, dan jatah token keluaran
-// lebih besar agar penalaran + JSON jawaban sama-sama muat.
-const STREAM_TIMEOUT_MS = 90_000
+// lebih besar agar penalaran + JSON jawaban sama-sama muat. Batas aliran
+// dinaikkan (90 → 150 detik) dan effort penalaran diturunkan ke "low"
+// setelah uji live 2026-11-24: dengan JSON perbaikan lengkap, model
+// menghabiskan 90 detik hanya untuk berpikir (effort medium) dan jawaban
+// tidak sempat selesai.
+const STREAM_TIMEOUT_MS = 150_000
 const STREAM_MAX_TOKENS = 9000
 
 class UpstreamTimeoutError extends Error {
@@ -509,9 +513,12 @@ async function streamAnalysis(res: AiResponse, opts: StreamOptions): Promise<voi
           ],
           stream: true,
           ...(options.withResponseFormat ? { response_format: { type: 'json_object' } } : {}),
-          // Effort "medium" khusus jalur streaming: cukup berpikir untuk
-          // ditampilkan, tanpa menghabiskan seluruh jatah token.
-          ...(options.withReasoning ? { reasoning: { effort: 'medium' } } : {}),
+          // Effort "low" juga di jalur streaming (disamakan dengan mode
+          // biasa sejak perbaikan lengkap ditambahkan): penalaran tetap
+          // tampil di panel berpikir, tetapi model tidak menghabiskan
+          // batas waktu/token hanya untuk berpikir — JSON jawaban yang
+          // besar harus sempat selesai.
+          ...(options.withReasoning ? { reasoning: { effort: 'low' } } : {}),
           temperature: 0.4,
           max_tokens: STREAM_MAX_TOKENS,
         }),
@@ -581,7 +588,7 @@ async function streamAnalysis(res: AiResponse, opts: StreamOptions): Promise<voi
       console.error(`[analyze-ai] (stream) Timeout ${STREAM_TIMEOUT_MS / 1000} detik menunggu OpenRouter`)
       res.status(502).json({
         error: 'Layanan AI terlalu lama merespons. Coba lagi — hasil analisis standar tetap bisa dipakai.',
-        detail: 'Timeout 90 detik menunggu OpenRouter (streaming)',
+        detail: `Timeout ${STREAM_TIMEOUT_MS / 1000} detik menunggu OpenRouter (streaming)`,
       })
       return
     }
@@ -729,7 +736,7 @@ async function streamAnalysis(res: AiResponse, opts: StreamOptions): Promise<voi
     if (controller.signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
       streamError = {
         error: 'Layanan AI terlalu lama merespons. Coba lagi — hasil analisis standar tetap bisa dipakai.',
-        detail: 'Timeout 90 detik menunggu OpenRouter (streaming)',
+        detail: `Timeout ${STREAM_TIMEOUT_MS / 1000} detik menunggu OpenRouter (streaming)`,
       }
     } else if (!streamError) {
       streamError = {

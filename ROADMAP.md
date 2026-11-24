@@ -911,8 +911,12 @@ gantinya, AI berbayar wajib memberikan perbaikan yang LENGKAP:
   saranRingkasan) dipertahankan.
 - Batas disesuaikan agar JSON yang lebih besar selesai utuh:
   non-streaming 3000 → 6500 token & timeout 55 → 75 detik; streaming
-  6000 → 9000 token (batas aliran 90 detik tetap). Token pengguna tetap
-  hanya terpakai bila analisis berhasil.
+  6000 → 9000 token, batas aliran 90 → 150 detik, dan effort penalaran
+  streaming diturunkan medium → low (uji live pertama: model
+  menghabiskan 90 detik hanya untuk berpikir dan JSON tidak selesai;
+  jalur non-streaming pada uji yang sama membalas 200 dengan 12/12
+  item perbaikan). Token pengguna tetap hanya terpakai bila analisis
+  berhasil.
 - Kartu Analisis AI menampilkan daftar "Perbaikan Lengkap dari AI"
   (judul + sebelum → sesudah + catatan) dan laporan PDF memuat bagian
   "PERBAIKAN LENGKAP DARI AI" juga.
