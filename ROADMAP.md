@@ -569,6 +569,34 @@ klik:
   pengguna — dibuat hanya saat pengguna menekan tombol unduhnya dan
   tidak disimpan ke mana pun.
 
+## Peningkatan daya tarik: contoh hasil, tampilan, artikel SEO (2026-11-24)
+
+Atas kebebasan penuh dari pengguna ("buat apa saja yang menarik, jika
+perlu buat tampilannya lebih menarik lagi"), tiga hal dibangun dalam satu
+rangkaian:
+
+1. **Bagian "Lihat Contoh Hasil" di beranda.** Pengunjung kini bisa
+   melihat contoh keluaran nyata tanpa mengunggah: dua CV contoh
+   dianalisis langsung oleh `analyzeCv` yang sama di browser — CV contoh
+   lemah (`src/lib/demoCv.ts`, skor 55 "Perlu Perbaikan") sebagai
+   "Sebelum" dan CV contoh kuat bawaan (skor 96 "Sangat Siap Dilamar")
+   sebagai "Sesudah" — lengkap dengan selisih skor, 3 prioritas perbaikan
+   teratas dari "Sebelum", dan cuplikan teks bertanda dari
+   `buildMarks`/`buildSegments` yang sama dengan panel penanda. Bagian
+   ini berlabel jujur "Contoh": bukan testimoni pengguna, bukan angka
+   karangan, dan tidak ada penghitung "sudah X CV dianalisis".
+2. **Penyegaran tampilan.** Hero lebih kuat (gradien berlapis, tipografi
+   lebih besar, statistik kaca), kartu dan kartu langkah lebih rapi
+   (radius 16px, bayangan lembut, efek hover), tombol utama bergradien,
+   garis fokus yang jelas, dan footer berbingkai atas. Hanya gaya dan
+   markup pembungkus — label fitur, logika skor, dan semua fitur lama
+   tidak berubah.
+3. **Artikel SEO pertama.** `public/artikel/kesalahan-cv-fresh-graduate.html`
+   — "7 Kesalahan CV Fresh Graduate yang Membuatmu Tidak Dipanggil
+   Interview", isinya diturunkan dari pemeriksaan nyata situs dengan
+   contoh sebelum→sesudah sejalan `examples.ts`, tanpa klaim statistik
+   karangan. Terdaftar di `sitemap.xml` dan tertaut dari footer beranda.
+
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
 - Akurasi yang terasa benar: hasil cocok dengan intuisi pengguna.

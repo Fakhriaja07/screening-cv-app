@@ -33,6 +33,7 @@ import {
   type StorageLike,
 } from '../src/lib/history'
 import { SAMPLE_CV } from '../src/lib/sampleCv'
+import { DEMO_WEAK_CV } from '../src/lib/demoCv'
 import {
   ADMIN_CONTACT_URL,
   AI_CLAIMED_ORDERS_STORAGE_KEY,
@@ -56,7 +57,7 @@ import {
 } from '../src/lib/payment'
 import { TOKEN_CODE_HASHES } from '../src/lib/tokenCodes'
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -1476,6 +1477,61 @@ check(
     appTsxText.includes('buildMarkedTextPdf') &&
     appTsxText.includes('marks-actions'),
   'tombol di panel "Teks CV dengan Tanda" mengunduh PDF teks bertanda langsung (jsPDF)',
+)
+
+// ---------- Uji contoh hasil beranda + artikel SEO (2026-11-24) ----------
+// Bagian "Lihat Contoh Hasil" WAJIB memakai mesin asli atas teks contoh
+// yang sama yang dirender App.tsx — bukan angka yang diketik manual.
+const demoBefore = analyzeCv(DEMO_WEAK_CV)
+const demoAfter = analyzeCv(SAMPLE_CV)
+check(
+  'Contoh hasil: skor "Sebelum" < "Sesudah" dan "Sesudah" = patokan CV kuat',
+  demoBefore.total < demoAfter.total && demoAfter.total === strong.total && demoAfter.total === 96,
+  `sebelum ${demoBefore.total} (${demoBefore.label}), sesudah ${demoAfter.total} (${demoAfter.label})`,
+)
+check(
+  'Contoh hasil: App.tsx menjalankan analyzeCv atas kedua teks contoh',
+  appTsxText.includes('Lihat Contoh Hasil') &&
+    appTsxText.includes('analyzeCv(DEMO_WEAK_CV)') &&
+    appTsxText.includes('analyzeCv(SAMPLE_CV)') &&
+    appTsxText.includes('buildMarks(DEMO_WEAK_CV, null)') &&
+    appTsxText.includes('Analisis CV-mu'),
+  'bagian contoh memakai mesin asli + tanda asli, berlabel jujur "Contoh"',
+)
+const demoMarks = buildMarks(DEMO_WEAK_CV, null)
+check(
+  'Contoh hasil: teks lemah demo menghasilkan tanda frasa lemah, salah eja, dan entri',
+  demoMarks.some((m) => m.kind === 'frasa-lemah') &&
+    demoMarks.some((m) => m.kind === 'salah-eja') &&
+    demoMarks.some((m) => m.kind === 'entri') &&
+    demoMarks.some((m) => m.kind === 'saya'),
+  `${demoMarks.length} tanda pada CV demo`,
+)
+const artikelPath = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../public/artikel/kesalahan-cv-fresh-graduate.html',
+)
+const artikelText = existsSync(artikelPath) ? readFileSync(artikelPath, 'utf8') : ''
+check(
+  'Artikel SEO: berkas ada, memuat judul + meta description + OG + tautan balik',
+  artikelText.includes('7 Kesalahan CV Fresh Graduate yang Membuatmu Tidak Dipanggil Interview') &&
+    artikelText.includes('name="description"') &&
+    artikelText.includes('property="og:title"') &&
+    artikelText.includes('href="/"'),
+  'public/artikel/kesalahan-cv-fresh-graduate.html',
+)
+const sitemapText = readFileSync(
+  resolve(dirname(fileURLToPath(import.meta.url)), '../public/sitemap.xml'),
+  'utf8',
+)
+check(
+  'Artikel SEO: URL artikel terdaftar di sitemap + tertaut dari footer beranda',
+  sitemapText.includes(
+    'https://screening-cv-app.vercel.app/artikel/kesalahan-cv-fresh-graduate.html',
+  ) &&
+    appTsxText.includes('/artikel/kesalahan-cv-fresh-graduate.html') &&
+    appTsxText.includes('Artikel: Kesalahan CV Fresh Graduate'),
+  'sitemap.xml memuat URL artikel; footer memuat tautannya',
 )
 
 if (failures > 0) {

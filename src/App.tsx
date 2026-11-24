@@ -45,6 +45,7 @@ import {
   getRoleSkills,
 } from './lib/examples'
 import { SAMPLE_CV } from './lib/sampleCv'
+import { DEMO_WEAK_CV } from './lib/demoCv'
 import { extractTextFromFile } from './lib/readFile'
 
 
@@ -185,6 +186,123 @@ const ATS_TIPS = [
   'Jaga panjang CV di kisaran 220–900 kata (1–2 halaman) dan susun dengan bullet yang rapi.',
   'Cantumkan kontak lengkap: email, nomor HP, LinkedIn, dan link portofolio.',
 ]
+
+// ---------- Contoh hasil analisis (beranda) ----------
+// Dua CV contoh dianalisis langsung oleh mesin penilaian yang sama
+// (analyzeCv + buildMarks) saat modul dimuat — skor, prioritas, dan
+// tandanya adalah keluaran asli mesin atas teks contoh, bukan angka
+// karangan dan bukan testimoni pengguna. Fungsinya agar pengunjung bisa
+// melihat contoh hasil sebelum mengunggah CV-nya sendiri.
+const DEMO_BEFORE = analyzeCv(DEMO_WEAK_CV)
+const DEMO_AFTER = analyzeCv(SAMPLE_CV)
+const DEMO_SEGMENTS = buildSegments(DEMO_WEAK_CV, buildMarks(DEMO_WEAK_CV, null))
+
+function DemoSection() {
+  const delta = DEMO_AFTER.total - DEMO_BEFORE.total
+  return (
+    <section className="demo-section" aria-label="Contoh hasil analisis">
+      <div className="demo-head">
+        <span className="badge badge-soft"><Icon d={I.chart} size={14} /> Contoh hasil analisis</span>
+        <h2>Lihat Contoh Hasil</h2>
+        <p>
+          Dua CV contoh di bawah ini dianalisis langsung oleh mesin penilaian
+          yang sama dengan yang akan menilai CV-mu — bukan testimoni pengguna
+          dan bukan angka karangan. Yang satu ditulis seadanya; yang lain
+          ditulis dengan bukti hasil kerja.
+        </p>
+      </div>
+      <div className="demo-grid">
+        <div className="card demo-card">
+          <div className="demo-card-head">
+            <span className="demo-tag demo-tag-before">Sebelum</span>
+            <span className="demo-cv-name">CV contoh — ditulis seadanya</span>
+          </div>
+          <div className="demo-score-row">
+            <ScoreRing score={DEMO_BEFORE.total} size={108} />
+            <div className="demo-score-side">
+              <p className="demo-verdict">{DEMO_BEFORE.label}</p>
+              <p className="demo-note">3 prioritas perbaikan teratas dari CV ini:</p>
+              <ol className="demo-priorities">
+                {DEMO_BEFORE.priorities.slice(0, 3).map((c) => (
+                  <li key={c.id}>
+                    <strong>{c.title}</strong> — {c.score}/{c.max} poin
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </div>
+          <p className="demo-sub">Cuplikan teksnya dengan tanda dari fitur penanda:</p>
+          <div className="marked-text demo-marked">
+            {DEMO_SEGMENTS.map((seg, i) => {
+              if (seg.type === 'text') return <span key={i}>{seg.text}</span>
+              if (seg.type === 'point') {
+                return (
+                  <span key={i} className="entry-flag-static" title={seg.mark.label} aria-label={seg.mark.label}>
+                    ⚑
+                  </span>
+                )
+              }
+              const kindClass =
+                seg.mark.kind === 'frasa-lemah'
+                  ? 'mark-weak'
+                  : seg.mark.kind === 'ai'
+                    ? 'mark-ai'
+                    : 'mark-typo'
+              return (
+                <mark key={i} className={kindClass} title={seg.mark.label}>
+                  {seg.text}
+                </mark>
+              )
+            })}
+          </div>
+          <div className="marks-legend">
+            <span className="legend-item">
+              <span className="legend-swatch sw-weak" /> Frasa lemah &amp; klise
+            </span>
+            <span className="legend-item">
+              <span className="legend-swatch sw-typo" /> Salah eja / kata “saya” berlebihan
+            </span>
+            <span className="legend-item">
+              <span className="legend-flag">⚑</span> Entri pengalaman tanpa hasil terukur
+            </span>
+          </div>
+        </div>
+        <div className="demo-arrow" aria-hidden="true">→</div>
+        <div className="card demo-card demo-card-after">
+          <div className="demo-card-head">
+            <span className="demo-tag demo-tag-after">Sesudah</span>
+            <span className="demo-cv-name">CV contoh — ditulis dengan bukti hasil</span>
+          </div>
+          <div className="demo-score-row">
+            <ScoreRing score={DEMO_AFTER.total} size={108} />
+            <div className="demo-score-side">
+              <p className="demo-verdict">{DEMO_AFTER.label}</p>
+              <p className="demo-delta">
+                <Icon d={I.trendUp} size={16} /> Naik {delta} poin dari contoh “Sebelum”
+              </p>
+              <p className="demo-note">
+                Selisihnya datang dari hal yang bisa kamu perbaiki juga: angka
+                hasil kerja, kata kerja aksi, skill yang spesifik, dan kontak
+                yang lengkap.
+              </p>
+            </div>
+          </div>
+          <p className="demo-note">
+            Kedua CV di atas adalah contoh bawaan situs — bukan CV pengguna
+            asli — dan skornya dihitung langsung oleh mesin penilaian saat
+            halaman ini dimuat.
+          </p>
+        </div>
+      </div>
+      <div className="demo-cta">
+        <a className="btn btn-primary" href="#analisis">
+          <Icon d={I.chart} size={18} /> Analisis CV-mu
+        </a>
+        <span className="ai-hint">Analisis standar gratis — tanpa daftar, dan CV tidak diunggah ke server.</span>
+      </div>
+    </section>
+  )
+}
 
 export default function App() {
   const [cvText, setCvText] = useState('')
@@ -795,6 +913,9 @@ export default function App() {
           <p>Skor per aspek, kekuatan, dan prioritas perbaikan yang terurut.</p>
         </div>
       </section>
+
+      {/* ===== CONTOH HASIL ===== */}
+      <DemoSection />
 
       {/* ===== LAYOUT UTAMA ===== */}
       <main className="layout" id="analisis">
@@ -1486,6 +1607,9 @@ export default function App() {
           <a href="/privacy.html">Kebijakan Privasi</a>
           <span aria-hidden="true"> • </span>
           <a href="/terms.html">Syarat &amp; Ketentuan</a>
+        </p>
+        <p className="footer-links">
+          <a href="/artikel/kesalahan-cv-fresh-graduate.html">Artikel: Kesalahan CV Fresh Graduate</a>
         </p>
       </footer>
     </div>
