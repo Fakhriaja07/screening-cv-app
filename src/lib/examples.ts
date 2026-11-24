@@ -220,6 +220,8 @@ export function buildSummaryTemplate(targetRole: string): string {
   )
 }
 
+import { expandJobTitle } from './jobGlossary'
+
 // ---------- Kamus skill per peran ----------
 
 export interface RoleSkills {
@@ -428,17 +430,12 @@ function keywordMatches(roleNorm: string, keyword: string): boolean {
   return new RegExp(`(^|\\s)${escaped}(?=\\s|$)`).test(roleNorm)
 }
 
-// Cocokkan posisi target (teks bebas) ke kamus peran. Di antara semua
-// kata kunci yang cocok, yang TERPANJANG menang — frasa spesifik seperti
-// "teknisi komputer" atau "content creator" mengalahkan kata umum
-// seperti "teknisi" atau "content".
-// - Posisi kosong → fallback "Umum / Fresh Graduate".
-// - Posisi terisi tapi tidak ada di kamus → entri kustom berlabel nama
-//   posisi pengguna sendiri, dengan daftar skill umum (posisiKustom).
-export function getRoleSkills(targetRole: string): RoleSkills {
-  const raw = targetRole.trim()
-  if (!raw) return FALLBACK_ROLE_SKILLS
-  const role = normalizeRoleText(raw)
+// Pencocokan inti ke kamus peran: di antara semua kata kunci yang
+// cocok, yang TERPANJANG menang — frasa spesifik seperti "teknisi
+// komputer" atau "content creator" mengalahkan kata umum seperti
+// "teknisi" atau "content".
+function matchRoleDictionary(roleText: string): RoleSkills | null {
+  const role = normalizeRoleText(roleText)
   let best: RoleSkills | null = null
   let bestLen = 0
   for (const entry of ROLE_SKILLS) {
@@ -450,7 +447,39 @@ export function getRoleSkills(targetRole: string): RoleSkills {
       }
     }
   }
-  if (best) return best
+  return best
+}
+
+// Cocokkan posisi target (teks bebas) ke kamus peran.
+// - Posisi kosong → fallback "Umum / Fresh Graduate".
+// - Posisi cocok langsung ke kamus → peran itu (perilaku asli, tidak
+//   berubah untuk nama lengkap).
+// - Posisi tidak cocok tetapi memuat singkatan pekerjaan yang dikenal
+//   glosarium (jobGlossary.ts) → singkatannya diperluas dulu, lalu
+//   dicocokkan ulang: "QC" menjadi "Quality Control" dan mendapat
+//   daftar skill peran terkait; judul kartu memakai nama lengkap hasil
+//   perluasan, bukan singkatan mentah. Bila nama lengkapnya pun belum
+//   ada di kamus, fallback kustom memakai nama lengkap itu (lebih
+//   informatif daripada singkatan mentah).
+// - Posisi terisi tapi tidak ada di kamus → entri kustom berlabel nama
+//   posisi pengguna sendiri, dengan daftar skill umum (posisiKustom).
+export function getRoleSkills(targetRole: string): RoleSkills {
+  const raw = targetRole.trim()
+  if (!raw) return FALLBACK_ROLE_SKILLS
+  const direct = matchRoleDictionary(raw)
+  if (direct) return direct
+  const expanded = expandJobTitle(raw)
+  if (expanded.toLowerCase() !== raw.toLowerCase()) {
+    const viaGlossary = matchRoleDictionary(expanded)
+    if (viaGlossary) return { ...viaGlossary, label: expanded }
+    return {
+      id: 'kustom',
+      label: expanded,
+      keywords: [],
+      skills: FALLBACK_ROLE_SKILLS.skills,
+      posisiKustom: true,
+    }
+  }
   return {
     id: 'kustom',
     label: raw,

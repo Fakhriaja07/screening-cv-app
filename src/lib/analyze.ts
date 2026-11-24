@@ -24,6 +24,8 @@
 // bobot di dalam aspek Pengalaman & Kontak dibagi ulang untuk memberi
 // ruang bagi dimensi baru, total aspek tetap sama.
 
+import { expandJobTitle } from './jobGlossary'
+
 export type CheckStatus = 'baik' | 'kurang' | 'buruk'
 
 export interface CheckItem {
@@ -1046,11 +1048,17 @@ const ROLE_GENERIC_WORDS = new Set([
 // Kata-kata bermakna dari posisi target (tanpa kata jabatan generik) —
 // ekstraksi yang sama yang dipakai pemeriksaan relevansi ringkasan &
 // pengalaman; dipakai juga lapisan tampilan dari sumber yang sama.
+// Singkatan pekerjaan diperluas dulu lewat glosarium (jobGlossary.ts):
+// "QC" menghasilkan kata "quality"/"control" yang bisa dicocokkan ke
+// isi CV, bukan potongan "qc" yang tidak pernah muncul di teks CV.
+// Hasilnya dideduplikasi agar perluasan seperti "IT" → "IT Support"
+// tidak menggandakan kata yang sama.
 export function getRoleWords(role: string): string[] {
-  return role
+  const words = expandJobTitle(role)
     .toLowerCase()
     .split(/[^a-z]+/)
     .filter((w) => w.length >= 3 && !ROLE_GENERIC_WORDS.has(w))
+  return [...new Set(words)]
 }
 
 // ---------- Prioritas perbaikan (sumber bersama) ----------

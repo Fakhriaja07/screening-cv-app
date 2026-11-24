@@ -5,9 +5,15 @@ import {
   countWords,
   detectPhone,
   findPortfolio,
+  getRoleWords,
   priorityRanks,
   selectPriorities,
 } from '../src/lib/analyze'
+import {
+  JOB_GLOSSARY,
+  expandJobTitle,
+  findJobAbbreviation,
+} from '../src/lib/jobGlossary'
 import {
   addHistoryEntry,
   aspectDeltas,
@@ -913,6 +919,85 @@ check(
   ROLE_SKILLS.every((r) => r.skills.length >= 8 && r.skills.length <= 12) &&
     ROLE_SKILLS.length >= 18,
   `${ROLE_SKILLS.length} peran di kamus, masing-masing 8–12 skill`,
+)
+
+// ---------- Glosarium singkatan pekerjaan (2026-11-24) ----------
+// Posisi target yang diketik sebagai singkatan ("QC", "Staff QC",
+// "HRD") harus dikenali sebagai pekerjaan lengkapnya: mendapat daftar
+// skill peran terkait, judul kartu memakai nama lengkap, dan kata
+// perannya bisa dicocokkan ke isi CV oleh pemeriksaan relevansi.
+
+check(
+  'Glosarium: minimal 70 entri, singkatan unik, nama lengkap terisi',
+  JOB_GLOSSARY.length >= 70 &&
+    new Set(JOB_GLOSSARY.map((e) => e.abbr.toUpperCase())).size === JOB_GLOSSARY.length &&
+    JOB_GLOSSARY.every((e) => e.abbr.trim() !== '' && e.fullName.trim() !== ''),
+  `${JOB_GLOSSARY.length} entri glosarium`,
+)
+
+check(
+  'Glosarium: singkatan diperluas ke nama pekerjaan lengkap',
+  expandJobTitle('QC') === 'Quality Control' &&
+    expandJobTitle('qc') === 'Quality Control' &&
+    expandJobTitle('Q.C.') === 'Quality Control' &&
+    expandJobTitle('Staff QC') === 'Staff Quality Control' &&
+    expandJobTitle('QC Inspector') === 'Quality Control Inspector' &&
+    expandJobTitle('SPV Produksi') === 'Supervisor Produksi' &&
+    expandJobTitle('QA/QC') === 'Quality Assurance / Quality Control' &&
+    findJobAbbreviation('HRD')?.fullName === 'Human Resource Development',
+  `QC→"${expandJobTitle('QC')}", Staff QC→"${expandJobTitle('Staff QC')}", SPV Produksi→"${expandJobTitle('SPV Produksi')}"`,
+)
+
+check(
+  'Glosarium: singkatan ambigu terpetakan ke arti yang dipilih (PM = Product Manager)',
+  expandJobTitle('PM') === 'Product Manager' &&
+    expandJobTitle('AM') === 'Account Manager' &&
+    expandJobTitle('BM') === 'Branch Manager',
+  `PM→"${expandJobTitle('PM')}", AM→"${expandJobTitle('AM')}", BM→"${expandJobTitle('BM')}"`,
+)
+
+check(
+  'Glosarium: potongan huruf di tengah kata lain TIDAK salah deteksi',
+  findJobAbbreviation('Staff QCA') === null &&
+    findJobAbbreviation('Petugas QCP') === null &&
+    expandJobTitle('Backend Developer') === 'Backend Developer' &&
+    expandJobTitle('Quality Control') === 'Quality Control' &&
+    expandJobTitle('Petani') === 'Petani',
+  'QCA/QCP/Backend/Quality Control/Petani semua utuh tanpa perluasan keliru',
+)
+
+check(
+  'Glosarium: "QC" & "Staff QC" mendapat daftar skill peran Quality Control',
+  getRoleSkills('QC').id === 'operator-produksi' &&
+    getRoleSkills('QC').label === 'Quality Control' &&
+    getRoleSkills('qc').id === 'operator-produksi' &&
+    getRoleSkills('Staff QC').id === 'operator-produksi' &&
+    getRoleSkills('Staff QC').skills.includes('Quality Control') &&
+    getRoleSkills('Quality Control').id === 'operator-produksi',
+  `QC→${getRoleSkills('QC').id} "${getRoleSkills('QC').label}", Staff QC→${getRoleSkills('Staff QC').id}`,
+)
+
+check(
+  'Glosarium: "HRD" dikenali sebagai peran HR (nama lengkap, bukan singkatan mentah)',
+  findJobAbbreviation('HRD')?.abbr === 'HRD' &&
+    getRoleSkills('HRD').label === 'Human Resource Development' &&
+    getRoleSkills('HRD').label !== 'HRD' &&
+    getRoleSkills('SPV').label === 'Supervisor' &&
+    getRoleSkills('IT').id === 'it-support' &&
+    getRoleSkills('ADM').id === 'administrasi' &&
+    getRoleSkills('BE').id === 'developer',
+  `HRD→"${getRoleSkills('HRD').label}", SPV→"${getRoleSkills('SPV').label}", IT→${getRoleSkills('IT').id}, ADM→${getRoleSkills('ADM').id}`,
+)
+
+check(
+  'Glosarium: kata peran dari singkatan bisa dicocokkan ke isi CV',
+  JSON.stringify(getRoleWords('QC')) === JSON.stringify(['quality', 'control']) &&
+    JSON.stringify(getRoleWords('HRD')) ===
+      JSON.stringify(['human', 'resource', 'development']) &&
+    JSON.stringify(getRoleWords('Data Analyst')) ===
+      JSON.stringify(['data', 'analyst']) &&
+    JSON.stringify(getRoleWords('Kasir')) === JSON.stringify(['kasir']),
+  `QC→[${getRoleWords('QC').join(', ')}], HRD→[${getRoleWords('HRD').join(', ')}], Data Analyst→[${getRoleWords('Data Analyst').join(', ')}]`,
 )
 
 const presence = checkSkills('Saya bisa SQL dan Microsoft Excel, sedang belajar Python.', [

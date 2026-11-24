@@ -829,6 +829,42 @@ generik diaudit satu per satu. Total kini 14 id personal.
   96/61/16, mode lowongan 89/79 & 60/48, fresh graduate 53, demo
   55→96.
 
+## Glosarium singkatan nama pekerjaan (2026-11-24)
+
+Permintaan pengguna: singkatan posisi seperti "QC" harus tetap dikenali
+sebagai pekerjaan lengkapnya (Quality Control) saat diketik sebagai
+posisi target. Sebelumnya singkatan jatuh ke fallback nama mentah.
+
+- Modul data murni baru `src/lib/jobGlossary.ts`: **75 entri** singkatan
+  → nama pekerjaan lengkap (manufaktur/kualitas, kantor/administrasi,
+  penjualan/marketing, IT/digital, F&B/hospitality, kesehatan/
+  pendidikan, teknik/konstruksi/logistik, keuangan, lainnya), satu
+  entri per baris agar mudah ditambah, plus fungsi resolusinya
+  (`expandJobTitle`, `findJobAbbreviation`). Resolusi case-insensitive,
+  mengabaikan titik ("Q.C."), dan hanya cocok sebagai kata utuh
+  (seluruh input atau token mandiri, termasuk gabungan "QA/QC") —
+  potongan huruf di tengah kata lain tidak pernah diperluas.
+- Singkatan terlalu ambigu sengaja TIDAK dimasukkan: SA (System
+  Analyst / Sales Admin / Sales Assistant), BA (Business Analyst /
+  Brand Ambassador), DC (Debt Collector / Distribution Center), SM,
+  DM, RM. Yang ambigu tetapi lazim dipetakan ke arti paling umum di
+  lowongan Indonesia: PM = Product Manager, AM = Account Manager,
+  BM = Branch Manager, AP/AR = Accounts Payable/Receivable.
+- Integrasi: (a) `getRoleSkills` (examples.ts) — pencocokan langsung ke
+  kamus 18 peran tidak berubah; bila gagal, singkatan diperluas lalu
+  dicocokkan ulang ("QC" → peran Operator Produksi dengan daftar
+  skill-nya; "ADM" → Administrasi; "IT" → IT Support; "BE" →
+  Developer). Judul kartu Daftar Skill memakai nama lengkap hasil
+  perluasan ("Quality Control", bukan "QC"). Nama lengkap yang belum
+  punya peran kamus (mis. "HRD" → "Human Resource Development")
+  memakai fallback skill umum berlabel nama lengkap itu. (b)
+  `getRoleWords` (analyze.ts) memperluas singkatan sebelum ekstraksi
+  kata, jadi pemeriksaan relevansi ringkasan & pengalaman menerima
+  kata "quality"/"control" yang bisa dicocokkan ke isi CV.
+- Skor & patokan TIDAK berubah (pencocokan nama lengkap persis seperti
+  sebelumnya): 96/61/16, mode lowongan 89/79 & 60/48, fresh graduate
+  53, demo 55→96. 7 uji baru; total 155 uji lolos.
+
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
 - Akurasi yang terasa benar: hasil cocok dengan intuisi pengguna.
