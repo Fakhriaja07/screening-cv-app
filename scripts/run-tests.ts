@@ -620,6 +620,52 @@ check(
   `kunci personal CV kuat: [${Object.keys(strongPersonal).join(', ')}]`,
 )
 
+// Linimasa CV lemah: periode entri tidak terbaca sama sekali →
+// personalisasi tidak dipaksakan, contoh generik tetap dipakai.
+// (Uji linimasa personal untuk CV berjeda ada di bawah, sesudah
+// fixture GAP_CV didefinisikan.)
+const weakPersonal = buildPersonalExamples(weak, WEAK_CV, '')
+check(
+  'Personal: linimasa tanpa periode terbaca tetap generik',
+  weakPersonal['linimasa'] === undefined && getCheckExample('linimasa') !== null,
+  `personal linimasa CV lemah: ${weakPersonal['linimasa'] === undefined ? 'tidak ada (benar)' : 'ADA (salah)'}`,
+)
+
+// Konsistensi format & urutan: format periode pengguna sendiri dikutip
+// persis seperti tertulis; versi perbaikan = entri yang sama dengan
+// SATU format rentang tahun (tahun dari CV sendiri) + urutan dibalik.
+const pConsistency = buildPersonalExamples(mixedFmt, MIXED_FORMAT_CV, '')['konsistensi-format']
+check(
+  'Personal: konsistensi mengutip format periode persis seperti tertulis di CV sendiri',
+  !!pConsistency &&
+    pConsistency.kutipanAsli.includes('Kasir — Toko Berkah (Jan 2021 - Des 2022)') &&
+    pConsistency.kutipanAsli.includes('Staf Gudang — PT Logistik Jaya (2023 - 2024)') &&
+    pConsistency.catatan.includes('campur aduk') &&
+    pConsistency.catatan.includes('"Jan 2021"'),
+  pConsistency
+    ? `kutipan: "${pConsistency.kutipanAsli.replace(/\n/g, ' / ')}"`
+    : 'contoh personal konsistensi tidak ada',
+)
+check(
+  'Personal: konsistensi versi perbaikan = entri sama, satu format rentang tahun, terbaru→terlama',
+  !!pConsistency &&
+    pConsistency.versiPerbaikan.indexOf('Staf Gudang') < pConsistency.versiPerbaikan.indexOf('Kasir') &&
+    pConsistency.versiPerbaikan.includes('Staf Gudang — PT Logistik Jaya (2023–2024)') &&
+    pConsistency.versiPerbaikan.includes('Kasir — Toko Berkah (2021–2022)') &&
+    !pConsistency.versiPerbaikan.includes('Jan 2021') &&
+    numbersIn(pConsistency.versiPerbaikan).every((n) => MIXED_FORMAT_CV.includes(n)),
+  pConsistency
+    ? `sesudah: "${pConsistency.versiPerbaikan.replace(/\n/g, ' / ')}"`
+    : 'contoh personal konsistensi tidak ada',
+)
+
+// CV kuat: linimasa & konsistensi sudah "baik" → tanpa contoh personal.
+check(
+  'Personal: CV kuat tanpa contoh personal linimasa & konsistensi',
+  strongPersonal['linimasa'] === undefined && strongPersonal['konsistensi-format'] === undefined,
+  `kunci personal CV kuat: [${Object.keys(strongPersonal).join(', ')}]`,
+)
+
 check(
   'Fase 2: pencocokan peran ke kamus skill',
   getRoleSkills('Data Analyst').id === 'data-analyst' &&
@@ -752,6 +798,41 @@ check(
     mediumCheck('linimasa')?.score === 3 &&
     weakCheck('linimasa')?.score === 0,
   `gap ${checkOf(gapResult, 'linimasa')?.score}/3, kuat ${strongCheck('linimasa')?.score}/3 (peran saat ini), menengah ${mediumCheck('linimasa')?.score}/3, lemah ${weakCheck('linimasa')?.score}/3 (periode tak terbaca)`,
+)
+
+// Contoh personal linimasa untuk CV berjeda yang sama (2026-11-24,
+// menyusul teguran pengguna bahwa contoh "Lihat contoh" linimasa masih
+// generik): kutipan = entri pengguna sendiri dalam urutan aslinya,
+// catatan menyebut rentang jeda aktual dari tahun-tahunnya, versi
+// perbaikan terurut terbaru→terlama dengan placeholder jeda & peran
+// terkini — TANPA aktivitas pengisi karangan seperti contoh generik
+// ("Mengelola toko online keluarga").
+const pTimeline = buildPersonalExamples(gapResult, GAP_CV, '')['linimasa']
+check(
+  'Personal: linimasa mengutip entri CV sendiri (urutan asli) + jeda aktual dari tahun-tahunnya',
+  !!pTimeline &&
+    pTimeline.kutipanAsli.includes('Kasir — Toko Berkah (2015 - 2016)') &&
+    pTimeline.kutipanAsli.includes('Staf Gudang — PT Logistik Jaya (2021 - 2022)') &&
+    pTimeline.kutipanAsli.indexOf('Kasir') < pTimeline.kutipanAsli.indexOf('Staf Gudang') &&
+    pTimeline.catatan.includes('antara 2016 dan 2021') &&
+    pTimeline.catatan.includes('5 tahun') &&
+    pTimeline.catatan.includes('berakhir 2022'),
+  pTimeline
+    ? `kutipan: "${pTimeline.kutipanAsli.replace(/\n/g, ' / ')}"`
+    : 'contoh personal linimasa tidak ada',
+)
+check(
+  'Personal: linimasa versi perbaikan terbaru→terlama + placeholder jeda & peran terkini, tanpa karangan',
+  !!pTimeline &&
+    pTimeline.versiPerbaikan.indexOf('Staf Gudang') < pTimeline.versiPerbaikan.indexOf('Kasir') &&
+    pTimeline.versiPerbaikan.includes('2016–2021: [tulis aktivitasmu selama jeda ini') &&
+    pTimeline.versiPerbaikan.includes('[peran terkinimu') &&
+    !pTimeline.versiPerbaikan.toLowerCase().includes('toko online') &&
+    !pTimeline.versiPerbaikan.includes('Mengelola') &&
+    numbersIn(pTimeline.versiPerbaikan).every((n) => GAP_CV.includes(n)),
+  pTimeline
+    ? `sesudah: "${pTimeline.versiPerbaikan.replace(/\n/g, ' / ').slice(0, 110)}…"`
+    : 'contoh personal linimasa tidak ada',
 )
 
 // --- Proyek/magang sebagai bukti pengalaman ---

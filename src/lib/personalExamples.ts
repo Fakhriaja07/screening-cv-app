@@ -22,6 +22,7 @@
 import {
   ACTION_VERBS,
   BULLET_LINE,
+  PERIOD_FAMILY_LABEL,
   SAYA_OVERUSE_THRESHOLD,
   countWords,
   findSayaOccurrences,
@@ -29,7 +30,9 @@ import {
   findWeakPhraseOccurrences,
   getExperienceEntryDetails,
   getExperienceSectionRange,
+  getPeriodExprs,
   getSummarySection,
+  getTimelineFacts,
   type AnalysisResult,
   type CheckItem,
   type ExperienceEntryDetail,
@@ -338,6 +341,148 @@ function personalSummaryRelevance(
   }
 }
 
+// ---------- Linimasa & konsistensi: judul entri pengguna sendiri ----------
+
+// Baris judul entri: baris-baris awal entri sebelum poin isi pertama —
+// biasanya satu baris "Jabatan — Perusahaan (periode)", kadang judul
+// dan periode pada dua baris terpisah. Dikutip persis seperti tertulis.
+function entryHeaderLines(entry: ExperienceEntryDetail): string[] {
+  const header: string[] = []
+  for (const line of entry.lines) {
+    if (BULLET_LINE.test(line)) break
+    header.push(line)
+  }
+  return header.length > 0 ? header : entry.lines.slice(0, 1)
+}
+
+// ---------- Linimasa pengalaman ----------
+
+function personalTimeline(result: AnalysisResult, cvText: string): PersonalExample | null {
+  if (!needsFix(result, 'linimasa')) return null
+  // Fakta jeda & kebaruan dari perhitungan yang sama dengan
+  // pemeriksaannya — tahun-tahun di contoh ini selalu tahun yang sama
+  // dengan yang disebut pesan pemeriksaan.
+  const facts = getTimelineFacts(cvText)
+  if (!facts) return null
+  if (facts.gaps.length === 0 && !facts.stale) return null
+  const entries = getExperienceEntryDetails(cvText).filter((e) => e.startYear !== null)
+  if (entries.length === 0) return null
+
+  const quote = entries.map((e) => entryHeaderLines(e).join('\n')).join('\n')
+
+  // Versi perbaikan: entri-entri YANG SAMA diurutkan terbaru→terlama.
+  // Susun dulu sebagai unit menaik (entri, lalu placeholder jeda yang
+  // mengikutinya), lalu balik urutan unitnya — placeholder jeda tetap
+  // berada di antara dua entri yang mengapitnya.
+  const asc = [...entries].sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0))
+  const units: string[] = []
+  asc.forEach((entry, i) => {
+    units.push(entryHeaderLines(entry).join('\n'))
+    const next = asc[i + 1]
+    if (next) {
+      const gap = facts.gaps.find(
+        (g) =>
+          g.toYear === next.startYear &&
+          g.fromYear === (entry.endYear ?? entry.startYear),
+      )
+      if (gap) {
+        units.push(
+          `${gap.fromYear}–${gap.toYear}: [tulis aktivitasmu selama jeda ini: kuliah / kerja / kursus / wirausaha — isi yang sebenarnya]`,
+        )
+      }
+    }
+  })
+  const fixedLines = units.reverse()
+  if (facts.stale) {
+    fixedLines.unshift('[peran terkinimu — tahun mulai–Sekarang, bila masih berjalan]')
+  }
+
+  const notes: string[] = []
+  for (const g of facts.gaps) {
+    notes.push(
+      `ada jeda sekitar ${g.years} tahun (antara ${g.fromYear} dan ${g.toYear}) yang belum dijelaskan`,
+    )
+  }
+  if (facts.stale) {
+    notes.push(
+      `peran terakhir yang terbaca berakhir ${facts.latestEnd} (${facts.yearsSinceEnd} tahun lalu) dan tidak ada peran saat ini yang tercantum`,
+    )
+  }
+  return {
+    kutipanAsli: truncate(quote, 480),
+    versiPerbaikan: truncate(fixedLines.join('\n'), 700),
+    catatan:
+      `Dari entri pengalamanmu sendiri: ${notes.join('; ')}. Kesenjangan bukan otomatis buruk — ` +
+      `yang membuat rekruter ragu adalah kesenjangan TANPA penjelasan; satu baris aktivitas pengisi menutup pertanyaan itu. ${ANTI_KARANG}`,
+  }
+}
+
+// ---------- Konsistensi format & urutan ----------
+
+// Tulis ulang rentang periode pada judul entri menjadi gaya rentang
+// tahun memakai tahun entri itu sendiri yang terbaca dari CV pengguna
+// — tidak ada tahun baru yang dikarang, hanya gaya penulisannya yang
+// diseragamkan.
+function normalizeHeaderPeriod(header: string, entry: ExperienceEntryDetail): string {
+  const exprs = getPeriodExprs(header)
+  if (exprs.length === 0 || entry.startYear === null) return header
+  const endLabel = entry.isCurrent ? 'Sekarang' : String(entry.endYear ?? entry.startYear)
+  const span = `${entry.startYear}–${endLabel}`
+  const from = exprs[0].index
+  const last = exprs[exprs.length - 1]
+  const to = last.index + last.raw.length
+  return `${header.slice(0, from)}${span}${header.slice(to)}`
+}
+
+function personalConsistency(result: AnalysisResult, cvText: string): PersonalExample | null {
+  if (!needsFix(result, 'konsistensi-format')) return null
+  const range = getExperienceSectionRange(cvText)
+  if (!range) return null
+  // Bukti dibatasi pada bagian pengalaman: contoh ini menata entri
+  // pengalaman, jadi hanya gaya & urutan di bagian itu yang dikutip.
+  // Campuran gaya yang sumbernya di bagian lain tidak dipaksakan ke
+  // contoh ini — pemeriksaan itu tetap memakai contoh generik.
+  const exprs = getPeriodExprs(cvText.slice(range.start, range.end))
+  const families = [...new Set(exprs.map((e) => e.family))]
+  const entries = getExperienceEntryDetails(cvText).filter((e) => e.startYear !== null)
+  if (entries.length < 2) return null
+  const yearsInOrder = entries.map((e) => e.startYear as number)
+  const isReverse = yearsInOrder.every((y, i) => i === 0 || y <= yearsInOrder[i - 1])
+  const mixedFormat = families.length > 1
+  if (!mixedFormat && isReverse) return null
+
+  const quote = entries.map((e) => entryHeaderLines(e).join('\n')).join('\n')
+  const sorted = [...entries].sort((a, b) => (b.startYear ?? 0) - (a.startYear ?? 0))
+  const fixedLines = sorted.map((entry) => {
+    const header = entryHeaderLines(entry).join('\n')
+    return mixedFormat ? normalizeHeaderPeriod(header, entry) : header
+  })
+
+  const notes: string[] = []
+  if (mixedFormat) {
+    const familyDesc = families
+      .map((f) => {
+        const ex = exprs.find((e) => e.family === f)
+        const label = PERIOD_FAMILY_LABEL[f].replace(/\s*\(mis\..*$/, '')
+        return `"${ex?.raw}" (gaya ${label})`
+      })
+      .join(' dan ')
+    notes.push(
+      `format penulisan periode campur aduk: ditemukan ${familyDesc}. Di versi perbaikan, semua entrimu ditulis ulang dengan SATU gaya yang sama (rentang tahun) — tahun-tahunnya tetap persis dari CV-mu, hanya gaya penulisannya yang diseragamkan`,
+    )
+  }
+  if (!isReverse) {
+    notes.push(
+      `urutan entri aslimu (tahun mulai: ${yearsInOrder.join(', ')}) belum dari yang terbaru, jadi versi perbaikan mengurutkannya dari tahun mulai paling baru`,
+    )
+  }
+  return {
+    kutipanAsli: truncate(quote, 480),
+    versiPerbaikan: truncate(fixedLines.join('\n'), 700),
+    catatan: `Dari bagian pengalaman CV-mu sendiri: ${notes.join('; ')}.`,
+  }
+}
+
 // ---------- Pembangun utama ----------
 
 // Peta id pemeriksaan → contoh personal, hanya untuk pemeriksaan yang
@@ -361,5 +506,7 @@ export function buildPersonalExamples(
   put('kerapian-bahasa', personalNeatness(result, cvText))
   put('ringkasan', personalSummary(result, cvText, targetRole))
   put('relevansi-ringkasan', personalSummaryRelevance(result, cvText, targetRole))
+  put('linimasa', personalTimeline(result, cvText))
+  put('konsistensi-format', personalConsistency(result, cvText))
   return out
 }

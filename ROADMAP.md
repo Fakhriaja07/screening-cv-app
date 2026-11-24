@@ -720,6 +720,46 @@ hanya isi contoh di dalam tombol yang sudah ada.
 - 9 uji baru; total 131 uji lolos. Patokan identik: 96/61/16, mode
   lowongan 89/79 & 60/48, fresh graduate 53, demo 55→96.
 
+**Perluasan (2026-11-24, menyusul teguran pengguna bahwa contoh
+linimasa masih generik — "Kasir — Toko Berkah / Staf Gudang — PT
+Logistik Jaya" padahal bukan entri CV-nya):** dua pemeriksaan keluarga
+linimasa & format kini ikut dipersonalisasi, sehingga total 9 id.
+
+- **linimasa**: "Sebelum" mengutip judul entri pengalaman pengguna
+  sendiri persis seperti tertulis (jabatan — perusahaan (periode))
+  dalam urutan aslinya, dan catatannya menyebut jeda aktual yang
+  dihitung dari tahun-tahunnya (mis. "ada jeda sekitar 5 tahun (antara
+  2016 dan 2021)") serta tahun berakhirnya peran terakhir. "Sesudah"
+  menampilkan entri yang sama diurutkan terbaru→terlama, disisipi
+  baris placeholder jeda ("2016–2021: [tulis aktivitasmu selama jeda
+  ini: …]") dan — bila peran terakhir sudah lama berakhir —
+  placeholder "[peran terkinimu — tahun mulai–Sekarang, bila masih
+  berjalan]". Angka jeda berasal dari `getTimelineFacts` di analyze.ts
+  (perhitungan yang sama persis dengan pesan pemeriksaannya;
+  `assessTimeline` di-refactor memakainya, pesan & skor identik).
+  Anti-karang diperketat di sini: contoh generik lama mengarang
+  aktivitas pengisi jeda ("Mengelola toko online keluarga…") — versi
+  personal TIDAK memuat aktivitas, perusahaan, atau tahun apa pun di
+  luar CV pengguna; uji menegaskan tidak ada kata "toko online" dan
+  semua angka di versi perbaikan ada di CV aslinya. Bila periode entri
+  tidak terbaca, tetap generik.
+- **konsistensi-format**: "Sebelum" mengutip format periode persis
+  seperti tertulis di bagian pengalaman pengguna (mis. "Jan 2021" gaya
+  bulan–tahun bercampur "2023 - 2024" gaya rentang tahun, dari
+  `getPeriodExprs` — penemu yang sama dengan pemeriksaannya).
+  "Sesudah" menampilkan entri pengguna yang sama, diurutkan
+  terbaru→terlama, dengan semua periode ditulis ulang dalam SATU gaya
+  rentang tahun memakai tahun entri itu sendiri — tidak ada tahun
+  baru. Cakupan kutipan dibatasi bagian pengalaman (bagian yang
+  ditata contoh ini); campuran gaya yang sumbernya di bagian lain
+  tetap memakai contoh generik.
+- Perubahan analyze.ts tetap murni aditif di permukaan publik
+  (`ExperienceEntryDetail` kini membawa `startYear`/`endYear`/
+  `isCurrent` dari parser yang sama; ekspor `getTimelineFacts`,
+  `getPeriodExprs`, `PERIOD_FAMILY_LABEL`). 6 uji baru; total 137 uji
+  lolos. Patokan identik: 96/61/16, mode lowongan 89/79 & 60/48,
+  fresh graduate 53, demo 55→96.
+
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
 - Akurasi yang terasa benar: hasil cocok dengan intuisi pengguna.

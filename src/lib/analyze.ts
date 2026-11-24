@@ -477,6 +477,12 @@ export interface ExperienceEntryDetail {
   // Hasil terukur di dalam teks entri ini saja — dihitung dengan
   // penghitung yang sama persis dengan pemeriksaan hasil terukur.
   measurableCount: number
+  // Periode entri dari baris jangkar yang sama yang dibaca pemeriksaan
+  // linimasa & konsistensi: tahun mulai, tahun selesai (null bila
+  // peran masih berjalan), dan penanda peran saat ini.
+  startYear: number | null
+  endYear: number | null
+  isCurrent: boolean
 }
 
 // Entri pengalaman beserta kelengkapan komponen dan isinya, dari parser
@@ -502,6 +508,9 @@ export function getExperienceEntryDetails(rawText: string): ExperienceEntryDetai
       hasContent: b.hasContent,
       complete: b.complete,
       measurableCount: countMeasurableResults(text),
+      startYear: b.startYear,
+      endYear: b.endYear,
+      isCurrent: b.isCurrent,
     }
   })
 }
@@ -543,15 +552,15 @@ export function findSayaOccurrences(rawText: string): TextOccurrence[] {
 
 // ---------- Konsistensi format periode ----------
 
-type PeriodFamily = 'tahun' | 'bulan' | 'angka'
+export type PeriodFamily = 'tahun' | 'bulan' | 'angka'
 
-interface PeriodExpr {
+export interface PeriodExpr {
   family: PeriodFamily
   raw: string
   index: number
 }
 
-const PERIOD_FAMILY_LABEL: Record<PeriodFamily, string> = {
+export const PERIOD_FAMILY_LABEL: Record<PeriodFamily, string> = {
   tahun: 'rentang tahun (mis. 2021–2024)',
   bulan: 'bulan–tahun (mis. Jan 2022)',
   angka: 'angka (mis. 01/2022)',
@@ -574,6 +583,13 @@ function extractPeriodExprs(text: string): PeriodExpr[] {
     exprs.push({ family: 'angka', raw: m[0], index: m.index ?? 0 })
   }
   return exprs.sort((a, b) => a.index - b.index)
+}
+
+// Ekspresi periode yang terbaca di teks, dari penemu yang sama persis
+// dengan pemeriksaan konsistensi format — dipakai lapisan tampilan
+// (contoh personal) agar gaya yang dikutip selalu gaya yang dinilai.
+export function getPeriodExprs(rawText: string): PeriodExpr[] {
+  return extractPeriodExprs(rawText)
 }
 
 // ---------- Frasa lemah & klise ----------
@@ -723,31 +739,40 @@ interface TimelineAssessment {
   message: string
 }
 
-// Menilai linimasa dari periode entri yang TERBACA: (a) kesenjangan
-// panjang antar-entri tanpa penjelasan, (b) kebaruan — peran terakhir
-// sudah lama berakhir dan tidak ada peran saat ini. Bila tidak ada
-// entri berperiode yang terbaca, pemeriksaan tidak mengarang nilai:
-// skor 0 dengan pesan bahwa linimasa belum bisa dinilai.
-function assessTimeline(blocks: ExperienceBlock[], currentYear: number): TimelineAssessment {
+// Satu kesenjangan antar-entri yang terdeteksi dari tahun-tahun CV.
+export interface TimelineGap {
+  fromYear: number // tahun berakhirnya entri sebelum jeda
+  toYear: number // tahun mulainya entri sesudah jeda
+  years: number // panjang jeda (toYear - fromYear)
+}
+
+// Fakta linimasa dari periode entri yang terbaca — satu-satunya sumber
+// angka jeda & kebaruan, dipakai pemeriksaan linimasa DAN contoh
+// personalnya agar keduanya selalu menyebut tahun yang sama.
+export interface TimelineFacts {
+  datedCount: number
+  gaps: TimelineGap[]
+  hasCurrent: boolean
+  latestEnd: number
+  yearsSinceEnd: number
+  stale: boolean
+}
+
+function computeTimelineFacts(
+  blocks: ExperienceBlock[],
+  currentYear: number,
+): TimelineFacts | null {
   const dated = blocks.filter((b) => b.startYear !== null)
-  if (dated.length === 0) {
-    return {
-      score3: 0,
-      message:
-        'Periode tiap entri pengalaman tidak terbaca tahunnya, sehingga linimasa (kesenjangan antarpekerjaan dan kebaruan peran terakhir) belum bisa dinilai. Tulis periode yang jelas pada tiap entri, misalnya (2022–2024) atau (2022–Sekarang).',
-    }
-  }
+  if (dated.length === 0) return null
   const sorted = [...dated].sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0))
-  const gapIssues: string[] = []
+  const gaps: TimelineGap[] = []
   for (let i = 1; i < sorted.length; i++) {
     const prev = sorted[i - 1]
     if (prev.isCurrent) continue
     const prevEnd = prev.endYear ?? prev.startYear ?? 0
-    const gap = (sorted[i].startYear ?? 0) - prevEnd
-    if (gap >= 3) {
-      gapIssues.push(
-        `ada kesenjangan sekitar ${gap} tahun (antara ±${prevEnd} dan ±${sorted[i].startYear}) tanpa penjelasan di CV`,
-      )
+    const years = (sorted[i].startYear ?? 0) - prevEnd
+    if (years >= 3) {
+      gaps.push({ fromYear: prevEnd, toYear: sorted[i].startYear ?? 0, years })
     }
   }
   const hasCurrent = dated.some((b) => b.isCurrent)
@@ -755,10 +780,45 @@ function assessTimeline(blocks: ExperienceBlock[], currentYear: number): Timelin
     ...dated.map((b) => (b.isCurrent ? currentYear : (b.endYear ?? b.startYear ?? 0))),
   )
   const yearsSinceEnd = currentYear - latestEnd
-  const stale = !hasCurrent && yearsSinceEnd >= 4
+  return {
+    datedCount: dated.length,
+    gaps,
+    hasCurrent,
+    latestEnd,
+    yearsSinceEnd,
+    stale: !hasCurrent && yearsSinceEnd >= 4,
+  }
+}
 
+// Fakta linimasa dari teks CV mentah, dari parser entri yang sama
+// dengan pemeriksaan linimasa. Null bila tidak ada entri berperiode
+// yang terbaca — lapisan tampilan lalu memakai contoh generik.
+export function getTimelineFacts(rawText: string): TimelineFacts | null {
+  const section = getExperienceSection(rawText)
+  if (!section) return null
+  return computeTimelineFacts(parseExperienceBlocks(section), new Date().getFullYear())
+}
+
+// Menilai linimasa dari periode entri yang TERBACA: (a) kesenjangan
+// panjang antar-entri tanpa penjelasan, (b) kebaruan — peran terakhir
+// sudah lama berakhir dan tidak ada peran saat ini. Bila tidak ada
+// entri berperiode yang terbaca, pemeriksaan tidak mengarang nilai:
+// skor 0 dengan pesan bahwa linimasa belum bisa dinilai.
+function assessTimeline(blocks: ExperienceBlock[], currentYear: number): TimelineAssessment {
+  const facts = computeTimelineFacts(blocks, currentYear)
+  if (!facts) {
+    return {
+      score3: 0,
+      message:
+        'Periode tiap entri pengalaman tidak terbaca tahunnya, sehingga linimasa (kesenjangan antarpekerjaan dan kebaruan peran terakhir) belum bisa dinilai. Tulis periode yang jelas pada tiap entri, misalnya (2022–2024) atau (2022–Sekarang).',
+    }
+  }
+  const gapIssues = facts.gaps.map(
+    (g) =>
+      `ada kesenjangan sekitar ${g.years} tahun (antara ±${g.fromYear} dan ±${g.toYear}) tanpa penjelasan di CV`,
+  )
   const gapScore = gapIssues.length > 0 ? 0 : 2
-  const recencyScore = stale ? 0 : 1
+  const recencyScore = facts.stale ? 0 : 1
   const parts: string[] = []
   if (gapIssues.length > 0) {
     parts.push(`Linimasa terbaca: ${gapIssues.join('; ')}.`)
@@ -766,17 +826,17 @@ function assessTimeline(blocks: ExperienceBlock[], currentYear: number): Timelin
       'Kesenjangan bukan otomatis buruk (kuliah, keluarga, wirausaha, merawat orang tua), tetapi tanpa penjelasan rekruter akan bertanya-tanya — tambahkan satu baris aktivitas pengisi pada periode itu.',
     )
   }
-  if (stale) {
+  if (facts.stale) {
     parts.push(
-      `Pengalaman terakhir yang terbaca berakhir sekitar ${latestEnd} (${yearsSinceEnd} tahun lalu) dan tidak ada peran saat ini yang tercantum. Bila kamu masih bekerja/berkegiatan, cantumkan peran terkinimu; bila memang ada jeda, jelaskan singkat aktivitasmu pada periode itu.`,
+      `Pengalaman terakhir yang terbaca berakhir sekitar ${facts.latestEnd} (${facts.yearsSinceEnd} tahun lalu) dan tidak ada peran saat ini yang tercantum. Bila kamu masih bekerja/berkegiatan, cantumkan peran terkinimu; bila memang ada jeda, jelaskan singkat aktivitasmu pada periode itu.`,
     )
   }
   if (parts.length === 0) {
     parts.push(
-      `Linimasa pengalaman terbaca rapi dari ${dated.length} entri berperiode: tidak ada kesenjangan panjang antar-entri${
-        hasCurrent
+      `Linimasa pengalaman terbaca rapi dari ${facts.datedCount} entri berperiode: tidak ada kesenjangan panjang antar-entri${
+        facts.hasCurrent
           ? ', dan ada peran yang masih berjalan saat ini.'
-          : `, dan peran terakhir berakhir sekitar ${latestEnd} (belum lama).`
+          : `, dan peran terakhir berakhir sekitar ${facts.latestEnd} (belum lama).`
       }`,
     )
   }
