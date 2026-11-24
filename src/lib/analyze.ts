@@ -1,5 +1,5 @@
 // Logika penilaian CV berbasis aturan (rule-based), 100% berjalan di browser.
-// Total selalu 100 poin. Komposisi dasar: 6 aspek, 23 pemeriksaan —
+// Total selalu 100 poin. Komposisi dasar: 6 aspek, 27 pemeriksaan —
 // ditambah 2 pemeriksaan kondisional (relevansi ringkasan dan relevansi
 // pengalaman, hanya bila posisi target diisi) dan 1 aspek kondisional
 // (Kecocokan dengan Lowongan, hanya bila deskripsi lowongan diisi; aspek
@@ -23,6 +23,20 @@
 // (keadilan bagi fresh graduate). Ambang pemeriksaan lama tidak diubah;
 // bobot di dalam aspek Pengalaman & Kontak dibagi ulang untuk memberi
 // ruang bagi dimensi baru, total aspek tetap sama.
+//
+// Pengetatan 2026-11-24 (persetujuan pengguna; tetap berbasis aspek,
+// BUKAN kuota — ambang pemeriksaan lama tidak diubah): lima dimensi
+// baru yang sebelumnya tidak dinilai sama sekali kini ikut diperiksa —
+// profesionalitas alamat email (Kontak), kestabilan karier gabungan
+// job hopping + tumpang tindih periode (Pengalaman), konsistensi klaim
+// "X tahun pengalaman" terhadap linimasa nyata (Pengalaman), dan nama
+// file CV (Format & ATS). Bobot didanai dari dalam aspeknya sendiri:
+// Kontak — email 7→6, HP 6→5, email profesional baru 2 (total tetap
+// 20); Pengalaman — heading 5→4, hasil terukur 6/5→5/4, kedalaman 4→3,
+// frasa 3→2, kestabilan baru 2, konsistensi klaim baru 2 (total tetap
+// 28); Format & ATS — panjang 8→7, periode 4→3, nama file baru 2
+// (total tetap 20). Patokan memang bergerak karena dimensi yang dinilai
+// bertambah — pergerakannya diukur & dicatat di ROADMAP.md.
 
 import { expandJobTitle } from './jobGlossary'
 
@@ -70,6 +84,10 @@ export interface AnalysisResult {
 export interface AnalyzeOptions {
   targetRole?: string
   jobDesc?: string
+  // Nama berkas yang diunggah pengguna (mis. "CV_Budi.pdf"), diteruskan
+  // lapisan baca-berkas/App agar nama file ikut dinilai. Kosong/tidak
+  // diisi (teks ditempel manual) → pemeriksaan nama file netral penuh.
+  fileName?: string
 }
 
 export function countWords(text: string): number {
@@ -486,6 +504,11 @@ function parseExperienceEntry(line: string): ExperienceEntryInfo {
 interface ExperienceBlock {
   complete: boolean
   hasContent: boolean
+  // Teks baris judul + jangkar entri ("Jabatan — Perusahaan (periode)")
+  // — dipakai pemeriksaan kestabilan karier untuk mengenali jenis
+  // entri (magang/proyek/freelance vs formal) dan menyebut nama peran
+  // pada pesan tumpang tindih.
+  headingText: string
   // Kelengkapan komponen entri dari parseExperienceEntry (judul /
   // perusahaan / periode) — disimpan agar lapisan tampilan bisa
   // menyebut komponen yang kurang tanpa menghitung ulang.
@@ -579,6 +602,7 @@ function parseExperienceBlocks(section: string): ExperienceBlock[] {
     blocks.push({
       complete: info.hasTitle && info.hasCompany && info.hasPeriod && contentCount >= 1,
       hasContent: contentCount >= 1,
+      headingText: anchorText.replace(/\s+/g, ' ').trim(),
       info,
       startYear: years.length > 0 ? years[0] : null,
       endYear: isCurrent ? null : years.length > 1 ? years[years.length - 1] : (years[0] ?? null),
@@ -1032,6 +1056,342 @@ function assessTimeline(blocks: ExperienceBlock[], currentYear: number): Timelin
   return { score3: gapScore + recencyScore, message: parts.join(' ') }
 }
 
+// ---------- Kestabilan karier: job hopping & tumpang tindih periode ----------
+
+// Penanda entri BUKAN pekerjaan formal pada baris judul entri: magang,
+// PKL/praktik kerja, proyek, dan freelance/paruh waktu yang dinyatakan
+// eksplisit. Pola-pola itu sah dan umum (terutama bagi fresh graduate),
+// jadi tidak dihitung sebagai pindah-pindah kerja dan tidak dituduh
+// tumpang tindih dengan pekerjaan formal. "Project Manager" / "Manajer
+// Proyek" adalah jabatan formal, bukan entri proyek — kata proyek yang
+// diikuti kata manajer tidak diperlakukan sebagai penanda.
+const NON_FORMAL_ENTRY =
+  /\b(magang|internship|intern|pkl|praktik kerja|freelance|paruh waktu|part[\s-]?time)\b|\b(proyek|project)\b(?!\s+(manager|manajer|management))/i
+
+function isNonFormalEntry(headingText: string): boolean {
+  return NON_FORMAL_ENTRY.test(headingText)
+}
+
+// Entri berperiode yang SAH secara kalender — filter yang sama dengan
+// fakta linimasa: periode terbalik dan masa depan dikeluarkan (keduanya
+// sudah ditangani pemeriksaan linimasa, bukan dihitung dua kali di sini).
+function validDatedBlocks(blocks: ExperienceBlock[], currentYear: number): ExperienceBlock[] {
+  return blocks.filter((b) => {
+    if (b.startYear === null) return false
+    if (b.startYear > currentYear) return false
+    if (!b.isCurrent && b.endYear !== null && b.endYear < b.startYear) return false
+    return true
+  })
+}
+
+interface CareerStabilityAssessment {
+  score2: number // skala maks 2
+  message: string
+}
+
+// Job hopping dan tumpang tindih periode digabung dalam SATU
+// pemeriksaan "Kestabilan karier" (pengetatan 2026-11-24): keduanya
+// membaca fakta linimasa yang sama dan sama-sama menjawab satu
+// pertanyaan rekruter — "apakah riwayat orang ini stabil?" — jadi dua
+// pemeriksaan mungil terpisah hanya akan memecah aspek tanpa menambah
+// makna. Aturannya definisional pada pemeriksaan BARU ini (bukan kuota
+// pemeriksaan lama): peran formal berdurasi < 12 bulan — pada
+// penulisan tahun saja, peran yang mulai dan selesai di tahun yang
+// sama — yang berulang (≥3 peran singkat, atau mayoritas dari ≥3 peran
+// formal bertanggal) terbaca sebagai pola pindah-pindah; dua peran
+// formal yang periodenya beririsan ≥ 1 tahun kalender (pada resolusi
+// tahun, itu jaminan tumpang tindih nyata > 3 bulan; irisan lebih
+// tipis tidak dituduhkan karena bulan mulai/selesai tidak terbaca)
+// terbaca sebagai tanggal yang bertabrakan. Aman/netral bila entri
+// bertanggal < 2: pola memang belum bisa terbentuk.
+function assessCareerStability(
+  blocks: ExperienceBlock[],
+  currentYear: number,
+): CareerStabilityAssessment {
+  const valid = validDatedBlocks(blocks, currentYear)
+  if (valid.length === 0) {
+    return {
+      score2: 0,
+      message:
+        'Belum ada entri pengalaman berperiode yang sah untuk dinilai kestabilan kariernya (pola pindah-pindah kerja dan tumpang tindih antarperan). Tulis periode yang jelas pada tiap entri pengalaman agar linimasa kariermu bisa dinilai.',
+    }
+  }
+  const formal = valid.filter((b) => !isNonFormalEntry(b.headingText))
+  if (formal.length === 0) {
+    return {
+      score2: 2,
+      message:
+        'Entri berperiode yang terbaca baru berupa magang/proyek/freelance — pola-pola itu memang lazim berpindah-pindah dan tidak dihitung sebagai job hopping. Kestabilan karier formal dinilai begitu ada riwayat pekerjaan formal berperiode.',
+    }
+  }
+  const shortRoles = formal.filter(
+    (b) => !b.isCurrent && b.endYear !== null && b.endYear <= (b.startYear ?? 0),
+  )
+  const hopping =
+    shortRoles.length >= 3 || (formal.length >= 3 && shortRoles.length * 2 > formal.length)
+  const endOf = (b: ExperienceBlock) =>
+    b.isCurrent ? currentYear : (b.endYear ?? b.startYear ?? 0)
+  let overlapPair: [ExperienceBlock, ExperienceBlock] | null = null
+  outer: for (let i = 0; i < formal.length; i++) {
+    for (let j = i + 1; j < formal.length; j++) {
+      const overlapYears =
+        Math.min(endOf(formal[i]), endOf(formal[j])) -
+        Math.max(formal[i].startYear ?? 0, formal[j].startYear ?? 0)
+      if (overlapYears >= 1) {
+        overlapPair = [formal[i], formal[j]]
+        break outer
+      }
+    }
+  }
+  const issues = (hopping ? 1 : 0) + (overlapPair ? 1 : 0)
+  const parts: string[] = []
+  if (hopping) {
+    parts.push(
+      `${shortRoles.length} dari ${formal.length} peran formalmu berdurasi singkat (kurang dari 12 bulan — mulai dan selesai di tahun yang sama). Pola berpindah-pindah secepat ini membuat rekruter khawatir kamu akan keluar lagi sebelum balik modal melatihmu. Bila peran-peran singkat itu memang kontrak, proyek, atau freelance, tulis eksplisit — mis. "(kontrak 6 bulan)" atau "Freelance" — agar tidak terbaca sebagai job hopping.`,
+    )
+  }
+  if (overlapPair) {
+    parts.push(
+      `Periode "${overlapPair[0].headingText}" dan "${overlapPair[1].headingText}" tumpang tindih cukup lama. Dua pekerjaan formal yang berjalan bersamaan terbaca janggal — periksa kembali tanggal mulai/selesaimu; bila salah satunya memang paruh waktu atau freelance di sela pekerjaan utama, tulis eksplisit agar tidak terbaca sebagai kesalahan tanggal.`,
+    )
+  }
+  if (parts.length === 0) {
+    parts.push(
+      `Dari ${formal.length} peran formal berperiode: tidak ditemukan pola job hopping (peran singkat yang berulang) dan tidak ada periode antarperan yang tumpang tindih — linimasa kariermu terbaca stabil.`,
+    )
+  }
+  return { score2: 2 - issues, message: parts.join(' ') }
+}
+
+// ---------- Konsistensi klaim lama pengalaman ----------
+
+// Angka tahun pada klaim: digit ("5 tahun", "5+ years") atau kata
+// bilangan Indonesia yang lazim pada ringkasan ("dua tahun").
+const CLAIM_WORD_NUMBERS: Record<string, number> = {
+  satu: 1,
+  dua: 2,
+  tiga: 3,
+  empat: 4,
+  lima: 5,
+  enam: 6,
+  tujuh: 7,
+  delapan: 8,
+  sembilan: 9,
+  sepuluh: 10,
+  sebelas: 11,
+  'dua belas': 12,
+}
+const CLAIM_NUMBER_PATTERN =
+  '(\\d+(?:[.,]\\d+)?|dua belas|sebelas|satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh)'
+
+// Klaim lama pengalaman terbesar yang tertulis di teks ("5 tahun
+// pengalaman", "pengalaman selama 3 tahun", "5 years of experience"),
+// atau null bila tidak ada klaim berbentuk angka. Polanya berjangkar
+// pada kata "pengalaman"/"experience" agar durasi lain (masa sekolah,
+// lama proyek) tidak terbaca sebagai klaim.
+export function findExperienceClaimYears(text: string): number | null {
+  const lower = text.toLowerCase()
+  const patterns = [
+    new RegExp(`\\b${CLAIM_NUMBER_PATTERN}\\s*(?:tahun|thn)\\s+(?:pengalaman|berpengalaman)\\b`, 'g'),
+    new RegExp(`\\bpengalaman\\s+(?:selama\\s+)?${CLAIM_NUMBER_PATTERN}\\s*(?:tahun|thn)\\b`, 'g'),
+    /\b(\d+(?:[.,]\d+)?)\s*\+?\s*years?\s+of\s+(?:professional\s+)?experience\b/g,
+    /\bexperience\s+of\s+(\d+(?:[.,]\d+)?)\s*years?\b/g,
+  ]
+  let max: number | null = null
+  for (const re of patterns) {
+    for (const m of lower.matchAll(re)) {
+      const raw = m[1]
+      const value = /^\d/.test(raw)
+        ? parseFloat(raw.replace(',', '.'))
+        : CLAIM_WORD_NUMBERS[raw]
+      if (typeof value === 'number' && !Number.isNaN(value)) {
+        if (max === null || value > max) max = value
+      }
+    }
+  }
+  return max
+}
+
+// Total durasi nyata dari entri berperiode yang sah, dalam tahun:
+// interval yang tumpang tindih digabung dulu agar tahun yang sama
+// tidak dihitung dua kali.
+function totalExperienceYears(blocks: ExperienceBlock[], currentYear: number): number {
+  const intervals = validDatedBlocks(blocks, currentYear)
+    .map((b) => ({
+      start: b.startYear ?? 0,
+      end: b.isCurrent ? currentYear : (b.endYear ?? b.startYear ?? 0),
+    }))
+    .sort((a, b) => a.start - b.start)
+  let total = 0
+  let cur: { start: number; end: number } | null = null
+  for (const iv of intervals) {
+    if (!cur) {
+      cur = { ...iv }
+    } else if (iv.start <= cur.end) {
+      cur.end = Math.max(cur.end, iv.end)
+    } else {
+      total += cur.end - cur.start
+      cur = { ...iv }
+    }
+  }
+  if (cur) total += cur.end - cur.start
+  return total
+}
+
+function formatYears(n: number): string {
+  return Number.isInteger(n) ? String(n) : String(n).replace('.', ',')
+}
+
+interface ClaimConsistencyAssessment {
+  score2: number // skala maks 2
+  message: string
+}
+
+// Klaim "X tahun pengalaman" adalah kalimat yang paling sering
+// diperiksa rekruter terhadap linimasa — dan paling mudah dibesarkan.
+// Pemeriksaan ini (pengetatan 2026-11-24) membandingkan klaim terbesar
+// di teks dengan total durasi nyata yang terhitung dari periode entri.
+// Toleransi 1 tahun menampung perbedaan cara menghitung (pembulatan,
+// tahun berjalan). TANPA klaim atau TANPA entri bertanggal,
+// pemeriksaan lulus/netral penuh: ketiadaan klaim bukan kesalahan.
+function assessClaimConsistency(
+  text: string,
+  blocks: ExperienceBlock[],
+  currentYear: number,
+): ClaimConsistencyAssessment {
+  const claim = findExperienceClaimYears(text)
+  if (claim === null) {
+    return {
+      score2: 2,
+      message:
+        'Tidak ditemukan klaim lama pengalaman berbentuk angka (mis. "5 tahun pengalaman") di teks CV, jadi tidak ada klaim yang perlu dicocokkan dengan linimasa. Bila kamu menulis klaim seperti itu di ringkasan, pastikan sesuai dengan total periode pengalamanmu yang sebenarnya.',
+    }
+  }
+  if (validDatedBlocks(blocks, currentYear).length === 0) {
+    return {
+      score2: 2,
+      message: `Kamu mengklaim ${formatYears(claim)} tahun pengalaman, tetapi periode entri pengalamanmu tidak terbaca tahunnya sehingga klaim itu belum bisa dicocokkan. Tulis periode yang jelas pada tiap entri (mis. 2021–2024) agar rekruter — dan pemeriksaan ini — bisa memverifikasi klaimmu.`,
+    }
+  }
+  const actual = totalExperienceYears(blocks, currentYear)
+  if (claim - actual > 1) {
+    return {
+      score2: 0,
+      message: `Ada ketidaksesuaian klaim pengalaman: teks CV-mu mengklaim ${formatYears(claim)} tahun pengalaman, tetapi total durasi yang terhitung dari periode entri pengalamanmu hanya sekitar ${formatYears(actual)} tahun. Klaim yang lebih besar dari linimasa mudah terbongkar saat rekruter menjumlahkan tanggalmu dan merusak kepercayaan pada seluruh CV — sesuaikan klaimnya dengan kenyataan, atau lengkapi entri pengalaman yang belum tertulis periodenya.`,
+    }
+  }
+  return {
+    score2: 2,
+    message: `Klaim ${formatYears(claim)} tahun pengalaman sejalan dengan linimasa yang terbaca (total durasi entri pengalamanmu terhitung sekitar ${formatYears(actual)} tahun) — klaimmu bisa diverifikasi rekruter dari tanggal-tanggalmu sendiri.`,
+  }
+}
+
+// ---------- Profesionalitas alamat email ----------
+
+// Kata panggilan/alay yang jelas tidak profesional sebagai alamat
+// email lamaran. Daftar ini SENGAJA konservatif dan pencocokannya per
+// token utuh (setelah membuang angka di akhir token dan akhiran huruf
+// alay seperti "z"), sehingga nama orang sungguhan tidak ikut
+// tertandai — termasuk nama yang mengandung potongan kata ini, mis.
+// "Cantika" (bukan "cantik"). Bila ragu, email diluluskan.
+const UNPROFESSIONAL_EMAIL_WORDS = new Set([
+  'cakep', 'imut', 'ganteng', 'cantik', 'sayang', 'kece', 'unyu',
+  'maniez', 'gaul', 'sexy', 'princess', 'babe', 'honey', 'ayang',
+  'bebeb', 'cinta', 'cool',
+])
+
+export interface EmailProfessionalAssessment {
+  ok: boolean
+  reason: string | null
+}
+
+export function assessEmailProfessional(email: string): EmailProfessionalAssessment {
+  const local = email.split('@')[0]?.toLowerCase() ?? ''
+  const digitCount = (local.match(/\d/g) ?? []).length
+  if (digitCount >= 5) {
+    return {
+      ok: false,
+      reason: `deretan angka yang panjang (${digitCount} digit) pada nama email`,
+    }
+  }
+  const tokens = local.split(/[._\-+]+/).filter(Boolean)
+  for (const token of tokens) {
+    const noDigits = token.replace(/\d+$/, '')
+    const core = noDigits.replace(/[zsx]{1,2}$/, '')
+    if (UNPROFESSIONAL_EMAIL_WORDS.has(core) || UNPROFESSIONAL_EMAIL_WORDS.has(noDigits)) {
+      return { ok: false, reason: `kata "${core}" yang terkesan panggilan/alay pada nama email` }
+    }
+  }
+  return { ok: true, reason: null }
+}
+
+// ---------- Nama file CV ----------
+
+// Kata generik pada nama file yang tidak menyebut siapa/pelamar apa.
+const GENERIC_FILENAME_WORDS = new Set([
+  'cv', 'resume', 'curriculum', 'vitae', 'final', 'baru', 'terbaru',
+  'revisi', 'fix', 'dokumen', 'document', 'untitled', 'copy', 'salinan',
+  'the', 'dan', 'file', 'berkas', 'lamaran',
+])
+
+export interface FileNameAssessment {
+  score2: number // skala maks 2
+  message: string
+}
+
+// Nama file adalah hal pertama yang dilihat rekruter & sistem ATS
+// sebelum CV dibuka (pengetatan 2026-11-24). Hanya dinilai bila
+// pengguna mengunggah berkas; teks yang ditempel manual membuat
+// pemeriksaan ini netral penuh (tidak tampil sebagai kegagalan).
+// Nama wajar = memuat kata yang menyerupai nama pelamar/posisi.
+export function assessFileName(fileName: string): FileNameAssessment {
+  const trimmed = fileName.trim()
+  if (!trimmed) {
+    return {
+      score2: 2,
+      message:
+        'Kamu menempel teks CV (bukan mengunggah file), jadi nama file tidak dinilai dan pemeriksaan ini netral. Bila nanti kamu mengirim CV sebagai file, pakai nama file yang memuat namamu — mis. "CV_Nama_Posisi.pdf" — karena rekruter dan sistem ATS melihat nama file sebelum membuka CV-mu.',
+    }
+  }
+  const base = trimmed.split(/[\\/]/).pop() ?? trimmed
+  const stem = base.replace(/\.[a-z0-9]+$/i, '')
+  const lowerStem = stem.toLowerCase()
+  const tokens = stem
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .split(/[\s_\-.()[\]]+/)
+    .map((t) => t.toLowerCase())
+    .filter(Boolean)
+  const nameLike = tokens.filter(
+    (t) => /^[a-z]+$/.test(t) && t.length >= 3 && !GENERIC_FILENAME_WORDS.has(t),
+  )
+  const severeJunk =
+    /untitled/.test(lowerStem) ||
+    /banget/.test(lowerStem) ||
+    /^document\s*\(?\d*\)?$/.test(lowerStem.trim()) ||
+    /^(scan|img|dsc|foto|photo)[\s_\-]?\d+$/.test(lowerStem.trim()) ||
+    !/[a-z]/.test(lowerStem)
+  if (severeJunk || nameLike.length === 0) {
+    return {
+      score2: 0,
+      message: `Nama file "${base}" terlalu generik atau terkesan asal unduh/scan — tidak ada nama pelamar atau posisi di dalamnya. Rekruter menerima puluhan file; nama seperti ini mudah tertukar dan terkesan tidak disiapkan. Ganti menjadi pola "CV_Nama_Posisi.pdf", mis. "CV_Budi_Santoso.pdf" atau "BudiSantoso_DataAnalyst.pdf".`,
+    }
+  }
+  const filler = tokens.filter((t) =>
+    ['final', 'revisi', 'fix', 'baru', 'terbaru', 'copy', 'salinan'].includes(t),
+  )
+  const repeatedLetter = tokens.some((t) => /(.)\1{2,}/.test(t))
+  if (filler.length > 0 || repeatedLetter) {
+    return {
+      score2: 1,
+      message: `Nama file "${base}" sudah memuat nama/posisimu, tetapi masih menyisakan kesan draf (${filler.length > 0 ? `kata "${filler[0]}"` : 'huruf berulang pada salah satu kata'}). Untuk berkas yang dikirim ke rekruter, buang penanda drafnya — mis. cukup "CV_Nama_Posisi.pdf" tanpa "final/revisi/fix".`,
+    }
+  }
+  return {
+    score2: 2,
+    message: `Nama file "${base}" sudah profesional: memuat nama/posisi yang jelas, mudah dikenali rekruter di antara tumpukan berkas pelamar lain.`,
+  }
+}
+
 // ---------- Proyek / magang / organisasi sebagai bukti pengalaman ----------
 
 const PROJECT_HEADING_WORDS = [
@@ -1275,10 +1635,17 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
       .every((label) => label.length > 0 && !label.startsWith('-') && !label.endsWith('-'))
   })
   const emailMatch = emailFound ?? null
-  const emailScore = emailMatch ? 7 : 0
+  const emailScore = emailMatch ? 6 : 0
+
+  // Profesionalitas email (pengetatan 2026-11-24): email yang formatnya
+  // valid tetap bisa merusak kesan pertama bila alamatnya berkesan
+  // panggilan/alay atau penuh deretan angka. Pemeriksaannya konservatif
+  // (daftar kata kecil, per token utuh) — nama orang sungguhan lulus.
+  const emailProfessional = emailMatch ? assessEmailProfessional(emailMatch) : null
+  const emailProfessionalScore = emailProfessional?.ok ? 2 : 0
 
   const phone = findPhone(text)
-  const phoneScore = phone ? 6 : 0
+  const phoneScore = phone ? 5 : 0
 
   const linkedinScore = lower.includes('linkedin.com') ? 4 : 0
 
@@ -1293,13 +1660,21 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
 
   const kontakChecks = [
     makeCheck(
-      'email', 'Kontak', 'Email valid', emailScore, 7,
+      'email', 'Kontak', 'Email valid', emailScore, 6,
       emailMatch
         ? `Email terbaca: ${emailMatch}`
         : 'Alamat email tidak ditemukan atau formatnya tidak valid. Cantumkan email profesional yang aktif.',
     ),
     makeCheck(
-      'hp', 'Kontak', 'Nomor HP Indonesia', phoneScore, 6,
+      'email-profesional', 'Kontak', 'Profesionalitas email', emailProfessionalScore, 2,
+      !emailMatch
+        ? 'Belum ada alamat email yang bisa dinilai profesionalitasnya. Cantumkan email dari nama aslimu (mis. nama.kamu@gmail.com) — alamat itulah yang dilihat rekruter pertama kali.'
+        : emailProfessional?.ok
+          ? `Alamat email "${emailMatch}" terkesan profesional: berbasis nama, tanpa kata panggilan/alay atau deretan angka yang panjang.`
+          : `Alamat email "${emailMatch}" terbaca kurang profesional untuk lamaran — ditemukan ${emailProfessional?.reason}. Rekruter melihat alamat email sebelum membaca isi CV; buat alamat khusus melamar dari nama aslimu, mis. nama.kamu@gmail.com (sedikit angka tahun lahir masih wajar).`,
+    ),
+    makeCheck(
+      'hp', 'Kontak', 'Nomor HP Indonesia', phoneScore, 5,
       phone
         ? `Nomor HP terbaca: ${phone}`
         : 'Nomor HP Indonesia tidak ditemukan. Cantumkan nomor aktif, misalnya 08xx atau +62 8xx.',
@@ -1378,17 +1753,21 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   // ruang bagi dimensi baru — linimasa, proyek/magang, dan (bila posisi
   // target diisi) relevansi pengalaman. Ambang/syarat pemeriksaan lama
   // TIDAK berubah; hanya nilai poinnya diskalakan ke maks barunya.
-  // Tanpa peran: heading 5, kata kerja 5, hasil terukur 6, kedalaman 4,
-  // frasa 3, linimasa 3, proyek 2 = 28.
-  // Dengan peran: kata kerja 4, hasil terukur 5, linimasa 2, dan
+  // Dibagi ulang lagi 2026-11-24 untuk dua dimensi baru — kestabilan
+  // karier (job hopping + tumpang tindih) dan konsistensi klaim lama
+  // pengalaman: heading 5→4, hasil terukur 6/5→5/4, kedalaman 4→3,
+  // frasa 3→2; ambang pemeriksaan lama tetap tidak berubah.
+  // Tanpa peran: heading 4, kata kerja 5, hasil terukur 5, kedalaman 3,
+  // frasa 2, linimasa 3, kestabilan 2, konsistensi klaim 2, proyek 2 = 28.
+  // Dengan peran: kata kerja 4, hasil terukur 4, linimasa 2, dan
   // relevansi pengalaman 3 menggantikan selisihnya = tetap 28.
   const verbMax = hasRole ? 4 : 5
-  const measurableMax = hasRole ? 5 : 6
+  const measurableMax = hasRole ? 4 : 5
   const linimasaMax = hasRole ? 2 : 3
 
   const hasExperienceHeading =
     /(pengalaman|experience|pekerjaan|work history|riwayat kerja)/i.test(lower)
-  const experienceHeadingScore = hasExperienceHeading ? 5 : 0
+  const experienceHeadingScore = hasExperienceHeading ? 4 : 0
 
   const verbCount = countActionVerbs(lower)
   const verbScore =
@@ -1418,7 +1797,7 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   let depthScore = 0
   if (expBlocks.length > 0) {
     const ratio = completeEntries / expBlocks.length
-    depthScore = ratio >= 1 ? 4 : ratio >= 0.5 ? 2 : completeEntries >= 1 ? 1 : 0
+    depthScore = ratio >= 1 ? 3 : ratio >= 0.5 ? 2 : completeEntries >= 1 ? 1 : 0
   }
   const depthMessage = !experienceSection
     ? 'Bagian pengalaman tidak ditemukan, jadi kedalaman entri belum bisa dinilai. Buat bagian "Pengalaman" dengan satu entri per pekerjaan.'
@@ -1430,7 +1809,7 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   // CV tanpa kedua bagian itu tidak mendapat poin dari ketiadaan frasa.
   const weakPhrases = findWeakPhrases(lower)
   const hasNarrative = summarySection.trim() !== '' || experienceSection.trim() !== ''
-  const weakPhraseScore = !hasNarrative
+  const weakPhraseScore3 = !hasNarrative
     ? 0
     : weakPhrases.length === 0
       ? 3
@@ -1439,6 +1818,9 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
         : weakPhrases.length === 2
           ? 1
           : 0
+  // Ambang jumlah frasa tidak berubah; skor diskalakan ke maks baru 2
+  // (2026-11-24) dengan pola penskalaan yang sama seperti linimasa.
+  const weakPhraseScore = Math.round((weakPhraseScore3 * 2) / 3)
   const weakPhraseMessage = !hasNarrative
     ? 'Belum ada bagian ringkasan/pengalaman yang bisa dinilai frasanya. Tulis kedua bagian itu dengan kalimat konkret berbasis bukti.'
     : weakPhrases.length === 0
@@ -1447,16 +1829,29 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
 
   // Linimasa pengalaman: kesenjangan panjang antar-entri dan kebaruan
   // peran terakhir, dinilai dari periode yang terbaca per entri.
-  const timeline = assessTimeline(expBlocks, new Date().getFullYear())
+  const currentYear = new Date().getFullYear()
+  const timeline = assessTimeline(expBlocks, currentYear)
   const linimasaScore =
     linimasaMax === 3 ? timeline.score3 : Math.round((timeline.score3 * linimasaMax) / 3)
+
+  // Kestabilan karier (2026-11-24): job hopping + tumpang tindih
+  // periode dalam satu pemeriksaan, dari fakta linimasa yang sama.
+  const stability = assessCareerStability(expBlocks, currentYear)
+
+  // Konsistensi klaim lama pengalaman (2026-11-24): klaim "X tahun
+  // pengalaman" di teks dicocokkan dengan total durasi nyata linimasa.
+  // Penjaga teks kosong (pola audit 2026-11-24 yang sama seperti
+  // panjang & kerapian): teks 0 kata tidak menerima poin netral —
+  // belum ada CV apa pun yang bisa dinilai netral.
+  const claimConsistency = assessClaimConsistency(text, expBlocks, currentYear)
+  const claimScore = totalWords === 0 ? 0 : claimConsistency.score2
 
   // Proyek/magang/organisasi sebagai bukti pengalaman (fresh graduate).
   const projectAssessment = assessProjects(text, expBlocks.length)
 
   const pengalamanChecks = [
     makeCheck(
-      'pengalaman-heading', 'Pengalaman', 'Bagian pengalaman kerja', experienceHeadingScore, 5,
+      'pengalaman-heading', 'Pengalaman', 'Bagian pengalaman kerja', experienceHeadingScore, 4,
       hasExperienceHeading
         ? 'Bagian pengalaman kerja ditemukan.'
         : 'Bagian pengalaman kerja tidak ditemukan. Buat bagian "Pengalaman" yang berisi riwayat pekerjaanmu.',
@@ -1470,16 +1865,26 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
       `Ditemukan ${measurableCount} angka pencapaian (persen, jumlah, atau nominal — tahun dan nomor HP tidak dihitung). ${measurableCount >= 3 ? 'Sudah meyakinkan.' : 'Tambahkan hasil terukur, misalnya "meningkatkan penjualan 30%" atau "mengelola 15 orang".'}`,
     ),
     makeCheck(
-      'kedalaman-entri', 'Pengalaman', 'Kedalaman entri pengalaman', depthScore, 4,
+      'kedalaman-entri', 'Pengalaman', 'Kedalaman entri pengalaman', depthScore, 3,
       depthMessage,
     ),
     makeCheck(
-      'frasa-lemah', 'Pengalaman', 'Frasa lemah & klise', weakPhraseScore, 3,
+      'frasa-lemah', 'Pengalaman', 'Frasa lemah & klise', weakPhraseScore, 2,
       weakPhraseMessage,
     ),
     makeCheck(
       'linimasa', 'Pengalaman', 'Linimasa pengalaman', linimasaScore, linimasaMax,
       timeline.message,
+    ),
+    makeCheck(
+      'kestabilan-karier', 'Pengalaman', 'Kestabilan karier (job hopping & tumpang tindih)',
+      stability.score2, 2,
+      stability.message,
+    ),
+    makeCheck(
+      'konsistensi-klaim', 'Pengalaman', 'Konsistensi klaim pengalaman',
+      claimScore, 2,
+      claimConsistency.message,
     ),
     makeCheck(
       'proyek', 'Pengalaman', 'Proyek / magang sebagai bukti pengalaman', projectAssessment.score, 2,
@@ -1627,7 +2032,7 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   // hanya untuk CV terstruktur yang panjangnya di luar rentang berskor
   // (audit 2026-11-24: CV kosong sebelumnya tetap menerima 1 poin
   // panjang + 2 poin kerapian = total 3).
-  const lengthScore =
+  const lengthScore8 =
     totalWords === 0 || !hasAnySection
       ? 0
       : totalWords >= 220 && totalWords <= 900
@@ -1637,8 +2042,18 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
           : totalWords >= 60 && totalWords <= 129
             ? 2
             : 1
+  // Rentang kata ideal tidak berubah; skor diskalakan ke maks baru 7
+  // (2026-11-24) untuk memberi ruang bagi pemeriksaan nama file.
+  const lengthScore = Math.round((lengthScore8 * 7) / 8)
   const hasYears = /\b(19|20)\d{2}\b/.test(text)
-  const yearsScore = hasYears ? 4 : 0
+  const yearsScore = hasYears ? 3 : 0
+
+  // Nama file CV (2026-11-24): hanya dinilai bila pengguna mengunggah
+  // berkas (options.fileName terisi); teks tempel → netral penuh.
+  // Penjaga teks kosong yang sama seperti pemeriksaan netral lainnya:
+  // teks 0 kata tidak menerima poin netral.
+  const fileNameAssessment = assessFileName(options.fileName ?? '')
+  const fileNameScore = totalWords === 0 ? 0 : fileNameAssessment.score2
   const bulletCount = text
     .split('\n')
     .filter((line) => /^\s*([\-•*]|\d+[.)])\s+/.test(line)).length
@@ -1743,16 +2158,20 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
 
   const formatChecks = [
     makeCheck(
-      'panjang', 'Format & ATS', 'Panjang CV', lengthScore, 8,
+      'panjang', 'Format & ATS', 'Panjang CV', lengthScore, 7,
       totalWords > 0 && !hasAnySection
         ? `CV berisi ${totalWords} kata, tetapi tidak memiliki satu pun bagian terstruktur (Ringkasan, Pengalaman, Pendidikan, Keahlian), sehingga panjangnya belum dinilai sebagai dokumen CV. Susun isi CV ke dalam bagian-bagian itu terlebih dahulu — rentang ideal CV terstruktur adalah 220–900 kata (sekitar 1–2 halaman).`
         : `CV berisi ${totalWords} kata. Rentang ideal 220–900 kata (sekitar 1–2 halaman).`,
     ),
     makeCheck(
-      'periode', 'Format & ATS', 'Tahun / periode kerja', yearsScore, 4,
+      'periode', 'Format & ATS', 'Tahun / periode kerja', yearsScore, 3,
       hasYears
         ? 'Tahun/periode tercantum pada riwayatmu.'
         : 'Tidak ada tahun/periode yang tercantum. Tulis periode kerja dan pendidikan, misalnya 2021–2024.',
+    ),
+    makeCheck(
+      'nama-file', 'Format & ATS', 'Nama file CV', fileNameScore, 2,
+      fileNameAssessment.message,
     ),
     makeCheck(
       'bullet', 'Format & ATS', 'Struktur bullet', bulletScore, 3,

@@ -199,6 +199,34 @@ export const CHECK_EXAMPLES: Record<string, CheckExample> = {
     catatan:
       'Cantumkan IPK bila 3,00 ke atas. Bila di bawah itu, lewati saja dan tonjolkan pengalaman serta skill-mu.',
   },
+  'email-profesional': {
+    sebelum: 'Email: budi.cakepz123@gmail.com',
+    sesudah: 'Email: budi.santoso@gmail.com',
+    catatan:
+      'Alamat email adalah kesan pertama sebelum CV dibuka. Buat alamat khusus melamar dari nama aslimu (nama.kamu@…, namakamu@…); sedikit angka seperti tahun lahir masih wajar, tetapi hindari kata panggilan/alay dan deretan angka panjang. Jangan lupa alamat baru ini yang kamu cantumkan di semua lamaran.',
+  },
+  'kestabilan-karier': {
+    sebelum:
+      'Pengalaman\nKasir — Toko A (2023)\nStaf Toko — Toko B (2023)\nAdmin — PT C (2024)\n(3 peran formal selesai di tahun yang sama dengan tahun mulainya, tanpa penjelasan)',
+    sesudah:
+      'Pengalaman\nKasir — Toko A (kontrak, Jan–Jun 2023)\nStaf Toko — Toko B (freelance, 2023)\nAdmin — PT C (2024–Sekarang)\n(peran singkat diberi label jenisnya secara eksplisit — tanggal tidak diubah)',
+    catatan:
+      'Jangan pernah memalsukan atau memperpanjang tanggal demi terlihat stabil — itu terbongkar saat verifikasi. Bila peran singkatmu memang kontrak/proyek/freelance, tulis jenisnya eksplisit di judul entri; bila dua peran berjalan bersamaan dan salah satunya paruh waktu, tulis "paruh waktu". Yang dinilai rekruter adalah kejujuran pola riwayatmu.',
+  },
+  'konsistensi-klaim': {
+    sebelum:
+      'Ringkasan: "Staf administrasi dengan pengalaman 8 tahun di bidang perkantoran." (linimasa pengalaman yang tertulis: Admin — PT C (2022–2024) saja, total sekitar 2 tahun)',
+    sesudah:
+      'Ringkasan: "Staf administrasi dengan pengalaman [2 tahun] di bidang perkantoran." — ATAU lengkapi entri pengalaman lama yang belum tertulis beserta periodenya sampai linimasamu benar-benar menjumlah ke angka yang kamu klaim.',
+    catatan:
+      'Rekruter menjumlahkan tanggal-tanggalmu. Klaim "X tahun pengalaman" harus bisa diverifikasi dari periode entri pengalamanmu sendiri: sesuaikan klaimnya dengan total durasi nyata, atau tambahkan pekerjaan lama yang memang belum tertulis (dengan periode yang benar). Angka di [kurung siku] diganti angka hasil hitungan linimasamu yang sebenarnya.',
+  },
+  'nama-file': {
+    sebelum: 'Nama file yang dikirim: document(1).pdf — atau: CV final bangettt.pdf',
+    sesudah: 'Nama file yang dikirim: CV_Budi_Santoso.pdf — atau: BudiSantoso_DataAnalyst.pdf',
+    catatan:
+      'Rekruter dan sistem ATS melihat nama file sebelum membuka CV-mu, dan puluhan file bernama "document(1)" mudah tertukar. Pola aman: CV_Nama_Posisi.pdf — tanpa kata draf seperti "final/revisi/fix", tanpa nama hasil unduhan atau scan.',
+  },
 }
 
 export function getCheckExample(checkId: string): CheckExample | null {

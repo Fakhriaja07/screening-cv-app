@@ -1023,6 +1023,83 @@ persetujuan pengguna ("Ya, perbaiki ketiganya seperti rekomendasimu"):
 - 8 uji regresi baru (blok "Keputusan audit lanjutan"); seluruh
   suite lolos dan build bersih.
 
+## Pengetatan lima dimensi baru (2026-11-24)
+
+Menindaklanjuti penilaian bahwa aspek penilaian masih terasa
+renggang, pengguna menyetujui penambahan pemeriksaan baru ("Ya,
+tambahkan pemeriksaan baru itu"). Prinsipnya tetap: keketatan dari
+keluasan/kedalaman aspek — ambang pemeriksaan lama TIDAK diubah;
+yang berubah hanya bobot (penyusunan ulang di dalam aspek, total
+tetap 100). Lima dimensi yang sebelumnya tidak dinilai sama sekali:
+
+- **Profesionalitas email (Kontak, baru 2 poin):** email yang valid
+  formatnya dinilai kesan profesionalnya — kata panggilan/alay dari
+  daftar konservatif (pencocokan per token utuh; nama orang sungguhan
+  seperti "Cantika" tidak tertandai) atau deretan ≥5 digit pada
+  nama email ditandai. Kasus kunci: mfakhri338@gmail.com (email
+  pemilik, 3 digit) dan budi.santoso95@gmail.com WAJIB lulus;
+  budi.cakepz123@gmail.com tertandai. Bila ragu, diluluskan.
+- **Kestabilan karier (Pengalaman, baru 2 poin):** job hopping dan
+  tumpang tindih periode DIGABUNG satu pemeriksaan (keduanya membaca
+  fakta linimasa yang sama dan menjawab satu pertanyaan rekruter:
+  stabilkah riwayat ini?). Peran formal berdurasi <12 bulan (mulai
+  dan selesai di tahun yang sama) yang berulang (≥3, atau mayoritas
+  dari ≥3 peran formal) ditandai sebagai job hopping; dua peran
+  formal beririsan ≥1 tahun kalender ditandai tumpang tindih, pesan
+  menyebut pasangan perannya. Magang, proyek, dan freelance/paruh
+  waktu yang dinyatakan eksplisit DIKECUALIKAN (pola sah); jabatan
+  "Project Manager" tetap peran formal. Aman/netral bila entri
+  bertanggal <2; tanpa entri sah → 0 (pola linimasa).
+- **Konsistensi klaim pengalaman (Pengalaman, baru 2 poin):** klaim
+  "X tahun pengalaman" terbesar di teks (digit atau kata bilangan,
+  Indonesia & Inggris) dibandingkan dengan total durasi nyata
+  linimasa (interval tumpang tindih digabung, tidak dihitung
+  ganda). Klaim melebihi kenyataan >1 tahun → 0, pesan menyebut
+  klaim vs hitungan. Tanpa klaim atau tanpa entri bertanggal →
+  lulus/netral penuh (ketiadaan klaim bukan kesalahan).
+- **Nama file CV (Format & ATS, baru 2 poin):** hanya aktif bila
+  pengguna mengunggah berkas (nama berkas diteruskan App →
+  analyzeCv); teks tempel → netral penuh. Nama generik/asal
+  unduh-scan ("untitled", "document(1)", "CV final bangettt",
+  "scan_2024", "CV" saja tanpa nama/posisi) → 0; ada nama tetapi
+  sisa penanda draf ("final/revisi/fix") → 1; nama wajar seperti
+  "CV_Budi_Santoso.pdf" → 2.
+- Pemeriksaan netral baru tunduk pada penjaga teks kosong audit:
+  teks 0 kata tetap total 0 (tidak menerima poin netral).
+
+**Penyusunan ulang bobot (total tetap 100):**
+
+| Aspek | Pemeriksaan | Lama | Baru |
+|---|---|---|---|
+| Kontak (20) | Email valid | 7 | 6 |
+| Kontak (20) | Nomor HP | 6 | 5 |
+| Kontak (20) | Profesionalitas email | — | 2 |
+| Pengalaman (28) | Bagian pengalaman | 5 | 4 |
+| Pengalaman (28) | Hasil terukur | 6/5* | 5/4* |
+| Pengalaman (28) | Kedalaman entri | 4 | 3 |
+| Pengalaman (28) | Frasa lemah & klise | 3 | 2 |
+| Pengalaman (28) | Kestabilan karier | — | 2 |
+| Pengalaman (28) | Konsistensi klaim | — | 2 |
+| Format & ATS (20) | Panjang CV | 8 | 7 |
+| Format & ATS (20) | Tahun / periode | 4 | 3 |
+| Format & ATS (20) | Nama file CV | — | 2 |
+
+*dengan/tanpa posisi target. Pemeriksaan lain tidak berubah bobotnya.
+
+**Patokan terkunci diperbarui (diukur, satu per satu):** kuat
+96 → **96** (tetap — lulus penuh semua pemeriksaan baru dan geseran
+bobotnya saling meniadakan), menengah 61 → **63** (Pengalaman +1,
+Format +1), lemah 14 → **19** (Kontak +1 neto dari profesionalitas
+email yang memang lulus, klaim netral +2, nama file netral +2 —
+poin dari dimensi yang tidak dilanggarnya, sesuai aturan netral di
+atas; label tetap "Perlu Dirombak Dulu"), mode lowongan kuat
+89/79 → **89/79** (tetap), menengah 60/48 → **62/50**, fresh
+graduate 53 → **55**, demo beranda 55→96 menjadi **58→96**. Jumlah
+pemeriksaan 23 → 27 (29 dengan posisi target); batas konteks
+perbaikan AI dinaikkan 25 → 30 agar janji "AI memperbaiki semua
+yang gagal" tidak terpotong. 21 uji regresi baru (blok "Pengetatan
+lima dimensi baru"); seluruh suite lolos dan build bersih.
+
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
 - Akurasi yang terasa benar: hasil cocok dengan intuisi pengguna.

@@ -147,9 +147,10 @@ export function buildAiFixContext(
   for (const aspect of result.aspects) {
     for (const check of aspect.checks) push(check)
   }
-  // Batas 25 = seluruh pemeriksaan (23 + 2 kondisional): daftar tidak
-  // boleh terpotong diam-diam (audit 2026-11-24).
-  return out.slice(0, 25)
+  // Batas 30 di atas jumlah seluruh pemeriksaan (27 + 2 kondisional
+  // = 29): daftar tidak boleh terpotong diam-diam (audit 2026-11-24;
+  // batas dinaikkan dari 25 saat pemeriksaan baru ditambahkan).
+  return out.slice(0, 30)
 }
 
 export async function requestAiAnalysis(input: AiRequestInput): Promise<AiAnalysis> {

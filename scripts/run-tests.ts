@@ -257,9 +257,9 @@ check('Riwayat: hapus mengosongkan storage', loadHistory(store).length === 0, 's
 // (ambang label ≥85/≥70/≥50; kata kerja aksi ≥5; hasil terukur ≥3;
 // skill ≥8; panjang ideal 220–900 kata).
 check(
-  'Standar aspek 2026-11-21: skor patokan tanpa lowongan terkunci 96/61/14',
-  strong.total === 96 && medium.total === 61 && weak.total === 14,
-  `kuat ${strong.total}, menengah ${medium.total}, lemah ${weak.total} (harus 96/61/14; menengah naik dari 58 karena linimasa magangnya bersih 3/3 dan aturan netral proyek +2, dikurangi heading 6→5 dan kedalaman 5→4; lemah turun 16 → 14 atas keputusan pengguna 2026-11-24: penjaga luas CV naratif tanpa bagian — panjang 0 dan komponen "saya" pada kerapian tidak lagi diperoleh cuma-cuma)`,
+  'Standar aspek: skor patokan tanpa lowongan terkunci 96/63/19',
+  strong.total === 96 && medium.total === 63 && weak.total === 19,
+  `kuat ${strong.total}, menengah ${medium.total}, lemah ${weak.total} (harus 96/63/19; riwayat: 96/61/14 pada standar 2026-11-21 + keputusan audit 2026-11-24 — pergerakan 2026-11-24 malam dari pengetatan lima dimensi baru: kuat tetap 96 (lulus penuh semua pemeriksaan baru; bobot yang digeser saling meniadakan), menengah 61 → 63 (Pengalaman +1: kestabilan & klaim netral-penuh +4 dikurangi heading/kedalaman/frasa −3; Format +1: nama file netral +2 dikurangi periode −1), lemah 14 → 19 (Kontak +1: profesionalitas email lulus +2 dikurangi email −1; klaim netral +2; nama file netral +2 — ketiganya poin dari dimensi yang memang tidak dilanggar CV lemah, sesuai aturan netral yang disetujui))`,
 )
 
 check(
@@ -281,23 +281,23 @@ check(
   strong.total < 100 &&
     strongCheck('sertifikasi')?.score === 0 &&
     strongCheck('bahasa')?.score === 1 &&
-    strongCheck('kedalaman-entri')?.score === 4 &&
-    strongCheck('frasa-lemah')?.score === 3 &&
+    strongCheck('kedalaman-entri')?.score === 3 &&
+    strongCheck('frasa-lemah')?.score === 2 &&
     strongCheck('konsistensi-format')?.score === 3 &&
     strongCheck('kerapian-bahasa')?.score === 2 &&
-    strongCheck('hasil-terukur')?.score === 6 &&
+    strongCheck('hasil-terukur')?.score === 5 &&
     strongCheck('kata-kerja-aksi')?.score === 5 &&
     strongCheck('lokasi')?.score === 1 &&
     strongCheck('portofolio')?.score === 2 &&
     strongCheck('linimasa')?.score === 3 &&
     strongCheck('proyek')?.score === 2,
-  `kuat: sertifikasi ${strongCheck('sertifikasi')?.score}/3, bahasa ${strongCheck('bahasa')?.score}/2, kedalaman ${strongCheck('kedalaman-entri')?.score}/4, frasa ${strongCheck('frasa-lemah')?.score}/3, konsistensi ${strongCheck('konsistensi-format')?.score}/3, kerapian ${strongCheck('kerapian-bahasa')?.score}/2, lokasi ${strongCheck('lokasi')?.score}/1, linimasa ${strongCheck('linimasa')?.score}/3, proyek ${strongCheck('proyek')?.score}/2`,
+  `kuat: sertifikasi ${strongCheck('sertifikasi')?.score}/3, bahasa ${strongCheck('bahasa')?.score}/2, kedalaman ${strongCheck('kedalaman-entri')?.score}/3, frasa ${strongCheck('frasa-lemah')?.score}/2, konsistensi ${strongCheck('konsistensi-format')?.score}/3, kerapian ${strongCheck('kerapian-bahasa')?.score}/2, lokasi ${strongCheck('lokasi')?.score}/1, linimasa ${strongCheck('linimasa')?.score}/3, proyek ${strongCheck('proyek')?.score}/2`,
 )
 
 check(
-  'Standar aspek: jumlah pemeriksaan 23 (25 bila posisi target diisi)',
-  strong.aspects.flatMap((a) => a.checks).length === 23 &&
-    analyzeCv(SAMPLE_CV, { targetRole: 'Data Analyst' }).aspects.flatMap((a) => a.checks).length === 25,
+  'Standar aspek: jumlah pemeriksaan 27 (29 bila posisi target diisi)',
+  strong.aspects.flatMap((a) => a.checks).length === 27 &&
+    analyzeCv(SAMPLE_CV, { targetRole: 'Data Analyst' }).aspects.flatMap((a) => a.checks).length === 29,
   `tanpa peran ${strong.aspects.flatMap((a) => a.checks).length}, dengan peran ${analyzeCv(SAMPLE_CV, { targetRole: 'Data Analyst' }).aspects.flatMap((a) => a.checks).length}`,
 )
 
@@ -317,12 +317,12 @@ check(
   checkOf(cliche, 'frasa-lemah')?.score === 0 &&
     (checkOf(cliche, 'frasa-lemah')?.message.includes('"pekerja keras"') ?? false) &&
     (checkOf(cliche, 'frasa-lemah')?.message.includes('"bertanggung jawab atas"') ?? false),
-  `skor ${checkOf(cliche, 'frasa-lemah')?.score}/3; pesan: ${checkOf(cliche, 'frasa-lemah')?.message.slice(0, 110)}…`,
+  `skor ${checkOf(cliche, 'frasa-lemah')?.score}/2; pesan: ${checkOf(cliche, 'frasa-lemah')?.message.slice(0, 110)}…`,
 )
 check(
   'Aspek baru: tanpa frasa klise → poin penuh (positif)',
-  mediumCheck('frasa-lemah')?.score === 3 && weakCheck('frasa-lemah')?.score === 0,
-  `menengah ${mediumCheck('frasa-lemah')?.score}/3 (tanpa klise), lemah ${weakCheck('frasa-lemah')?.score}/3 (tanpa bagian ringkasan/pengalaman → tidak diberi poin cuma-cuma)`,
+  mediumCheck('frasa-lemah')?.score === 2 && weakCheck('frasa-lemah')?.score === 0,
+  `menengah ${mediumCheck('frasa-lemah')?.score}/2 (tanpa klise), lemah ${weakCheck('frasa-lemah')?.score}/2 (tanpa bagian ringkasan/pengalaman → tidak diberi poin cuma-cuma)`,
 )
 
 // --- Pemeriksaan baru: kedalaman entri ---
@@ -349,8 +349,8 @@ Staf Gudang — PT Logistik Jaya (2021 - 2022)`
 check(
   'Aspek baru: separuh entri lengkap → kedalaman sebagian (campuran)',
   checkOf(analyzeCv(HALF_DEEP_CV), 'kedalaman-entri')?.score === 2 &&
-    mediumCheck('kedalaman-entri')?.score === 4,
-  `campuran ${checkOf(analyzeCv(HALF_DEEP_CV), 'kedalaman-entri')?.score}/4, menengah (1 entri lengkap) ${mediumCheck('kedalaman-entri')?.score}/4`,
+    mediumCheck('kedalaman-entri')?.score === 3,
+  `campuran ${checkOf(analyzeCv(HALF_DEEP_CV), 'kedalaman-entri')?.score}/3, menengah (1 entri lengkap) ${mediumCheck('kedalaman-entri')?.score}/3`,
 )
 
 // --- Pemeriksaan baru: konsistensi format & urutan ---
@@ -1250,8 +1250,8 @@ check(
 )
 check(
   'Standar 2026-11-21: CV menengah yang cocok dengan lowongan > yang tidak cocok',
-  mediumJobMatch.total === 60 &&
-    mediumJobMismatch.total === 48 &&
+  mediumJobMatch.total === 62 &&
+    mediumJobMismatch.total === 50 &&
     (jobAspectOf(mediumJobMatch)?.score ?? 0) > (jobAspectOf(mediumJobMismatch)?.score ?? 0),
   `menengah+admin ${mediumJobMatch.total} (kecocokan ${jobAspectOf(mediumJobMatch)?.score}/20, ${mediumJobMatch.keywords?.percent}%), menengah+marketing ${mediumJobMismatch.total} (kecocokan ${jobAspectOf(mediumJobMismatch)?.score}/20, ${mediumJobMismatch.keywords?.percent}%)`,
 )
@@ -1993,8 +1993,8 @@ check(
 // dan cuplikan bertanda di demo tidak boleh tersisa; fitur hasil lain
 // (daftar Prioritas Perbaikan, unduh laporan PDF) tetap utuh.
 check(
-  'Penghapusan penanda: patokan skor tidak digerakkan penghapusan itu (kini 96/61/14, fresh graduate 53 — lemah 14 dari keputusan penjaga naratif 2026-11-24, bukan dari penghapusan penanda)',
-  strong.total === 96 && medium.total === 61 && weak.total === 14 && fresh.total === 53,
+  'Penghapusan penanda: patokan skor tidak digerakkan penghapusan itu (patokan berjalan kini 96/63/19, fresh graduate 55 — pergerakan sejak penghapusan berasal dari keputusan penjaga naratif & pengetatan lima dimensi 2026-11-24, bukan dari penghapusan penanda)',
+  strong.total === 96 && medium.total === 63 && weak.total === 19 && fresh.total === 55,
   `kuat ${strong.total}, menengah ${medium.total}, lemah ${weak.total}, fresh ${fresh.total}`,
 )
 check(
@@ -2434,12 +2434,12 @@ check(
 
 // --- Keputusan 3: penjaga luas CV naratif tanpa bagian ---
 check(
-  'Keputusan audit 3: CV lemah tanpa bagian — panjang 0, kerapian 1, total 14, kerapian bukan lagi kekuatan',
-  weak.total === 14 &&
+  'Keputusan audit 3: CV lemah tanpa bagian — panjang 0, kerapian 1, kerapian bukan lagi kekuatan (total kini 19 setelah pengetatan lima dimensi 2026-11-24)',
+  weak.total === 19 &&
     weakCheck('panjang')?.score === 0 &&
     weakCheck('kerapian-bahasa')?.score === 1 &&
     !weak.strengths.some((c) => c.id === 'kerapian-bahasa'),
-  `total ${weak.total} (dari 16), panjang ${weakCheck('panjang')?.score}/8, kerapian ${weakCheck('kerapian-bahasa')?.score}/2`,
+  `total ${weak.total} (14 dari keputusan ini; +5 dari poin netral/lulus dimensi baru 2026-11-24: profesionalitas email +1 neto, klaim +2, nama file +2), panjang ${weakCheck('panjang')?.score}/7, kerapian ${weakCheck('kerapian-bahasa')?.score}/2`,
 )
 const SECTIONLESS_TYPO_CV = `Andi Pratama
 andi.pratama@gmail.com
@@ -2449,12 +2449,279 @@ check(
   'Keputusan audit 3: CV tanpa bagian yang mengandung salah eja — kerapian 0 (komponen eja tetap dinilai dari teks)',
   checkOf(sectionlessTypo, 'kerapian-bahasa')?.score === 0 &&
     checkOf(sectionlessTypo, 'panjang')?.score === 0,
-  `kerapian ${checkOf(sectionlessTypo, 'kerapian-bahasa')?.score}/2, panjang ${checkOf(sectionlessTypo, 'panjang')?.score}/8`,
+  `kerapian ${checkOf(sectionlessTypo, 'kerapian-bahasa')?.score}/2, panjang ${checkOf(sectionlessTypo, 'panjang')?.score}/7`,
 )
 check(
   'Keputusan audit 3: CV terstruktur tetap mendapat poin panjang & kerapian seperti sebelumnya',
   (mediumCheck('panjang')?.score ?? 0) > 0 && mediumCheck('kerapian-bahasa')?.score === 2,
-  `menengah panjang ${mediumCheck('panjang')?.score}/8, kerapian ${mediumCheck('kerapian-bahasa')?.score}/2`,
+  `menengah panjang ${mediumCheck('panjang')?.score}/7, kerapian ${mediumCheck('kerapian-bahasa')?.score}/2`,
+)
+
+// ---------- Pengetatan lima dimensi baru (2026-11-24) ----------
+// Persetujuan pengguna: "Ya, tambahkan pemeriksaan baru itu" — lima
+// dimensi yang sebelumnya tidak dinilai (profesionalitas email,
+// job hopping, tumpang tindih periode, konsistensi klaim pengalaman,
+// nama file CV) kini diperiksa; keketatan dari keluasan aspek, bukan
+// kuota pemeriksaan lama. Job hopping + tumpang tindih digabung dalam
+// satu pemeriksaan "kestabilan-karier" karena keduanya membaca fakta
+// linimasa yang sama. Bobot didanai dari dalam aspeknya (lihat tabel
+// komposisi di ROADMAP.md); patokan terkunci kini 96/63/19.
+
+// --- Komposisi baru: total tetap 100, maks per pemeriksaan sesuai tabel ---
+check(
+  'Pengetatan 2026-11-24: komposisi aspek tetap 100 dengan bobot baru',
+  strong.aspects.reduce((s, a) => s + a.max, 0) === 100 &&
+    strongCheck('email')?.max === 6 &&
+    strongCheck('hp')?.max === 5 &&
+    strongCheck('email-profesional')?.max === 2 &&
+    strongCheck('pengalaman-heading')?.max === 4 &&
+    strongCheck('hasil-terukur')?.max === 5 &&
+    strongCheck('kedalaman-entri')?.max === 3 &&
+    strongCheck('frasa-lemah')?.max === 2 &&
+    strongCheck('kestabilan-karier')?.max === 2 &&
+    strongCheck('konsistensi-klaim')?.max === 2 &&
+    strongCheck('panjang')?.max === 7 &&
+    strongCheck('periode')?.max === 3 &&
+    strongCheck('nama-file')?.max === 2 &&
+    (strong.aspects.find((a) => a.name === 'Kontak')?.max ?? 0) === 20 &&
+    (strong.aspects.find((a) => a.name === 'Pengalaman')?.max ?? 0) === 28 &&
+    (strong.aspects.find((a) => a.name === 'Format & ATS')?.max ?? 0) === 20,
+  `maks: ${strong.aspects.map((a) => `${a.name} ${a.max}`).join(' | ')}`,
+)
+check(
+  'Pengetatan 2026-11-24: CV kuat lulus PENUH semua pemeriksaan baru',
+  strongCheck('email-profesional')?.score === 2 &&
+    strongCheck('kestabilan-karier')?.score === 2 &&
+    strongCheck('konsistensi-klaim')?.score === 2 &&
+    strongCheck('nama-file')?.score === 2,
+  `kuat: email-profesional ${strongCheck('email-profesional')?.score}/2, kestabilan ${strongCheck('kestabilan-karier')?.score}/2, klaim ${strongCheck('konsistensi-klaim')?.score}/2, nama-file ${strongCheck('nama-file')?.score}/2`,
+)
+check(
+  'Pengetatan 2026-11-24: contoh generik tersedia untuk keempat id pemeriksaan baru',
+  ['email-profesional', 'kestabilan-karier', 'konsistensi-klaim', 'nama-file'].every(
+    (id) => getCheckExample(id) !== null,
+  ),
+  ['email-profesional', 'kestabilan-karier', 'konsistensi-klaim', 'nama-file']
+    .map((id) => `${id}: ${getCheckExample(id) ? 'ada' : 'TIDAK ADA'}`)
+    .join(' | '),
+)
+
+// --- 1. Profesionalitas email ---
+const EMAIL_CV = (email: string) => `Uji Nama
+${email} | 0812-3456-7890
+
+Pengalaman
+Kasir — Toko Berkah (2022–2024)
+- Melayani pembeli setiap hari.`
+check(
+  'Email profesional: email pemilik situs (mfakhri338 — 3 digit) WAJIB lulus',
+  checkOf(analyzeCv(EMAIL_CV('mfakhri338@gmail.com')), 'email-profesional')?.score === 2 &&
+    strongCheck('email-profesional')?.score === 2,
+  `mfakhri338 ${checkOf(analyzeCv(EMAIL_CV('mfakhri338@gmail.com')), 'email-profesional')?.score}/2`,
+)
+check(
+  'Email profesional: nama + 2 digit tahun (budi.santoso95) lulus; nama asli "Cantika" tidak tertandai kata "cantik"',
+  checkOf(analyzeCv(EMAIL_CV('budi.santoso95@gmail.com')), 'email-profesional')?.score === 2 &&
+    checkOf(analyzeCv(EMAIL_CV('cantika.sari@gmail.com')), 'email-profesional')?.score === 2,
+  `budi.santoso95 ${checkOf(analyzeCv(EMAIL_CV('budi.santoso95@gmail.com')), 'email-profesional')?.score}/2, cantika.sari ${checkOf(analyzeCv(EMAIL_CV('cantika.sari@gmail.com')), 'email-profesional')?.score}/2`,
+)
+check(
+  'Email profesional: kata alay (budi.cakepz123) tertandai + pesan menyebut katanya',
+  checkOf(analyzeCv(EMAIL_CV('budi.cakepz123@gmail.com')), 'email-profesional')?.score === 0 &&
+    (checkOf(analyzeCv(EMAIL_CV('budi.cakepz123@gmail.com')), 'email-profesional')?.message.includes('cakep') ?? false),
+  `skor ${checkOf(analyzeCv(EMAIL_CV('budi.cakepz123@gmail.com')), 'email-profesional')?.score}/2`,
+)
+check(
+  'Email profesional: deretan ≥5 digit (andi12345) tertandai; tanpa email → 0',
+  checkOf(analyzeCv(EMAIL_CV('andi12345@gmail.com')), 'email-profesional')?.score === 0 &&
+    checkOf(analyzeCv('Tanpa email sama sekali.\n\nPengalaman\nKasir — Toko Berkah (2022–2024)\n- Melayani pembeli.'), 'email-profesional')?.score === 0,
+  `andi12345 ${checkOf(analyzeCv(EMAIL_CV('andi12345@gmail.com')), 'email-profesional')?.score}/2`,
+)
+
+// --- 2+3. Kestabilan karier: job hopping & tumpang tindih ---
+const HOPPING_CV = `Joko Pindah
+joko.pindah@gmail.com | 0812-9999-8888
+
+Pengalaman
+Kasir — Toko A (2020)
+- Melayani pembeli.
+Staf Toko — Toko B (2021)
+- Menata barang.
+Admin — PT C (2022)
+- Input data harian.
+Operator — PT D (2023)
+- Mengoperasikan mesin.`
+check(
+  'Kestabilan karier: 4 peran formal <12 bulan beruntun → job hopping tertandai, jumlah disebut',
+  checkOf(analyzeCv(HOPPING_CV), 'kestabilan-karier')?.score === 1 &&
+    (checkOf(analyzeCv(HOPPING_CV), 'kestabilan-karier')?.message.includes('4 dari 4 peran formalmu berdurasi singkat') ?? false),
+  `skor ${checkOf(analyzeCv(HOPPING_CV), 'kestabilan-karier')?.score}/2`,
+)
+const OVERLAP_CV = `Rina Ganda
+rina.ganda@gmail.com | 0812-9999-7777
+
+Pengalaman
+Staf Administrasi — PT Alpha (2020–2023)
+- Mengelola arsip dokumen.
+Supervisor Gudang — PT Beta (2022–Sekarang)
+- Mengawasi tim gudang.`
+check(
+  'Kestabilan karier: dua peran formal tumpang tindih substansial → tertandai, pasangan disebut',
+  checkOf(analyzeCv(OVERLAP_CV), 'kestabilan-karier')?.score === 1 &&
+    (checkOf(analyzeCv(OVERLAP_CV), 'kestabilan-karier')?.message.includes('tumpang tindih') ?? false) &&
+    (checkOf(analyzeCv(OVERLAP_CV), 'kestabilan-karier')?.message.includes('PT Alpha') ?? false) &&
+    (checkOf(analyzeCv(OVERLAP_CV), 'kestabilan-karier')?.message.includes('PT Beta') ?? false),
+  `skor ${checkOf(analyzeCv(OVERLAP_CV), 'kestabilan-karier')?.score}/2`,
+)
+const HOPPING_OVERLAP_CV = `Dedi Kacau
+dedi.kacau@gmail.com | 0812-9999-6666
+
+Pengalaman
+Kasir — Toko A (2020)
+- Melayani pembeli.
+Staf — Toko B (2021)
+- Menata barang.
+Admin — PT C (2022)
+- Input data.
+Analis — PT D (2022–2024)
+- Menganalisis data.
+Analis Senior — PT E (2023–2025)
+- Memimpin analisis.`
+check(
+  'Kestabilan karier: job hopping + tumpang tindih bersamaan → 0',
+  checkOf(analyzeCv(HOPPING_OVERLAP_CV), 'kestabilan-karier')?.score === 0,
+  `skor ${checkOf(analyzeCv(HOPPING_OVERLAP_CV), 'kestabilan-karier')?.score}/2`,
+)
+const MAGANG_HEAVY_CV = `Sari Magang
+sari.magang@gmail.com | 0812-9999-5555
+
+Pengalaman
+Magang Administrasi — PT Alpha (2023)
+- Membantu arsip dokumen.
+Magang Data Entry — PT Beta (2023)
+- Menginput data pelanggan.
+Staf Administrasi — PT Gamma (2022–2024)
+- Mengelola arsip dan laporan.`
+check(
+  'Kestabilan karier: magang singkat berulang TIDAK dihitung job hopping (penjaga positif-palsu)',
+  checkOf(analyzeCv(MAGANG_HEAVY_CV), 'kestabilan-karier')?.score === 2,
+  `skor ${checkOf(analyzeCv(MAGANG_HEAVY_CV), 'kestabilan-karier')?.score}/2`,
+)
+const FREELANCE_OVERLAP_CV = `Tono Lepas
+tono.lepas@gmail.com | 0812-9999-4444
+
+Pengalaman
+Desainer Grafis — PT Kreatif (2021–2024)
+- Membuat materi promosi.
+Freelance Desainer (2022–2023)
+- Mengerjakan proyek logo klien.`
+check(
+  'Kestabilan karier: freelance eksplisit yang tumpang tindih dengan pekerjaan utama TIDAK ditandai',
+  checkOf(analyzeCv(FREELANCE_OVERLAP_CV), 'kestabilan-karier')?.score === 2,
+  `skor ${checkOf(analyzeCv(FREELANCE_OVERLAP_CV), 'kestabilan-karier')?.score}/2`,
+)
+const PM_CV = `Rudi Manajer
+rudi.manajer@gmail.com | 0812-9999-3333
+
+Pengalaman
+Project Manager — PT Alpha (2023)
+- Memimpin proyek migrasi.
+Project Manager — PT Beta (2023)
+- Memimpin proyek aplikasi.
+Project Manager — PT Gamma (2024)
+- Memimpin proyek integrasi.`
+check(
+  'Kestabilan karier: jabatan "Project Manager" adalah peran formal (bukan entri proyek) — 3 peran singkatnya tetap tertandai',
+  checkOf(analyzeCv(PM_CV), 'kestabilan-karier')?.score === 1,
+  `skor ${checkOf(analyzeCv(PM_CV), 'kestabilan-karier')?.score}/2`,
+)
+check(
+  'Kestabilan karier: kuat & menengah bersih (2/2); lemah tanpa entri bertanggal → 0',
+  strongCheck('kestabilan-karier')?.score === 2 &&
+    mediumCheck('kestabilan-karier')?.score === 2 &&
+    weakCheck('kestabilan-karier')?.score === 0,
+  `kuat ${strongCheck('kestabilan-karier')?.score}/2, menengah ${mediumCheck('kestabilan-karier')?.score}/2 (magangnya tidak dihitung), lemah ${weakCheck('kestabilan-karier')?.score}/2`,
+)
+
+// --- 4. Konsistensi klaim pengalaman ---
+const CLAIM_CV = (ringkasan: string, entries: string) => `Klaim Nama
+klaim.nama@gmail.com | 0812-8888-9999
+
+Ringkasan
+${ringkasan}
+
+Pengalaman
+${entries}
+
+Pendidikan
+SMA Negeri 1 Jakarta (2010 - 2013)`
+const claimOver = analyzeCv(
+  CLAIM_CV(
+    'Staf administrasi dengan pengalaman 10 tahun di bidang perkantoran.',
+    'Admin — PT C (2023–2024)\n- Mengelola arsip dokumen.',
+  ),
+)
+check(
+  'Konsistensi klaim: klaim 10 tahun vs linimasa ±1 tahun → 0, pesan menyebut klaim vs hitungan',
+  checkOf(claimOver, 'konsistensi-klaim')?.score === 0 &&
+    (checkOf(claimOver, 'konsistensi-klaim')?.message.includes('10 tahun') ?? false) &&
+    (checkOf(claimOver, 'konsistensi-klaim')?.message.includes('sekitar 1 tahun') ?? false),
+  `skor ${checkOf(claimOver, 'konsistensi-klaim')?.score}/2`,
+)
+check(
+  'Konsistensi klaim: klaim sesuai linimasa lulus; klaim kata bilangan ("dua tahun") terbaca & lulus',
+  checkOf(
+    analyzeCv(CLAIM_CV('Staf administrasi dengan pengalaman 3 tahun.', 'Admin — PT C (2021–2024)\n- Mengelola arsip.')),
+    'konsistensi-klaim',
+  )?.score === 2 &&
+    strongCheck('konsistensi-klaim')?.score === 2,
+  `klaim 3 vs 3 tahun: ${checkOf(analyzeCv(CLAIM_CV('Staf administrasi dengan pengalaman 3 tahun.', 'Admin — PT C (2021–2024)\n- Mengelola arsip.')), 'konsistensi-klaim')?.score}/2; kuat (klaim "dua tahun" ≤ linimasa 4 tahun): ${strongCheck('konsistensi-klaim')?.score}/2`,
+)
+check(
+  'Konsistensi klaim: tumpang tindih TIDAK dihitung ganda (klaim 7 vs gabungan 2020–2025 = 5 → tertandai)',
+  checkOf(
+    analyzeCv(
+      CLAIM_CV(
+        'Analis dengan pengalaman 7 tahun.',
+        'Analis — PT A (2020–2023)\n- Menganalisis data.\nAnalis — PT B (2022–2025)\n- Menganalisis data.',
+      ),
+    ),
+    'konsistensi-klaim',
+  )?.score === 0,
+  'durasi gabungan interval dipakai, bukan jumlah mentah per entri',
+)
+check(
+  'Konsistensi klaim: klaim Inggris "5 years of experience" vs linimasa 0 tahun → 0; tanpa klaim → netral 2',
+  checkOf(
+    analyzeCv(CLAIM_CV('Data entry specialist with 5 years of experience.', 'Admin — PT C (2024)\n- Input data.')),
+    'konsistensi-klaim',
+  )?.score === 0 &&
+    mediumCheck('konsistensi-klaim')?.score === 2,
+  `klaim Inggris ${checkOf(analyzeCv(CLAIM_CV('Data entry specialist with 5 years of experience.', 'Admin — PT C (2024)\n- Input data.')), 'konsistensi-klaim')?.score}/2, menengah (tanpa klaim) ${mediumCheck('konsistensi-klaim')?.score}/2`,
+)
+
+// --- 5. Nama file CV ---
+check(
+  'Nama file: nama wajar lulus penuh (CV_Budi_Santoso.pdf & BudiSantoso_DataAnalyst.pdf)',
+  checkOf(analyzeCv(SAMPLE_CV, { fileName: 'CV_Budi_Santoso.pdf' }), 'nama-file')?.score === 2 &&
+    checkOf(analyzeCv(SAMPLE_CV, { fileName: 'BudiSantoso_DataAnalyst.pdf' }), 'nama-file')?.score === 2,
+  `CV_Budi_Santoso ${checkOf(analyzeCv(SAMPLE_CV, { fileName: 'CV_Budi_Santoso.pdf' }), 'nama-file')?.score}/2, BudiSantoso_DataAnalyst ${checkOf(analyzeCv(SAMPLE_CV, { fileName: 'BudiSantoso_DataAnalyst.pdf' }), 'nama-file')?.score}/2`,
+)
+check(
+  'Nama file: generik/asal unduh tertandai 0 (document(1), untitled, CV final bangettt, scan_2024, CV saja)',
+  checkOf(analyzeCv(SAMPLE_CV, { fileName: 'document(1).pdf' }), 'nama-file')?.score === 0 &&
+    checkOf(analyzeCv(SAMPLE_CV, { fileName: 'untitled.pdf' }), 'nama-file')?.score === 0 &&
+    checkOf(analyzeCv(SAMPLE_CV, { fileName: 'CV final bangettt.pdf' }), 'nama-file')?.score === 0 &&
+    checkOf(analyzeCv(SAMPLE_CV, { fileName: 'scan_2024.pdf' }), 'nama-file')?.score === 0 &&
+    checkOf(analyzeCv(SAMPLE_CV, { fileName: 'CV.pdf' }), 'nama-file')?.score === 0,
+  'semua pola nama generik tertandai',
+)
+check(
+  'Nama file: ada nama tetapi sisa penanda draf (CV_Budi_final) → 1; teks tempel tanpa nama file → netral 2',
+  checkOf(analyzeCv(SAMPLE_CV, { fileName: 'CV_Budi_final.pdf' }), 'nama-file')?.score === 1 &&
+    strongCheck('nama-file')?.score === 2 &&
+    (strongCheck('nama-file')?.message.includes('netral') ?? false),
+  `CV_Budi_final ${checkOf(analyzeCv(SAMPLE_CV, { fileName: 'CV_Budi_final.pdf' }), 'nama-file')?.score}/2, tanpa file ${strongCheck('nama-file')?.score}/2`,
 )
 
 if (failures > 0) {

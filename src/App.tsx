@@ -303,6 +303,11 @@ export default function App() {
   // Tanggal analisis terakhir — dipakai di kepala laporan PDF unduhan.
   const [analysisDate, setAnalysisDate] = useState<Date | null>(null)
   const [fileName, setFileName] = useState('')
+  // Teks persis seperti yang dibaca dari berkas terakhir — nama berkas
+  // hanya diteruskan ke analyzeCv (untuk pemeriksaan nama file) bila
+  // teks yang dianalisis masih teks dari berkas itu; teks yang diketik/
+  // diedit manual tidak dinilai nama filenya.
+  const [fileText, setFileText] = useState('')
   const [error, setError] = useState('')
   const [loadingFile, setLoadingFile] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -388,6 +393,7 @@ export default function App() {
       } else {
         setCvText(text)
         setFileName(file.name)
+        setFileText(text)
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Gagal membaca file.')
@@ -402,7 +408,11 @@ export default function App() {
       setError('Teks CV masih terlalu pendek. Upload file CV atau tempel teks CV terlebih dahulu.')
       return
     }
-    const res = analyzeCv(cvText, { targetRole, jobDesc })
+    const res = analyzeCv(cvText, {
+      targetRole,
+      jobDesc,
+      fileName: fileText !== '' && cvText === fileText ? fileName : undefined,
+    })
     setResult(res)
     setAnalyzedText(cvText)
     setAnalyzedRole(targetRole)
@@ -426,6 +436,7 @@ export default function App() {
   function handleSample() {
     setCvText(SAMPLE_CV)
     setFileName('')
+    setFileText('')
     setError('')
   }
 
@@ -442,6 +453,7 @@ export default function App() {
     setAnalyzedJobDesc('')
     setAnalysisDate(null)
     setFileName('')
+    setFileText('')
     setError('')
     setAiConsent(false)
     setAiResult(null)

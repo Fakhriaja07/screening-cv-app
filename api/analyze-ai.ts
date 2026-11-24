@@ -65,11 +65,12 @@ const MAX_ROLE_CHARS = 200
 
 // Konteks pemeriksaan yang gagal dari frontend: dibatasi jumlah dan
 // panjang tiap field-nya agar prompt tidak membengkak tanpa kendali.
-// Batas 25 = seluruh pemeriksaan yang ada (23 + 2 kondisional): janji
-// produknya adalah AI memperbaiki SEMUA yang gagal, jadi batas tidak
-// boleh memotong daftar secara diam-diam (audit 2026-11-24).
-const MAX_FIX_CHECKS = 25
-const MAX_FIX_ITEMS = 25
+// Batas 30 di atas jumlah seluruh pemeriksaan yang ada (27 + 2
+// kondisional = 29): janji produknya adalah AI memperbaiki SEMUA yang
+// gagal, jadi batas tidak boleh memotong daftar secara diam-diam
+// (audit 2026-11-24; batas dinaikkan dari 25 pada 2026-11-24).
+const MAX_FIX_CHECKS = 30
+const MAX_FIX_ITEMS = 30
 
 // Batas waktu menunggu respons OpenRouter per permintaan. Model gratis bisa
 // sangat lambat; tanpa batas ini fungsi serverless menggantung sampai
