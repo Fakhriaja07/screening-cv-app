@@ -513,12 +513,17 @@ async function streamAnalysis(res: AiResponse, opts: StreamOptions): Promise<voi
           ],
           stream: true,
           ...(options.withResponseFormat ? { response_format: { type: 'json_object' } } : {}),
-          // Effort "low" juga di jalur streaming (disamakan dengan mode
-          // biasa sejak perbaikan lengkap ditambahkan): penalaran tetap
-          // tampil di panel berpikir, tetapi model tidak menghabiskan
-          // batas waktu/token hanya untuk berpikir — JSON jawaban yang
-          // besar harus sempat selesai.
-          ...(options.withReasoning ? { reasoning: { effort: 'low' } } : {}),
+          // Effort "low" + CAP token penalaran di jalur streaming:
+          // penalaran tetap tampil di panel berpikir, tetapi dibatasi
+          // ±1.500 token agar model berhenti berpikir dan menulis JSON
+          // jawabannya. Tanpa cap ini, uji live 2026-11-24 menunjukkan
+          // model menghabiskan seluruh batas aliran (150 detik, 1.400+
+          // potongan reasoning) hanya untuk berpikir dan JSON perbaikan
+          // lengkap tidak pernah selesai. Provider yang menolak
+          // parameter ini memicu jalur retry yang membuangnya.
+          ...(options.withReasoning
+            ? { reasoning: { effort: 'low', max_tokens: 1500 } }
+            : {}),
           temperature: 0.4,
           max_tokens: STREAM_MAX_TOKENS,
         }),

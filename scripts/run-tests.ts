@@ -1863,6 +1863,13 @@ check(
   'bagian baru dirender dari aiResult.perbaikanLengkap; teks nilai jual + garansi token ada di kartu AI',
 )
 check(
+  'AI lengkap: kegagalan streaming di tengah aliran pun dicoba cadangan non-streaming',
+  !appTsxText.includes('if (!receivedEvent)') &&
+    !appTsxText.includes('receivedEvent') &&
+    appTsxText.includes('const data = await requestAiAnalysis(input)'),
+  'gerbang receivedEvent dihapus; catch streaming selalu mencoba requestAiAnalysis sekali',
+)
+check(
   'Template: tombol Salin Template sudah dihapus (keputusan 2026-11-21)',
   !appTsxText.includes('Salin Template') &&
     !appTsxText.includes('handleCopyTemplate') &&

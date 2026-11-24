@@ -592,13 +592,9 @@ export default function App() {
       ? buildAiFixContext(result, buildPersonalExamples(result, analyzedText, analyzedRole))
       : []
     const input = { cvText, targetRole, jobDesc, ...(perbaikan.length ? { perbaikan } : {}) }
-    let receivedEvent = false
     let succeeded = false
     try {
       const data = await requestAiAnalysisStreaming(input, {
-        onActivity: () => {
-          receivedEvent = true
-        },
         onReasoning: (text) => {
           setAiThinking((prev) => {
             if (prev.length >= 8000) return prev
@@ -610,20 +606,19 @@ export default function App() {
       setAiResult(data)
       succeeded = true
     } catch (streamErr) {
-      if (!receivedEvent) {
-        // Streaming gagal sebelum event pertama (jaringan/HTTP error):
-        // coba sekali mode non-streaming sebagai cadangan.
-        try {
-          const data = await requestAiAnalysis(input)
-          setAiResult(data)
-          succeeded = true
-        } catch (fallbackErr) {
-          setAiError(
-            fallbackErr instanceof Error ? fallbackErr.message : 'Analisis AI gagal. Coba lagi nanti.',
-          )
-        }
-      } else {
-        setAiError(streamErr instanceof Error ? streamErr.message : 'Analisis AI gagal. Coba lagi nanti.')
+      // Streaming gagal — sebelum event pertama (jaringan/HTTP error)
+      // ATAU di tengah aliran (model kehabisan batas waktu hanya untuk
+      // berpikir sebelum JSON selesai): coba sekali mode non-streaming
+      // sebagai cadangan. Token tetap hanya terpotong bila salah satu
+      // jalur berhasil, jadi cadangan ini tidak merugikan pengguna.
+      try {
+        const data = await requestAiAnalysis(input)
+        setAiResult(data)
+        succeeded = true
+      } catch (fallbackErr) {
+        setAiError(
+          fallbackErr instanceof Error ? fallbackErr.message : 'Analisis AI gagal. Coba lagi nanti.',
+        )
       }
     } finally {
       // Token hanya terpotong bila hasil berhasil diterima — tepat satu
