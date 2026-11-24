@@ -1051,8 +1051,8 @@ const ROLE_GENERIC_WORDS = new Set([
 // Singkatan pekerjaan diperluas dulu lewat glosarium (jobGlossary.ts):
 // "QC" menghasilkan kata "quality"/"control" yang bisa dicocokkan ke
 // isi CV, bukan potongan "qc" yang tidak pernah muncul di teks CV.
-// Hasilnya dideduplikasi agar perluasan seperti "IT" → "IT Support"
-// tidak menggandakan kata yang sama.
+// Hasilnya dideduplikasi agar kata hasil perluasan yang berulang
+// tidak digandakan.
 export function getRoleWords(role: string): string[] {
   const words = expandJobTitle(role)
     .toLowerCase()

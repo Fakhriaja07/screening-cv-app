@@ -982,27 +982,46 @@ check(
     getRoleSkills('HRD').label === 'Human Resource Development' &&
     getRoleSkills('HRD').label !== 'HRD' &&
     getRoleSkills('SPV').label === 'Supervisor' &&
-    getRoleSkills('IT').id === 'it-support' &&
     getRoleSkills('ADM').id === 'administrasi' &&
     getRoleSkills('BE').id === 'developer',
-  `HRD→"${getRoleSkills('HRD').label}", SPV→"${getRoleSkills('SPV').label}", IT→${getRoleSkills('IT').id}, ADM→${getRoleSkills('ADM').id}`,
+  `HRD→"${getRoleSkills('HRD').label}", SPV→"${getRoleSkills('SPV').label}", ADM→${getRoleSkills('ADM').id}`,
 )
 
 check(
   'Glosarium: kata pengisi peran tidak menempel pada judul hasil perluasan (bug "IT Support staff")',
-  expandJobTitle('it staff') === 'IT Support' &&
-    expandJobTitle('staff it') === 'IT Support' &&
-    expandJobTitle('staf IT') === 'IT Support' &&
-    expandJobTitle('IT Staff') === 'IT Support' &&
-    expandJobTitle('qc staff') === 'Quality Control' &&
+  expandJobTitle('qc staff') === 'Quality Control' &&
     expandJobTitle('staff qc') === 'Quality Control' &&
     expandJobTitle('Staff QC') === 'Quality Control' &&
-    getRoleSkills('it staff').label === 'IT Support' &&
-    getRoleSkills('it staff').id === 'it-support' &&
-    getRoleSkills('it staff').skills === getRoleSkills('IT').skills &&
     getRoleSkills('staff qc').label === 'Quality Control' &&
     getRoleSkills('qc staff').label === 'Quality Control',
-  `it staff→"${expandJobTitle('it staff')}", staff qc→"${expandJobTitle('staff qc')}", label kartu it staff→"${getRoleSkills('it staff').label}"`,
+  `qc staff→"${expandJobTitle('qc staff')}", staff qc→"${expandJobTitle('staff qc')}"`,
+)
+
+check(
+  'Glosarium: "IT" TIDAK ditebak sebagai IT Support (keputusan pengguna 2026-11-24) — tampil apa adanya',
+  JOB_GLOSSARY.length === 74 &&
+    !JOB_GLOSSARY.some((e) => e.abbr.toUpperCase() === 'IT') &&
+    findJobAbbreviation('IT') === null &&
+    findJobAbbreviation('it') === null &&
+    findJobAbbreviation('it staff') === null &&
+    expandJobTitle('IT') === 'IT' &&
+    expandJobTitle('it') === 'it' &&
+    expandJobTitle('it staff') === 'it staff' &&
+    expandJobTitle('staff it') === 'staff it' &&
+    getRoleSkills('IT').id === 'kustom' &&
+    getRoleSkills('IT').label === 'IT' &&
+    getRoleSkills('it').id === 'kustom' &&
+    getRoleSkills('it staff').id === 'kustom' &&
+    getRoleSkills('it staff').label === 'it staff' &&
+    getRoleSkills('it staff').posisiKustom === true &&
+    getRoleSkills('it staff').skills === getRoleSkills('').skills &&
+    getRoleSkills('staff it').id === 'kustom' &&
+    getRoleSkills('staff it').label === 'staff it' &&
+    getRoleSkills('IT Support').id === 'it-support' &&
+    getRoleSkills('IT Support').label === 'IT Support' &&
+    JSON.stringify(getRoleWords('IT')) === JSON.stringify([]) &&
+    JSON.stringify(getRoleWords('it staff')) === JSON.stringify([]),
+  `IT→${getRoleSkills('IT').id} "${getRoleSkills('IT').label}", it staff→${getRoleSkills('it staff').id} "${getRoleSkills('it staff').label}", IT Support→${getRoleSkills('IT Support').id}`,
 )
 
 check(
@@ -1011,7 +1030,6 @@ check(
     expandJobTitle('spv produksi') === 'Supervisor Produksi' &&
     expandJobTitle('QC Inspector') === 'Quality Control Inspector' &&
     expandJobTitle('qc inspector') === 'Quality Control Inspector' &&
-    JSON.stringify(getRoleWords('it staff')) === JSON.stringify(['support']) &&
     JSON.stringify(getRoleWords('karyawan QC')) ===
       JSON.stringify(['quality', 'control']),
   `spv produksi→"${expandJobTitle('spv produksi')}", qc inspector→"${expandJobTitle('qc inspector')}"`,

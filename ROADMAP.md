@@ -875,6 +875,18 @@ posisi target. Sebelumnya singkatan jatuh ke fallback nama mentah.
   Produksi", "QC Inspector" → "Quality Control Inspector"). Peran &
   daftar skill yang dihasilkan tidak berubah; 2 uji baru, total 157
   uji lolos, patokan skor utuh.
+- Pencabutan pemetaan "IT" (2026-11-24, keputusan pengguna): pengguna
+  memilih singkatan "IT" TIDAK ditebak sebagai IT Support — harus
+  tampil apa adanya. Entri `IT = IT Support` dicabut dari glosarium
+  (75 → 74 entri) dan kata kunci 'staff it' dicabut dari peran
+  IT Support di kamus skill. Akibatnya "it"/"IT"/"it staff"/"staff it"
+  jatuh ke jalur posisi tak dikenal: judul kartu memakai teks posisi
+  pengguna sendiri dengan catatan belum ada kamus khusus dan daftar
+  skill umum — bukan daftar skill IT Support — dan pemeriksaan
+  relevansi tidak lagi menerima kata "support" dari singkatan ini.
+  Nama lengkap "IT Support" yang ditulis utuh tetap terdeteksi
+  langsung ke kamus seperti sebelumnya. Entri glosarium lain tidak
+  berubah; 1 blok uji baru, total 158 uji lolos, patokan skor utuh.
 
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 

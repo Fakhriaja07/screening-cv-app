@@ -20,8 +20,9 @@
 //   lowongan Indonesia (mis. "PM" = Product Manager di konteks digital);
 // - kata pengisi peran generik (staff, staf, karyawan, … — daftar
 //   TITLE_FILLER_WORDS) yang menyertai singkatan DIBUANG dari hasil
-//   perluasan: "it staff" menjadi "IT Support", bukan judul hibrida
-//   "IT Support staff" (bug yang dilaporkan pengguna 2026-11-24). Kata
+//   perluasan: "staff qc" menjadi "Quality Control", bukan judul
+//   hibrida "Quality Control staff" (bug yang dilaporkan pengguna
+//   2026-11-24). Kata
 //   sisa yang bermuatan dipertahankan dan dirapikan kapitalnya:
 //   "SPV Produksi" → "Supervisor Produksi". Pembuangan hanya berlaku
 //   bila memang ada singkatan yang diperluas — input tanpa singkatan
@@ -79,7 +80,9 @@ export const JOB_GLOSSARY: JobGlossaryEntry[] = [
   { abbr: 'PR', fullName: 'Public Relations' },
   { abbr: 'CRM', fullName: 'CRM Specialist' },
   // -- IT & digital --
-  { abbr: 'IT', fullName: 'IT Support' },
+  // "IT" sengaja TIDAK dimasukkan (keputusan pengguna 2026-11-24):
+  // singkatan bidang ini tidak ditebak sebagai IT Support — posisi
+  // "IT"/"it staff" tampil apa adanya lewat jalur posisi tak dikenal.
   { abbr: 'BE', fullName: 'Backend Developer' },
   { abbr: 'FE', fullName: 'Frontend Developer' },
   { abbr: 'DevOps', fullName: 'DevOps Engineer' },
@@ -160,7 +163,7 @@ function expandToken(token: string): string {
 // Kata pengisi peran generik: kata-kata ini hanya menyatakan "orang yang
 // bekerja sebagai …" tanpa menambah bidang apa pun, jadi bila muncul
 // menemani singkatan (di depan maupun di belakang), kata ini dibuang
-// dari hasil perluasan agar judulnya bersih — "it staff"/"staff qc"
+// dari hasil perluasan agar judulnya bersih — "qc staff"/"staff qc"
 // menjadi nama lengkap kanonisnya saja. Daftar persis sesuai keputusan
 // perbaikan judul 2026-11-24; jangan tambah kata bermuatan ke sini.
 const TITLE_FILLER_WORDS = new Set([
@@ -191,8 +194,8 @@ type TitleSegment =
  * Perluas singkatan pekerjaan di dalam teks posisi target menjadi nama
  * lengkapnya: "QC" → "Quality Control", "SPV Produksi" → "Supervisor
  * Produksi", "QC Inspector" → "Quality Control Inspector". Kata pengisi
- * peran (staff/staf/dst.) yang menyertai singkatan dibuang — "it staff"
- * → "IT Support", "staff qc" → "Quality Control" — sedangkan kata sisa
+ * peran (staff/staf/dst.) yang menyertai singkatan dibuang — "qc staff"
+ * → "Quality Control", "staff qc" → "Quality Control" — sedangkan kata sisa
  * yang bermuatan dipertahankan. Teks tanpa singkatan yang dikenal
  * dikembalikan apa adanya.
  */

@@ -284,7 +284,11 @@ export const ROLE_SKILLS: RoleSkills[] = [
   {
     id: 'it-support',
     label: 'IT Support',
-    keywords: ['it support', 'teknisi komputer', 'teknisi jaringan', 'helpdesk', 'technical support', 'network', 'jaringan', 'staff it'],
+    // Kata kunci 'staff it' sengaja TIDAK ada (keputusan pengguna
+    // 2026-11-24): singkatan "IT" tidak ditebak sebagai IT Support,
+    // jadi "staff it"/"it staff" jatuh ke jalur posisi tak dikenal.
+    // Nama lengkap "it support" yang ditulis utuh tetap cocok di sini.
+    keywords: ['it support', 'teknisi komputer', 'teknisi jaringan', 'helpdesk', 'technical support', 'network', 'jaringan'],
     skills: [
       'Troubleshooting', 'Instalasi Windows', 'Jaringan LAN', 'Hardware PC', 'Microsoft Office',
       'Remote Desktop', 'Helpdesk', 'Linux', 'Backup Data', 'Komunikasi',
