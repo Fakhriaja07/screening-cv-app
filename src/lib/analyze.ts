@@ -888,16 +888,31 @@ export interface TimelineGap {
   years: number // panjang jeda (toYear - fromYear)
 }
 
+// Satu periode entri yang TIDAK SAH secara kalender: terbalik (tahun
+// selesai lebih awal dari tahun mulai) atau berada di masa depan
+// (tahun mulai melewati tahun berjalan). Periode seperti ini tidak
+// bisa dipakai menilai linimasa — tanggal yang mustahil bukan bukti
+// riwayat yang rapi.
+export interface InvalidPeriod {
+  startYear: number
+  endYear: number | null // null bila peran ditandai masih berjalan
+  kind: 'terbalik' | 'masa-depan'
+}
+
 // Fakta linimasa dari periode entri yang terbaca — satu-satunya sumber
 // angka jeda & kebaruan, dipakai pemeriksaan linimasa DAN contoh
-// personalnya agar keduanya selalu menyebut tahun yang sama.
+// personalnya agar keduanya selalu menyebut tahun yang sama. Jeda dan
+// kebaruan dihitung HANYA dari entri berperiode yang sah; periode
+// tidak sah dipisahkan ke invalidPeriods (keputusan pengguna
+// 2026-11-24: periode terbalik/masa depan tidak lagi berpoin penuh).
 export interface TimelineFacts {
-  datedCount: number
+  datedCount: number // jumlah entri berperiode yang SAH
   gaps: TimelineGap[]
   hasCurrent: boolean
   latestEnd: number
   yearsSinceEnd: number
   stale: boolean
+  invalidPeriods: InvalidPeriod[]
 }
 
 function computeTimelineFacts(
@@ -906,7 +921,19 @@ function computeTimelineFacts(
 ): TimelineFacts | null {
   const dated = blocks.filter((b) => b.startYear !== null)
   if (dated.length === 0) return null
-  const sorted = [...dated].sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0))
+  const invalidPeriods: InvalidPeriod[] = []
+  const valid: ExperienceBlock[] = []
+  for (const b of dated) {
+    const start = b.startYear ?? 0
+    if (start > currentYear) {
+      invalidPeriods.push({ startYear: start, endYear: b.endYear, kind: 'masa-depan' })
+    } else if (!b.isCurrent && b.endYear !== null && b.endYear < start) {
+      invalidPeriods.push({ startYear: start, endYear: b.endYear, kind: 'terbalik' })
+    } else {
+      valid.push(b)
+    }
+  }
+  const sorted = [...valid].sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0))
   const gaps: TimelineGap[] = []
   for (let i = 1; i < sorted.length; i++) {
     const prev = sorted[i - 1]
@@ -917,18 +944,22 @@ function computeTimelineFacts(
       gaps.push({ fromYear: prevEnd, toYear: sorted[i].startYear ?? 0, years })
     }
   }
-  const hasCurrent = dated.some((b) => b.isCurrent)
-  const latestEnd = Math.max(
-    ...dated.map((b) => (b.isCurrent ? currentYear : (b.endYear ?? b.startYear ?? 0))),
-  )
+  const hasCurrent = valid.some((b) => b.isCurrent)
+  const latestEnd =
+    valid.length === 0
+      ? 0
+      : Math.max(
+          ...valid.map((b) => (b.isCurrent ? currentYear : (b.endYear ?? b.startYear ?? 0))),
+        )
   const yearsSinceEnd = currentYear - latestEnd
   return {
-    datedCount: dated.length,
+    datedCount: valid.length,
     gaps,
     hasCurrent,
     latestEnd,
     yearsSinceEnd,
-    stale: !hasCurrent && yearsSinceEnd >= 4,
+    stale: valid.length > 0 && !hasCurrent && yearsSinceEnd >= 4,
+    invalidPeriods,
   }
 }
 
@@ -943,9 +974,14 @@ export function getTimelineFacts(rawText: string): TimelineFacts | null {
 
 // Menilai linimasa dari periode entri yang TERBACA: (a) kesenjangan
 // panjang antar-entri tanpa penjelasan, (b) kebaruan — peran terakhir
-// sudah lama berakhir dan tidak ada peran saat ini. Bila tidak ada
-// entri berperiode yang terbaca, pemeriksaan tidak mengarang nilai:
-// skor 0 dengan pesan bahwa linimasa belum bisa dinilai.
+// sudah lama berakhir dan tidak ada peran saat ini, (c) periode tidak
+// sah — terbalik atau di masa depan (keputusan pengguna 2026-11-24).
+// Periode tidak sah diperlakukan setara kesenjangan: komponen jeda
+// (2 poin) hilang, karena urutan waktu yang mustahil tidak bisa
+// diverifikasi kerapihannya; kebaruan hanya dinilai dari entri sah.
+// Bila tidak ada entri berperiode yang terbaca, pemeriksaan tidak
+// mengarang nilai: skor 0 dengan pesan bahwa linimasa belum bisa
+// dinilai.
 function assessTimeline(blocks: ExperienceBlock[], currentYear: number): TimelineAssessment {
   const facts = computeTimelineFacts(blocks, currentYear)
   if (!facts) {
@@ -955,13 +991,24 @@ function assessTimeline(blocks: ExperienceBlock[], currentYear: number): Timelin
         'Periode tiap entri pengalaman tidak terbaca tahunnya, sehingga linimasa (kesenjangan antarpekerjaan dan kebaruan peran terakhir) belum bisa dinilai. Tulis periode yang jelas pada tiap entri, misalnya (2022–2024) atau (2022–Sekarang).',
     }
   }
+  const invalidIssues = facts.invalidPeriods.map((p) =>
+    p.kind === 'terbalik'
+      ? `periode ${p.startYear}–${p.endYear} terbalik (tahun selesai lebih awal dari tahun mulai)`
+      : `periode ${p.startYear}–${p.endYear ?? 'Sekarang'} berada di masa depan (tahun mulai melewati tahun berjalan ${currentYear})`,
+  )
   const gapIssues = facts.gaps.map(
     (g) =>
       `ada kesenjangan sekitar ${g.years} tahun (antara ±${g.fromYear} dan ±${g.toYear}) tanpa penjelasan di CV`,
   )
-  const gapScore = gapIssues.length > 0 ? 0 : 2
-  const recencyScore = facts.stale ? 0 : 1
+  const gapScore = gapIssues.length > 0 || invalidIssues.length > 0 ? 0 : 2
+  const recencyScore = facts.datedCount === 0 || facts.stale ? 0 : 1
   const parts: string[] = []
+  if (invalidIssues.length > 0) {
+    parts.push(`Ditemukan periode yang tidak masuk akal: ${invalidIssues.join('; ')}.`)
+    parts.push(
+      'Tanggal yang mustahil membuat rekruter meragukan seluruh riwayatmu — perbaiki penulisan periode itu sebelum melamar.',
+    )
+  }
   if (gapIssues.length > 0) {
     parts.push(`Linimasa terbaca: ${gapIssues.join('; ')}.`)
     parts.push(
@@ -1556,12 +1603,32 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   ]
 
   // ===== FORMAT & ATS (maks 20) =====
-  // Teks kosong (0 kata) tidak mendapat poin panjang sama sekali — cabang
-  // akhir skala (1 poin) hanya untuk CV berisi yang panjangnya di luar
-  // rentang berskor (audit 2026-11-24: CV kosong sebelumnya tetap
-  // menerima 1 poin panjang + 2 poin kerapian = total 3).
+  // Penjaga CV naratif tanpa bagian — VERSI LUAS (keputusan pengguna
+  // 2026-11-24; audit 2026-11-24 awalnya memasang versi sempit hanya
+  // untuk teks kosong persis karena versi luas menggerakkan patokan,
+  // dan pengguna kini menyetujui pergeseran itu: CV lemah 16 → 14).
+  // Teks yang tidak memiliki SATU PUN bagian terstruktur tidak
+  // memperoleh poin cuma-cuma dari panjang & kerapian: poin dasar
+  // skala panjang mensyaratkan dokumen CV yang bisa dinilai
+  // panjangnya, dan poin "saya wajar" pada kerapian mensyaratkan
+  // bagian pengalaman sebagai bukti — keduanya tidak ada pada teks
+  // naratif tanpa bagian (pola yang sama dengan penjaga frasa-lemah:
+  // poin tidak diberikan dari ketiadaan bukti).
+  const hasAnySection =
+    summarySection.trim() !== '' ||
+    experienceSection.trim() !== '' ||
+    educationSection.trim() !== '' ||
+    certSection.trim() !== '' ||
+    getSection(text, SKILL_HEADINGS).trim() !== '' ||
+    getSection(text, ['bahasa', 'language', 'languages']).trim() !== '' ||
+    getProjectSection(text).trim() !== ''
+  // Teks kosong (0 kata) atau tanpa satu pun bagian terstruktur tidak
+  // mendapat poin panjang sama sekali — cabang akhir skala (1 poin)
+  // hanya untuk CV terstruktur yang panjangnya di luar rentang berskor
+  // (audit 2026-11-24: CV kosong sebelumnya tetap menerima 1 poin
+  // panjang + 2 poin kerapian = total 3).
   const lengthScore =
-    totalWords === 0
+    totalWords === 0 || !hasAnySection
       ? 0
       : totalWords >= 220 && totalWords <= 900
         ? 8
@@ -1634,13 +1701,20 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   // Teks yang benar-benar kosong (0 kata) tidak bisa dinilai kerapiannya —
   // jangan beri nilai penuh yang lalu tampil sebagai "kekuatan" (audit
   // 2026-11-24: CV kosong sebelumnya menerima total 3 dari panjang +
-  // kerapian). Penjaga sengaja dipersempit ke kasus kosong persis: CV
-  // naratif tanpa heading (seperti CV lemah patokan) tetap dinilai seperti
-  // sebelumnya agar patokan terkunci tidak bergeser.
+  // kerapian). Penjaga versi luas (keputusan pengguna 2026-11-24): CV
+  // tanpa satu pun bagian terstruktur juga tidak menerima poin
+  // kerapian penuh — komponen "saya" (1 poin) dinilai dari bagian
+  // pengalaman, dan tanpa bagian itu poinnya tidak bisa diperoleh dari
+  // ketiadaan bukti; komponen salah eja (1 poin) tetap dinilai dari
+  // seluruh teks karena buktinya memang ada di teks.
   const neatnessScore =
     totalWords === 0
       ? 0
-      : Math.max(0, 2 - (typos.length > 0 ? 1 : 0) - (sayaOverused ? 1 : 0))
+      : !hasAnySection
+        ? typos.length > 0
+          ? 0
+          : 1
+        : Math.max(0, 2 - (typos.length > 0 ? 1 : 0) - (sayaOverused ? 1 : 0))
   const neatnessParts: string[] = []
   if (typos.length > 0) {
     neatnessParts.push(
@@ -1658,14 +1732,21 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   const neatnessMessage =
     totalWords === 0
       ? 'Belum ada teks yang bisa dinilai kerapiannya. Tulis isi CV dulu — kerapian bahasa dinilai dari teks tersebut.'
-      : neatnessParts.length > 0
-      ? neatnessParts.join(' ')
-      : 'Tidak ditemukan kata yang sering salah eja dari daftar periksa dasar, dan pemakaian kata ganti "saya" di bagian pengalaman masih wajar. (Pemeriksaan ini hanya menandai contoh dari daftar kecil kata yang sering salah eja — bukan pemeriksaan tata bahasa menyeluruh.)'
+      : !hasAnySection
+        ? [
+            'CV ini tidak memiliki satu pun bagian terstruktur, sehingga pemakaian kata ganti "saya" di bagian pengalaman tidak bisa dinilai dan poin kerapian penuh tidak diberikan untuk teks tanpa bagian. Susun CV ke dalam bagian Ringkasan, Pengalaman, Pendidikan, dan Keahlian agar kerapiannya bisa dinilai sepenuhnya.',
+            ...neatnessParts,
+          ].join(' ')
+        : neatnessParts.length > 0
+          ? neatnessParts.join(' ')
+          : 'Tidak ditemukan kata yang sering salah eja dari daftar periksa dasar, dan pemakaian kata ganti "saya" di bagian pengalaman masih wajar. (Pemeriksaan ini hanya menandai contoh dari daftar kecil kata yang sering salah eja — bukan pemeriksaan tata bahasa menyeluruh.)'
 
   const formatChecks = [
     makeCheck(
       'panjang', 'Format & ATS', 'Panjang CV', lengthScore, 8,
-      `CV berisi ${totalWords} kata. Rentang ideal 220–900 kata (sekitar 1–2 halaman).`,
+      totalWords > 0 && !hasAnySection
+        ? `CV berisi ${totalWords} kata, tetapi tidak memiliki satu pun bagian terstruktur (Ringkasan, Pengalaman, Pendidikan, Keahlian), sehingga panjangnya belum dinilai sebagai dokumen CV. Susun isi CV ke dalam bagian-bagian itu terlebih dahulu — rentang ideal CV terstruktur adalah 220–900 kata (sekitar 1–2 halaman).`
+        : `CV berisi ${totalWords} kata. Rentang ideal 220–900 kata (sekitar 1–2 halaman).`,
     ),
     makeCheck(
       'periode', 'Format & ATS', 'Tahun / periode kerja', yearsScore, 4,
@@ -1733,6 +1814,17 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
               keywords.missing.length > 0
                 ? ` Kata kunci penting yang belum ada: ${missingPreview}${keywords.missing.length > 5 ? ', …' : ''}. Tambahkan hanya kata kunci yang benar-benar sesuai pengalamanmu.`
                 : ' Semua kata kunci teratas lowongan sudah ada di CV-mu.'
+            }${
+              // Peringatan informatif saja (keputusan pengguna
+              // 2026-11-24): skor kecocokan TIDAK diubah — ambang
+              // minimum kata kunci adalah aturan kuota yang ditolak
+              // pengguna. Teks lowongan yang sangat singkat hanya
+              // menghasilkan sedikit kata kunci, jadi persen
+              // kecocokannya mudah berayun jauh; pengguna berhak tahu
+              // bahwa angka ini dihitung dari yang terbaca saja.
+              keywords.total <= 2
+                ? ` Peringatan: teks lowongan yang kamu tempel sangat singkat — hanya ${keywords.total} kata kunci yang terbaca — sehingga kecocokan di atas dihitung hanya dari yang terbaca dan bisa jauh dari gambaran sebenarnya. Tempel deskripsi lowongan yang lebih lengkap agar penilaian kecocokannya lebih akurat.`
+                : ''
             }`,
           ),
         ],

@@ -257,9 +257,9 @@ check('Riwayat: hapus mengosongkan storage', loadHistory(store).length === 0, 's
 // (ambang label ≥85/≥70/≥50; kata kerja aksi ≥5; hasil terukur ≥3;
 // skill ≥8; panjang ideal 220–900 kata).
 check(
-  'Standar aspek 2026-11-21: skor patokan tanpa lowongan terkunci 96/61/16',
-  strong.total === 96 && medium.total === 61 && weak.total === 16,
-  `kuat ${strong.total}, menengah ${medium.total}, lemah ${weak.total} (harus 96/61/16; menengah naik dari 58 karena linimasa magangnya bersih 3/3 dan aturan netral proyek +2, dikurangi heading 6→5 dan kedalaman 5→4)`,
+  'Standar aspek 2026-11-21: skor patokan tanpa lowongan terkunci 96/61/14',
+  strong.total === 96 && medium.total === 61 && weak.total === 14,
+  `kuat ${strong.total}, menengah ${medium.total}, lemah ${weak.total} (harus 96/61/14; menengah naik dari 58 karena linimasa magangnya bersih 3/3 dan aturan netral proyek +2, dikurangi heading 6→5 dan kedalaman 5→4; lemah turun 16 → 14 atas keputusan pengguna 2026-11-24: penjaga luas CV naratif tanpa bagian — panjang 0 dan komponen "saya" pada kerapian tidak lagi diperoleh cuma-cuma)`,
 )
 
 check(
@@ -1993,8 +1993,8 @@ check(
 // dan cuplikan bertanda di demo tidak boleh tersisa; fitur hasil lain
 // (daftar Prioritas Perbaikan, unduh laporan PDF) tetap utuh.
 check(
-  'Penghapusan penanda: patokan skor persis tidak berubah (96/61/16, fresh graduate 53)',
-  strong.total === 96 && medium.total === 61 && weak.total === 16 && fresh.total === 53,
+  'Penghapusan penanda: patokan skor tidak digerakkan penghapusan itu (kini 96/61/14, fresh graduate 53 — lemah 14 dari keputusan penjaga naratif 2026-11-24, bukan dari penghapusan penanda)',
+  strong.total === 96 && medium.total === 61 && weak.total === 14 && fresh.total === 53,
   `kuat ${strong.total}, menengah ${medium.total}, lemah ${weak.total}, fresh ${fresh.total}`,
 )
 check(
@@ -2067,8 +2067,10 @@ check(
 
 // ---------- Regresi audit menyeluruh (2026-11-24) ----------
 // Setiap uji di bawah mengunci satu bug yang dibuktikan probe audit
-// sebelum diperbaiki. Patokan terkunci 96/61/16 dst. TIDAK berubah oleh
-// perbaikan-perbaikan ini (terverifikasi oleh uji patokan di atas).
+// sebelum diperbaiki. Perbaikan-perbaikan audit ini sendiri TIDAK
+// menggerakkan patokan (terverifikasi oleh uji patokan di atas);
+// patokan lemah 16 → 14 terjadi sesudahnya atas keputusan pengguna —
+// lihat blok "Keputusan audit lanjutan" di akhir berkas.
 
 // --- Audit 1: heading palsu dari kalimat naratif (BUG-1) ---
 // Kalimat ringkasan "Saya profesional berpengalaman." sebelumnya
@@ -2358,6 +2360,101 @@ check(
     privacyHtmlText.includes('kode sekali pakai') &&
     privacyHtmlText.includes('24 November 2026'),
   'halaman privasi publik harus cocok dengan alur pembayaran yang benar-benar berjalan',
+)
+
+// ---------- Keputusan audit lanjutan (2026-11-24) ----------
+// Tiga temuan audit yang saat audit sengaja TIDAK diubah kini
+// diterapkan atas persetujuan pengguna ("Ya, perbaiki ketiganya
+// seperti rekomendasimu"): (1) periode terbalik & masa depan tidak
+// lagi berpoin linimasa penuh, (2) peringatan lowongan terlalu
+// singkat — skor kecocokan TIDAK berubah, (3) penjaga luas CV
+// naratif tanpa bagian — patokan CV lemah 16 → 14; patokan lain
+// wajib tetap persis (dikunci uji patokan di atas).
+
+// --- Keputusan 1: periode terbalik & masa depan (linimasa) ---
+const PERIOD_CV = (entries: string) => `Rudi Hartono
+rudi.hartono@gmail.com | 0812-1111-2222
+
+Pengalaman
+${entries}
+
+Pendidikan
+SMA Negeri 1 Jakarta (2010 - 2013)`
+
+const reversedPeriod = analyzeCv(
+  PERIOD_CV('Kasir — Toko Berkah (2024–2020)\n- Melayani pembeli setiap hari.'),
+)
+check(
+  'Keputusan audit 1: periode terbalik (2024–2020) kehilangan poin linimasa + pesan menyebut masalahnya',
+  checkOf(reversedPeriod, 'linimasa')?.score === 0 &&
+    (checkOf(reversedPeriod, 'linimasa')?.message.includes('2024') ?? false) &&
+    (checkOf(reversedPeriod, 'linimasa')?.message.includes('terbalik') ?? false),
+  `skor ${checkOf(reversedPeriod, 'linimasa')?.score}/3; pesan: ${checkOf(reversedPeriod, 'linimasa')?.message.slice(0, 110)}…`,
+)
+const futurePeriod = analyzeCv(
+  PERIOD_CV('Staf Gudang — PT Logistik Jaya (2030–2032)\n- Mengelola stok barang.'),
+)
+check(
+  'Keputusan audit 1: periode masa depan (2030–2032) kehilangan poin linimasa + pesan menyebut masalahnya',
+  checkOf(futurePeriod, 'linimasa')?.score === 0 &&
+    (checkOf(futurePeriod, 'linimasa')?.message.includes('2030') ?? false) &&
+    (checkOf(futurePeriod, 'linimasa')?.message.includes('masa depan') ?? false),
+  `skor ${checkOf(futurePeriod, 'linimasa')?.score}/3; pesan: ${checkOf(futurePeriod, 'linimasa')?.message.slice(0, 110)}…`,
+)
+const normalPeriod = analyzeCv(
+  PERIOD_CV('Kasir — Toko Berkah (2022–2024)\n- Melayani pembeli setiap hari.'),
+)
+const currentPeriod = analyzeCv(
+  PERIOD_CV('Kasir — Toko Berkah (2022–Sekarang)\n- Melayani pembeli setiap hari.'),
+)
+check(
+  'Keputusan audit 1: periode normal & "Sekarang" tetap berpoin linimasa penuh (tidak berubah)',
+  checkOf(normalPeriod, 'linimasa')?.score === 3 &&
+    checkOf(currentPeriod, 'linimasa')?.score === 3,
+  `normal ${checkOf(normalPeriod, 'linimasa')?.score}/3, sekarang ${checkOf(currentPeriod, 'linimasa')?.score}/3`,
+)
+
+// --- Keputusan 2: peringatan lowongan terlalu singkat (skor tetap) ---
+const tinyJob = analyzeCv(
+  PERIOD_CV('Kasir — Toko Berkah (2022–2024)\n- Melayani pembeli setiap hari.'),
+  { jobDesc: 'Kasir.' },
+)
+check(
+  'Keputusan audit 2: lowongan 1 kata kunci memunculkan peringatan, skor kecocokan tetap penuh (20/20)',
+  tinyJob.keywords?.total === 1 &&
+    jobAspectOf(tinyJob)?.score === 20 &&
+    (checkOf(tinyJob, 'kecocokan-lowongan')?.message.includes('Peringatan: teks lowongan yang kamu tempel sangat singkat') ?? false),
+  `kata kunci ${tinyJob.keywords?.total}, kecocokan ${jobAspectOf(tinyJob)?.score}/20 (${tinyJob.keywords?.percent}%), peringatan ${checkOf(tinyJob, 'kecocokan-lowongan')?.message.includes('Peringatan') ? 'ada' : 'TIDAK ADA'}`,
+)
+check(
+  'Keputusan audit 2: lowongan normal tidak memunculkan peringatan',
+  !(checkOf(mediumJobMatch, 'kecocokan-lowongan')?.message.includes('Peringatan: teks lowongan') ?? true),
+  `kata kunci lowongan admin ${mediumJobMatch.keywords?.total} (> 2) → tanpa peringatan`,
+)
+
+// --- Keputusan 3: penjaga luas CV naratif tanpa bagian ---
+check(
+  'Keputusan audit 3: CV lemah tanpa bagian — panjang 0, kerapian 1, total 14, kerapian bukan lagi kekuatan',
+  weak.total === 14 &&
+    weakCheck('panjang')?.score === 0 &&
+    weakCheck('kerapian-bahasa')?.score === 1 &&
+    !weak.strengths.some((c) => c.id === 'kerapian-bahasa'),
+  `total ${weak.total} (dari 16), panjang ${weakCheck('panjang')?.score}/8, kerapian ${weakCheck('kerapian-bahasa')?.score}/2`,
+)
+const SECTIONLESS_TYPO_CV = `Andi Pratama
+andi.pratama@gmail.com
+Saya Andi. Saya pernah bekerja di toko pakaian. Aktifitas saya melayani pembeli setiap hari dan menjaga kasir toko.`
+const sectionlessTypo = analyzeCv(SECTIONLESS_TYPO_CV)
+check(
+  'Keputusan audit 3: CV tanpa bagian yang mengandung salah eja — kerapian 0 (komponen eja tetap dinilai dari teks)',
+  checkOf(sectionlessTypo, 'kerapian-bahasa')?.score === 0 &&
+    checkOf(sectionlessTypo, 'panjang')?.score === 0,
+  `kerapian ${checkOf(sectionlessTypo, 'kerapian-bahasa')?.score}/2, panjang ${checkOf(sectionlessTypo, 'panjang')?.score}/8`,
+)
+check(
+  'Keputusan audit 3: CV terstruktur tetap mendapat poin panjang & kerapian seperti sebelumnya',
+  (mediumCheck('panjang')?.score ?? 0) > 0 && mediumCheck('kerapian-bahasa')?.score === 2,
+  `menengah panjang ${mediumCheck('panjang')?.score}/8, kerapian ${mediumCheck('kerapian-bahasa')?.score}/2`,
 )
 
 if (failures > 0) {

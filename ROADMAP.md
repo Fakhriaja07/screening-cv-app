@@ -993,6 +993,36 @@ fresh graduate 53, demo 55→96.
   berbasis sesi (sesuai teks UI); integrasi Midtrans tetap dorman.
 - 19 uji regresi audit baru; total seluruh suite lolos dan build bersih.
 
+## Keputusan audit lanjutan diterapkan (2026-11-24)
+
+Tiga temuan audit yang semula sengaja TIDAK diubah diterapkan atas
+persetujuan pengguna ("Ya, perbaiki ketiganya seperti rekomendasimu"):
+
+- **Periode terbalik & masa depan (linimasa):** periode dengan tahun
+  selesai lebih awal dari tahun mulai (mis. 2024–2020) atau tahun
+  mulai melewati tahun berjalan (mis. 2030–2032) kini dinyatakan
+  tidak sah — diperlakukan setara kesenjangan (komponen jeda 2 poin
+  hilang), jeda & kebaruan dihitung hanya dari entri yang sah, dan
+  pesan pemeriksaan menyebut periode bermasalahnya secara spesifik.
+  "Sekarang/Present" tetap sah.
+- **Peringatan lowongan terlalu singkat (kecocokan):** skor TIDAK
+  diubah sama sekali (ambang minimum kata kunci adalah aturan kuota
+  yang ditolak pengguna). Bila kata kunci yang terbaca dari teks
+  lowongan ≤ 2, pesan pemeriksaan kecocokan ditambah peringatan
+  informatif bahwa teks lowongannya sangat singkat sehingga
+  kecocokan dihitung hanya dari yang terbaca, plus saran menempel
+  lowongan yang lebih lengkap.
+- **Penjaga luas CV naratif tanpa bagian (PATOKAN BERUBAH atas
+  keputusan pengguna):** CV tanpa satu pun bagian terstruktur tidak
+  lagi memperoleh poin cuma-cuma dari panjang (skala panjang → 0)
+  dan kerapian (komponen "saya" 1 poin tidak bisa diperoleh tanpa
+  bagian pengalaman; komponen salah eja tetap dinilai dari teks).
+  **Patokan terkunci diperbarui: CV lemah 16 → 14.** Patokan lain
+  diverifikasi TIDAK ikut bergerak: kuat 96, menengah 61, mode
+  lowongan 89/79 & 60/48, fresh graduate 53, demo 55→96.
+- 8 uji regresi baru (blok "Keputusan audit lanjutan"); seluruh
+  suite lolos dan build bersih.
+
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
 - Akurasi yang terasa benar: hasil cocok dengan intuisi pengguna.
