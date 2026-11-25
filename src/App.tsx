@@ -148,18 +148,24 @@ function CheckRow({ check }: { check: CheckItem }) {
 function PriorityRow({
   check,
   personal,
+  index,
 }: {
   check: CheckItem
   personal?: PersonalExample | null
+  index?: number
 }) {
   const [open, setOpen] = useState(false)
   const generic = getCheckExample(check.id)
   const example = personal ?? generic
   return (
     <li className={`check-row status-${check.status}`}>
-      <span className="check-icon">
-        {check.status === 'baik' ? <Icon d={I.check} size={15} /> : <Icon d={I.alert} size={15} />}
-      </span>
+      {typeof index === 'number' ? (
+        <span className="priority-num" aria-hidden="true">{index + 1}</span>
+      ) : (
+        <span className="check-icon">
+          {check.status === 'baik' ? <Icon d={I.check} size={15} /> : <Icon d={I.alert} size={15} />}
+        </span>
+      )}
       <div className="check-body">
         <div className="check-head">
           <strong>{check.title}</strong>
@@ -219,7 +225,7 @@ const DEMO_AFTER = analyzeCv(SAMPLE_CV)
 function DemoSection() {
   const delta = DEMO_AFTER.total - DEMO_BEFORE.total
   return (
-    <section className="demo-section" aria-label="Contoh hasil analisis">
+    <section className="demo-section" id="contoh" aria-label="Contoh hasil analisis">
       <div className="demo-head">
         <span className="badge badge-soft"><Icon d={I.chart} size={14} /> Contoh hasil analisis</span>
         <h2>Lihat Contoh Hasil</h2>
@@ -860,14 +866,28 @@ export default function App() {
   )
 
   return (
-    <div className="page">
+    <div className="page" id="atas">
+      {/* ===== TOPBAR MELEKAT ===== */}
+      <header className="topbar">
+        <div className="topbar-inner">
+          <a className="brand" href="#atas" aria-label="Screening CV — kembali ke atas">
+            <span className="brand-mark"><Icon d={I.zap} size={16} /></span>
+            Screening CV
+          </a>
+          <nav className="topbar-links" aria-label="Navigasi utama">
+            <a className="topbar-link" href="#contoh">Contoh Hasil</a>
+            <a className="btn btn-primary btn-sm" href="#analisis">Analisis CV</a>
+          </nav>
+        </div>
+      </header>
+
       {/* ===== HERO ===== */}
       <header className="hero">
         <div className="hero-inner">
           <span className="badge"><Icon d={I.zap} size={14} /> Penilaian CV Bahasa Indonesia</span>
           <h1>Screening CV</h1>
           <p className="hero-sub">
-            Masukkan CV-mu, dapatkan skor 0–100 dari 6 aspek dan 23 pemeriksaan,
+            Masukkan CV-mu, dapatkan skor 0–100 dari 6 aspek dan 27 pemeriksaan,
             lengkap dengan bagian mana saja yang harus diperbaiki. Bila kamu
             menempel deskripsi lowongan, kecocokan CV-mu dengan lowongan itu
             ikut menjadi aspek penilaian tersendiri. Analisis standar
@@ -883,7 +903,7 @@ export default function App() {
           <div className="hero-stats">
             <div><strong>100</strong><span>total poin</span></div>
             <div><strong>6+1</strong><span>aspek dinilai</span></div>
-            <div><strong>23</strong><span>pemeriksaan</span></div>
+            <div><strong>27</strong><span>pemeriksaan</span></div>
           </div>
         </div>
       </header>
@@ -896,6 +916,12 @@ export default function App() {
         {/* ----- FORM ----- */}
         <section className="card form-card">
           <h2><Icon d={I.file} size={20} /> Data CV</h2>
+
+          <div className="step">
+            <div className="step-head">
+              <span className="step-num" aria-hidden="true">1</span>
+              <h3 className="step-title">Isi CV kamu</h3>
+            </div>
 
           <div
             className={`dropzone${dragging ? ' dragging' : ''}`}
@@ -936,8 +962,16 @@ export default function App() {
               placeholder={'Tempel teks CV di sini, atau upload file di atas.\n\nContoh format kontak yang terbaca:\nemail@contoh.com | +62 812-3456-7890 | linkedin.com/in/namamu | github.com/namamu'}
               rows={12}
             />
-            <small className="counter">{cvText.length} karakter • {countWords(cvText)} kata</small>
+            <small className="counter" aria-live="polite">{countWords(cvText)} kata terdeteksi • {cvText.length} karakter</small>
           </label>
+          </div>
+
+          <div className="step">
+            <div className="step-head">
+              <span className="step-num" aria-hidden="true">2</span>
+              <h3 className="step-title">Posisi &amp; lowongan</h3>
+              <span className="step-chip">Opsional</span>
+            </div>
 
           <label className="field">
             <span>Posisi yang dilamar (opsional)</span>
@@ -958,11 +992,18 @@ export default function App() {
               rows={5}
             />
           </label>
+          </div>
 
           {error && <div className="alert alert-error"><Icon d={I.alert} size={16} /> {error}</div>}
 
+          <div className="step">
+            <div className="step-head">
+              <span className="step-num" aria-hidden="true">3</span>
+              <h3 className="step-title">Lihat hasil</h3>
+            </div>
+
           <div className="form-actions">
-            <button className="btn btn-primary" type="button" onClick={handleAnalyze}>
+            <button className="btn btn-primary btn-lg" type="button" onClick={handleAnalyze}>
               <Icon d={I.search} size={18} /> Analisis CV
             </button>
             <button className="btn btn-secondary" type="button" onClick={handleSample}>
@@ -971,6 +1012,7 @@ export default function App() {
             <button className="btn btn-plain" type="button" onClick={handleReset}>
               <Icon d={I.refresh} size={16} /> Reset
             </button>
+          </div>
           </div>
         </section>
 
@@ -998,7 +1040,7 @@ export default function App() {
                   <ScoreRing score={result.total} />
                   <div className="result-summary">
                     <span className="badge badge-soft">Hasil analisis</span>
-                    <h2>{result.label}</h2>
+                    <h2 className={`verdict-text ${result.total >= 85 ? 't-green' : result.total >= 70 ? 't-sky' : result.total >= 50 ? 't-amber' : 't-red'}`}>{result.label}</h2>
                     <p>
                       CV berisi {result.wordCount} kata. Skor dihitung dari bukti isi yang
                       benar-benar ada — bagian yang kosong poinnya 0.
@@ -1007,18 +1049,22 @@ export default function App() {
                 </div>
 
                 <div className="bars">
-                  {result.aspects.map((a) => (
-                    <div className="bar-row" key={a.name}>
-                      <span className="bar-label">{a.name}</span>
-                      <div className="bar-track">
-                        <div
-                          className="bar-fill"
-                          style={{ width: `${Math.round((a.score / a.max) * 100)}%` }}
-                        />
+                  {result.aspects.map((a) => {
+                    const ratio = a.max > 0 ? a.score / a.max : 0
+                    const tier = ratio >= 0.85 ? 'fill-green' : ratio >= 0.7 ? 'fill-sky' : ratio >= 0.5 ? 'fill-amber' : 'fill-red'
+                    return (
+                      <div className="bar-row" key={a.name}>
+                        <span className="bar-label">{a.name}</span>
+                        <div className="bar-track">
+                          <div
+                            className={`bar-fill ${tier}`}
+                            style={{ width: `${Math.round(ratio * 100)}%` }}
+                          />
+                        </div>
+                        <span className="bar-score">{a.score}/{a.max}</span>
                       </div>
-                      <span className="bar-score">{a.score}/{a.max}</span>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
 
                 {result.roleWarning && (
@@ -1113,15 +1159,19 @@ export default function App() {
                 {result.priorities.length === 0 ? (
                   <p>Semua pemeriksaan lolos dengan poin penuh. CV-mu sudah kuat — tinggal sesuaikan kata kunci untuk tiap lowongan.</p>
                 ) : (
-                  <ul className="check-list">
-                    {result.priorities.map((c) => (
-                      <PriorityRow
-                        key={c.id}
-                        check={c}
-                        personal={personalExamples[c.id] ?? null}
-                      />
-                    ))}
-                  </ul>
+                  <>
+                    <p className="card-hint">Diurutkan dari yang paling berdampak ke skormu — kerjakan dari nomor 1.</p>
+                    <ul className="check-list">
+                      {result.priorities.map((c, i) => (
+                        <PriorityRow
+                          key={c.id}
+                          check={c}
+                          personal={personalExamples[c.id] ?? null}
+                          index={i}
+                        />
+                      ))}
+                    </ul>
+                  </>
                 )}
               </div>
 
@@ -1213,7 +1263,7 @@ export default function App() {
 
               {/* ----- ANALISIS AI ----- */}
               <div className="card ai-card">
-                <h3><Icon d={I.spark} size={18} /> Analisis AI (OpenRouter)</h3>
+                <h3><Icon d={I.spark} size={18} /> Analisis AI (OpenRouter) <span className="paid-chip">Berbayar</span></h3>
                 <p>
                   Mau saran yang lebih dalam dari skor di atas? AI lewat OpenRouter bisa membaca
                   CV-mu secara kualitatif: menulis ulang poin pengalamanmu, menunjukkan
@@ -1257,7 +1307,7 @@ export default function App() {
 
                     <div className="ai-actions">
                       <button
-                        className="btn btn-primary"
+                        className="btn btn-primary btn-lg"
                         type="button"
                         onClick={handleAiAnalyze}
                         disabled={!aiConsent || aiLoading || (result ? analyzedText : cvText).trim().length < 50}
