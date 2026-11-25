@@ -481,8 +481,66 @@ function countActionVerbs(lowerText: string): number {
   return found
 }
 
+// Satuan Inggris untuk hasil terukur (2026-11-25) — sejajar daftar
+// satuan Indonesia pada penghitung di bawah: kata benda hasil/objek
+// kerja yang lazim mengikuti angka pencapaian di CV berbahasa Inggris
+// (people≈orang, clients≈klien, projects≈proyek, hours≈jam, days≈hari,
+// months≈bulan, years≈tahun, plus kata hasil khas Inggris seperti
+// users/records/downloads). Tidak ada tumpang tindih ejaan dengan
+// satuan Indonesia, jadi hitungan teks Indonesia tidak berubah.
+const MEASURABLE_UNITS_EN = [
+  'users', 'customers', 'clients', 'records', 'transactions', 'projects',
+  'team members', 'members', 'people', 'students', 'orders', 'sales',
+  'leads', 'accounts', 'tickets', 'reports', 'documents', 'products',
+  'stores', 'branches', 'employees', 'hours', 'days', 'weeks', 'months',
+  'years', 'calls', 'emails', 'articles', 'posts', 'campaigns', 'events',
+  'participants', 'downloads', 'subscribers', 'followers', 'visitors',
+  'units', 'items', 'cases',
+]
+
+// Angka format Inggris: ribuan berpemisah koma (50,000 / 1,200,000)
+// dengan desimal titik opsional, atau angka polos/desimal (15 / 2.5).
+// Pemisah ribuan TITIK khas Indonesia tidak ditafsir ulang di sini —
+// pola angka ini hanya dipakai bersama penanda Inggris ($/USD, satuan
+// Inggris, akhiran K, pengganda x), tidak pernah berdiri sendiri.
+const MEASURABLE_NUMBER_EN = String.raw`\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?`
+
+// Pola hasil terukur berbahasa Inggris: nominal $/USD (termasuk $10K),
+// angka + satuan Inggris (termasuk notasi K: "50K users"), dan
+// pengganda Nx ("3x revenue"). Penjaga bawaan pola: "3x4" (pas foto)
+// dan "24x7" tidak cocok karena setelah x wajib ada batas kata; angka
+// tahun polos disaring terpisah di countMeasurableResults.
+const MEASURABLE_EN_RE = new RegExp(
+  String.raw`(?:us)?\$\s*(?:${MEASURABLE_NUMBER_EN})[kK]?|\busd\s*(?:${MEASURABLE_NUMBER_EN})[kK]?|(?:${MEASURABLE_NUMBER_EN})\s*[kK]\s*(?:${MEASURABLE_UNITS_EN.join('|')})|(?:${MEASURABLE_NUMBER_EN})\s*(?:${MEASURABLE_UNITS_EN.join('|')})|(?:${MEASURABLE_NUMBER_EN})x\b`,
+  'gi',
+)
+
 function countMeasurableResults(text: string): number {
   let t = text
+  // Pola Inggris diekstrak PALING AWAL, sebelum pembersih nomor HP di
+  // bawah menelan rangkaian angka koma panjang (baginya "1,200,000"
+  // terbaca seperti nomor telepon). Semua pola Inggris mensyaratkan
+  // penanda khas ($/USD/satuan Inggris/K/Nx) yang tidak pernah dihitung
+  // penghitung lama, jadi hasil hitung teks Indonesia tidak berubah.
+  let enCount = 0
+  t = t.replace(MEASURABLE_EN_RE, (m) => {
+    const num = /\d[\d.,]*/.exec(m)?.[0] ?? ''
+    // Tahun kalender polos bukan hasil terukur ("2020 users" terbaca
+    // sebagai pengguna tahun 2020), konsisten dengan pembersihan tahun
+    // di bawah — kecocokan seperti itu dibiarkan agar aturan lama yang
+    // membersihkannya. Nominal $/USD dan notasi K berangka mirip tahun
+    // tetap dihitung: penandanya menunjukkan jumlah, bukan tahun.
+    if (
+      /^(19|20)\d{2}$/.test(num) &&
+      !m.includes('$') &&
+      !/usd/i.test(m) &&
+      !/[kK]/.test(m)
+    ) {
+      return m
+    }
+    enCount++
+    return ' '
+  })
   // Buang rangkaian mirip nomor HP/telepon agar digitnya tidak terhitung.
   t = t.replace(/\+?\(?\d[\d\s().-]{6,}\d/g, ' ')
   // Buang tahun kalender 19xx/20xx (termasuk rentang tahun).
@@ -492,7 +550,7 @@ function countMeasurableResults(text: string): number {
   t = t.replace(/rp\s*\d[\d.,]*/gi, ' ')
   const unitMatches =
     t.match(/\d+(?:[.,]\d+)?\s*(%|juta|ribu|orang|klien|proyek|jam|hari|bulan|tahun)/gi) ?? []
-  return rpMatches.length + unitMatches.length
+  return enCount + rpMatches.length + unitMatches.length
 }
 
 // ---------- Struktur entri pengalaman (kedalaman entri) ----------

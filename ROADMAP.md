@@ -1144,6 +1144,46 @@ aksi 5/5, CV Inggris sarat klise frasa-lemah 0/2, salah eja Inggris
 mengurangi kerapian, penjaga tabrakan "teh", dan penjaga angka
 Romawi dua bahasa. Seluruh suite (225 uji) lolos dan build bersih.
 
+## Satuan & format Inggris pada hasil terukur (2026-11-25)
+
+Atas persetujuan pengguna ("Ya, lengkapi satuan Inggrisnya juga"),
+penghitung hasil terukur (`countMeasurableResults`) yang sebelumnya
+hanya mengenali persen, Rp, dan satuan Indonesia kini juga mengenali
+penanda Inggris — hanya memperluas pengenalan, ambang pemeriksaan
+(≥3 angka = poin penuh) TIDAK diubah:
+
+- **Satuan Inggris** (38 kata, sejajar daftar Indonesia):
+  users, customers, clients, records, transactions, projects,
+  team members, members, people, students, orders, sales, leads,
+  accounts, tickets, reports, documents, products, stores, branches,
+  employees, hours, days, weeks, months, years, calls, emails,
+  articles, posts, campaigns, events, participants, downloads,
+  subscribers, followers, visitors, units, items, cases.
+  Tidak ada tumpang tindih ejaan dengan satuan Indonesia.
+- **Format angka Inggris**: ribuan berpemisah koma (50,000 /
+  1,200,000) dan desimal titik. Pemisah ribuan TITIK khas Indonesia
+  tidak ditafsir ulang; pola angka Inggris hanya berlaku bersama
+  penanda Inggris.
+- **Mata uang Inggris**: $ dan USD (termasuk $10K), sejajar Rp.
+- **Notasi K** (50K users, 50K downloads) dan **pengganda Nx**
+  (3x revenue). Penjaga bawaan: "3x4" (pas foto) dan "24x7" tidak
+  cocok karena setelah x wajib ada batas kata; angka tahun polos
+  ("2020 students") disaring sebagai tahun, bukan hasil — kecuali
+  berpenanda $/USD/K yang menunjukkan jumlah.
+
+Urutan penghitung: pola Inggris diekstrak paling awal (agar angka
+koma panjang tidak tertelan pembersih nomor HP), lalu alur lama
+persis seperti sebelumnya. Lapisan contoh personal mewarisi otomatis
+karena memakai penemu yang sama per entri. **Patokan Indonesia
+TIDAK bergerak sama sekali**: kuat 96, menengah 63, lemah 19,
+lowongan 89/79 & 62/50, fresh graduate 55, demo 58→96 — terverifikasi
+satu per satu, termasuk perbandingan hitung lama-vs-baru pada kalimat
+Indonesia berformat khas (desimal koma, titik ribuan) yang identik.
+5 uji baru (blok "Satuan & format Inggris pada hasil terukur"):
+CV Inggris berangka Inggris penuh 5/5, pengganda Nx, penjaga tahun/
+versi/3x4/24x7, penjaga format Indonesia, dan pewarisan contoh
+personal. Seluruh suite (230 uji) lolos dan build bersih.
+
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
 - Akurasi yang terasa benar: hasil cocok dengan intuisi pengguna.

@@ -2950,6 +2950,152 @@ check(
   `kuat ID: ${isDominantEnglish(SAMPLE_CV)}, lemah ID: ${isDominantEnglish(WEAK_CV)}, kuat EN: ${isDominantEnglish(EN_STRONG_CV)}`,
 )
 
+// ---------- Satuan & format Inggris pada hasil terukur (2026-11-25) ----------
+// Penghitung hasil terukur kini juga mengenali satuan Inggris (users,
+// records, downloads, ...), angka ribuan koma (50,000 / 1,200,000),
+// nominal $/USD, notasi K (50K users, $10K), dan pengganda Nx — sejajar
+// perlakuan satuan Indonesia & Rp yang sudah ada, TANPA mengubah ambang
+// pemeriksaan (≥3 tetap penuh) dan tanpa mengubah hitungan teks
+// Indonesia. Patokan Indonesia di atas sudah terkunci TIDAK bergerak.
+
+const EN_MEASURABLE_CV = `David Chen
+david.chen@gmail.com | 0813-4444-5555 | linkedin.com/in/davidchen
+Jakarta, Indonesia
+
+Summary
+Operations specialist with broad experience in data processing, user support, and community program administration for growing companies in Indonesia.
+
+Experience
+Operations Specialist — PT Data Karya (2021 - Present)
+- Processed 50,000 records per day for the operations team.
+- Supported 15 users across two office branches.
+- Managed an annual community budget of $20,000 with full accountability.
+- Grew the help-center channel to 50K downloads in the first year.
+
+Education
+Bachelor of Information Systems — Universitas Gadjah Mada (2015 - 2019)
+
+Skills
+Data Entry, Microsoft Excel, SQL, Customer Support`
+
+const enMeasurable = analyzeCv(EN_MEASURABLE_CV)
+check(
+  'Inggris: satuan & format Inggris terhitung sebagai hasil terukur (50,000 records; 15 users; $20,000; 50K downloads = 4)',
+  checkOf(enMeasurable, 'hasil-terukur')?.score === 5 &&
+    (checkOf(enMeasurable, 'hasil-terukur')?.message.includes('Ditemukan 4 angka pencapaian') ?? false),
+  `skor ${checkOf(enMeasurable, 'hasil-terukur')?.score}/5; pesan: ${checkOf(enMeasurable, 'hasil-terukur')?.message.slice(0, 60)}…`,
+)
+
+const EN_MULTIPLIER_CV = `Tom Reed
+tom.reed@gmail.com | 0813-7777-8888
+
+Summary
+Growth staff with experience in reseller partnerships and onboarding improvements for digital products in Indonesia.
+
+Experience
+Growth Staff — PT Tumbuh Bersama (2022 - Present)
+- Grew revenue 3x year over year through reseller partnerships.
+- Improved activation 2x within one quarter after onboarding changes.
+
+Education
+Bachelor of Business — Universitas Padjadjaran (2016 - 2020)
+
+Skills
+Marketing, Partnerships, Microsoft Excel`
+
+check(
+  'Inggris: pengganda Nx terhitung sebagai hasil terukur (3x & 2x = 2)',
+  checkOf(analyzeCv(EN_MULTIPLIER_CV), 'hasil-terukur')?.score === 3 &&
+    (checkOf(analyzeCv(EN_MULTIPLIER_CV), 'hasil-terukur')?.message.includes('Ditemukan 2 angka pencapaian') ?? false),
+  `skor ${checkOf(analyzeCv(EN_MULTIPLIER_CV), 'hasil-terukur')?.score}/5; pesan: ${checkOf(analyzeCv(EN_MULTIPLIER_CV), 'hasil-terukur')?.message.slice(0, 60)}…`,
+)
+
+const EN_GUARD_CV = `Anna Cole
+anna.cole@gmail.com | 0813-8888-9999
+
+Summary
+Administrative assistant with experience in document filing, front desk support, and archive work for offices in Jakarta.
+
+Experience
+Admin Assistant — PT Arsip (2019 - 2021)
+- Filed documents for the class of 2020 students archive project.
+- Used version 2.0 of the internal filing application every day.
+- Prepared 3x4 ID photos for new employee files.
+- Updated the 24x7 service desk documentation binder.
+
+Education
+Senior High School — SMA Negeri 5 Jakarta (2016 - 2019)
+
+Skills
+Filing, Microsoft Word, Microsoft Excel`
+
+check(
+  'Penjaga Inggris: tahun polos (2020 students), nomor versi (2.0), pas foto 3x4, dan 24x7 TIDAK terhitung hasil terukur',
+  checkOf(analyzeCv(EN_GUARD_CV), 'hasil-terukur')?.score === 0 &&
+    (checkOf(analyzeCv(EN_GUARD_CV), 'hasil-terukur')?.message.includes('Ditemukan 0 angka pencapaian') ?? false),
+  `skor ${checkOf(analyzeCv(EN_GUARD_CV), 'hasil-terukur')?.score}/5; pesan: ${checkOf(analyzeCv(EN_GUARD_CV), 'hasil-terukur')?.message.slice(0, 60)}…`,
+)
+
+const ID_FORMAT_GUARD_CV = `Bambang Sutrisno
+bambang.s@gmail.com | 0812-1212-3434
+
+Ringkasan
+Staf penjualan berpengalaman melayani pelanggan ritel dan mengelola anggaran promosi toko.
+
+Pengalaman
+Staf Penjualan — PT Ritel Jaya (2022 - 2024)
+- Melayani 50,5 ribu pelanggan dan mengelola anggaran Rp 2.500.000 untuk 15 orang.
+
+Pendidikan
+SMA Negeri 3 Semarang (2016 - 2019)
+
+Keahlian
+Penjualan, Microsoft Excel, Kasir`
+
+check(
+  'Penjaga Indonesia: hitungan format khas Indonesia TIDAK berubah (50,5 ribu + 15 orang = 2; Rp titik-ribuan seperti perilaku lama)',
+  checkOf(analyzeCv(ID_FORMAT_GUARD_CV), 'hasil-terukur')?.score === 3 &&
+    (checkOf(analyzeCv(ID_FORMAT_GUARD_CV), 'hasil-terukur')?.message.includes('Ditemukan 2 angka pencapaian') ?? false),
+  `skor ${checkOf(analyzeCv(ID_FORMAT_GUARD_CV), 'hasil-terukur')?.score}/5; pesan: ${checkOf(analyzeCv(ID_FORMAT_GUARD_CV), 'hasil-terukur')?.message.slice(0, 60)}…`,
+)
+
+const EN_PERSONAL_MEAS_CV = `Lisa Park
+lisa.park@gmail.com | 0813-6666-7777
+
+Summary
+Data entry specialist with experience in high-volume document processing and archive management for logistics companies in Jakarta and Bekasi.
+
+Experience
+Data Entry Specialist — PT Arsip Data (2022 - Present)
+- Processed 50,000 records per day for the logistics documentation team.
+- Verified document completeness before forwarding files to the archive team.
+
+Archive Assistant — PT Simpan Karya (2020 - 2022)
+- Filed incoming documents into the company archive system.
+- Helped coworkers locate archived files whenever they requested them.
+
+Education
+Bachelor of Library Science — Universitas Indonesia (2016 - 2020)
+
+Skills
+Data Entry, Microsoft Excel, Archive Management`
+
+const enPersonalEntries = getExperienceEntryDetails(EN_PERSONAL_MEAS_CV)
+const enPersonalMeas = buildPersonalExamples(
+  analyzeCv(EN_PERSONAL_MEAS_CV),
+  EN_PERSONAL_MEAS_CV,
+  '',
+)['hasil-terukur']
+check(
+  'Inggris: contoh personal hasil-terukur memakai penemu yang sama (entri berangka Inggris terhitung; contoh mengutip entri tanpa angka)',
+  enPersonalEntries[0]?.measurableCount === 1 &&
+    enPersonalEntries[1]?.measurableCount === 0 &&
+    !!enPersonalMeas &&
+    enPersonalMeas.kutipanAsli.includes('Filed incoming documents') &&
+    !enPersonalMeas.kutipanAsli.includes('50,000'),
+  `entri per entri: ${enPersonalEntries.map((e) => e.measurableCount).join(', ')}; kutipan: ${enPersonalMeas?.kutipanAsli ?? '(tidak ada)'}`,
+)
+
 if (failures > 0) {
   console.error(`\n${failures} uji GAGAL`)
   process.exit(1)
