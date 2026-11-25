@@ -4,12 +4,15 @@ import {
   analyzeCv,
   countWords,
   detectPhone,
+  findFirstPersonIOccurrences,
   findPhone,
   findPortfolio,
+  findTypos,
   getExperienceEntryDetails,
   getPeriodExprs,
   getRoleWords,
   getSummarySection,
+  isDominantEnglish,
   priorityRanks,
   selectPriorities,
 } from '../src/lib/analyze'
@@ -2722,6 +2725,229 @@ check(
     strongCheck('nama-file')?.score === 2 &&
     (strongCheck('nama-file')?.message.includes('netral') ?? false),
   `CV_Budi_final ${checkOf(analyzeCv(SAMPLE_CV, { fileName: 'CV_Budi_final.pdf' }), 'nama-file')?.score}/2, tanpa file ${strongCheck('nama-file')?.score}/2`,
+)
+
+// ---------- Kamus bahasa Inggris (persetujuan pengguna 2026-11-25) ----------
+// CV berbahasa Inggris dinilai dengan kamus yang setara: kata kerja
+// aksi Inggris diperluas, klise Inggris masuk WEAK_PHRASES, salah eja
+// Inggris masuk TYPO_WORDS, dan kata ganti "I" berlebihan dinilai
+// dengan tiga penjaga anti-positif-palsu. Patokan Indonesia di atas
+// sudah terkunci TIDAK bergerak oleh penambahan ini.
+
+const EN_STRONG_CV = `Sarah Wijaya
+sarah.wijaya@gmail.com | 0812-3456-7890 | linkedin.com/in/sarahwijaya | github.com/sarahwijaya
+Jakarta, Indonesia
+
+Summary
+Data analyst with 4 years of experience turning raw operational data into dashboards and decisions for retail and logistics teams. Known for careful validation, clear documentation, and close collaboration with business users across Jakarta and Surabaya offices.
+
+Experience
+Data Analyst — PT Nusantara Retail (2022 - Present)
+- Built automated sales dashboards in Power BI used by 40 store managers across the region.
+- Increased reporting accuracy by 30% by redesigning the data validation pipeline in SQL.
+- Delivered a customer churn model that reduced churn by 12% within two quarters.
+- Coordinated with the finance team to streamline monthly closing reports, cutting preparation time by 25%.
+- Trained 15 new analysts on the internal analytics toolkit and documentation standards.
+
+Junior Data Analyst — PT Logistik Cepat (2020 - 2022)
+- Implemented data cleaning scripts in Python that processed 50,000 records per day.
+- Produced weekly performance reports for the operations team and presented findings to managers.
+- Resolved data discrepancies between warehouse and finance systems through systematic audits.
+- Optimized SQL queries that supported the main tracking dashboard, improving load time by 40%.
+
+Education
+Bachelor of Statistics — Universitas Indonesia (2016 - 2020)
+GPA: 3.85/4.00
+
+Skills
+SQL, Python, Power BI, Tableau, Microsoft Excel, Data Modeling, Statistics
+
+Languages
+Indonesian (Native), English (Fluent)`
+
+const enStrong = analyzeCv(EN_STRONG_CV)
+check(
+  'Inggris: CV kuat berbahasa Inggris memperoleh skor tinggi yang wajar',
+  enStrong.total >= 85 && enStrong.total <= 98,
+  `skor ${enStrong.total}/100 (${enStrong.label})`,
+)
+check(
+  'Inggris: kata kerja aksi Inggris (termasuk delivered/coordinated/implemented/optimized) terhitung penuh',
+  checkOf(enStrong, 'kata-kerja-aksi')?.score === 5 &&
+    (checkOf(enStrong, 'kata-kerja-aksi')?.message.includes('12 kata kerja aksi berbeda') ?? false),
+  `skor ${checkOf(enStrong, 'kata-kerja-aksi')?.score}/5; pesan: ${checkOf(enStrong, 'kata-kerja-aksi')?.message.slice(0, 60)}…`,
+)
+check(
+  'Inggris: CV kuat bersih dari klise & salah eja Inggris (frasa 2/2, kerapian 2/2)',
+  checkOf(enStrong, 'frasa-lemah')?.score === 2 && checkOf(enStrong, 'kerapian-bahasa')?.score === 2,
+  `frasa ${checkOf(enStrong, 'frasa-lemah')?.score}/2, kerapian ${checkOf(enStrong, 'kerapian-bahasa')?.score}/2`,
+)
+
+const EN_CLICHE_CV = `John Doe
+john.doe@gmail.com | 0813-1111-2222
+
+Summary
+I am a hard worker and a team player. I am a fast learner, self-motivated and detail-oriented. I can work under pressure and I am willing to be placed anywhere.
+
+Experience
+Administrative Staff — PT Maju Bersama (2021 - 2023)
+- Responsible for data entry and filing documents.
+- Responsible for preparing monthly reports for the manager.
+- Handled incoming phone calls and emails from customers.
+
+Education
+Senior High School — SMA Negeri 2 Bandung (2018 - 2021)
+
+Skills
+Microsoft Word, Microsoft Excel, Typing`
+
+const enCliche = analyzeCv(EN_CLICHE_CV)
+check(
+  'Inggris: CV sarat klise Inggris kehilangan poin frasa lemah (0/2, frasa disebut)',
+  checkOf(enCliche, 'frasa-lemah')?.score === 0 &&
+    (checkOf(enCliche, 'frasa-lemah')?.message.includes('"responsible for"') ?? false) &&
+    (checkOf(enCliche, 'frasa-lemah')?.message.includes('"team player"') ?? false) &&
+    (checkOf(enCliche, 'frasa-lemah')?.message.includes('"hard worker"') ?? false),
+  `skor ${checkOf(enCliche, 'frasa-lemah')?.score}/2; pesan: ${checkOf(enCliche, 'frasa-lemah')?.message.slice(0, 130)}…`,
+)
+
+check(
+  'Inggris: salah eja Inggris terdeteksi findTypos dengan koreksi yang benar',
+  (() => {
+    const found = findTypos('recieve managment experince seperate goverment')
+    const byWrong = new Map(found.map((t) => [t.wrong, t.right]))
+    return (
+      byWrong.get('recieve') === 'receive' &&
+      byWrong.get('managment') === 'management' &&
+      byWrong.get('experince') === 'experience' &&
+      byWrong.get('seperate') === 'separate' &&
+      byWrong.get('goverment') === 'government'
+    )
+  })(),
+  'recieve/managment/experince/seperate/goverment tertandai dengan baku yang benar',
+)
+
+const EN_TYPO_CV = `Jane Smith
+jane.smith@gmail.com | 0813-2222-3333
+
+Summary
+Administrative staff with three years of office experience in Jakarta, supporting daily operations and document control for the management team and other departments in the company office environment.
+
+Experience
+Administrative Staff — PT Bina Karya (2021 - 2024)
+- Recieve and record incoming documents from clients every day.
+- Prepared reports for the managment team each week.
+- Used my experince to train new staff members on office procedures.
+
+Education
+Diploma in Office Administration — Politeknik Negeri Jakarta (2018 - 2021)
+
+Skills
+Microsoft Word, Microsoft Excel, Filing, Data Entry`
+
+check(
+  'Inggris: salah eja Inggris mengurangi kerapian bahasa (1/2, kata disebut)',
+  checkOf(analyzeCv(EN_TYPO_CV), 'kerapian-bahasa')?.score === 1 &&
+    (checkOf(analyzeCv(EN_TYPO_CV), 'kerapian-bahasa')?.message.includes('"recieve"') ?? false) &&
+    (checkOf(analyzeCv(EN_TYPO_CV), 'kerapian-bahasa')?.message.includes('"managment"') ?? false),
+  `skor ${checkOf(analyzeCv(EN_TYPO_CV), 'kerapian-bahasa')?.score}/2; pesan: ${checkOf(analyzeCv(EN_TYPO_CV), 'kerapian-bahasa')?.message.slice(0, 120)}…`,
+)
+
+check(
+  'Penjaga tabrakan: kata "teh" yang sah dalam kalimat Indonesia TIDAK tertandai salah eja',
+  findTypos(
+    'setiap pagi saya menyajikan teh manis dan kopi untuk tamu kantor, lalu mencatat kebutuhan dapur dan menyusun laporan harian',
+  ).length === 0,
+  'kalimat berisi "teh" sebagai minuman menghasilkan 0 temuan typo',
+)
+
+const ID_ROMAN_CV = `Rina Amelia
+rina.amelia@gmail.com | 0812-7777-8888
+
+Ringkasan
+Staf administrasi berpengalaman dengan rekam jejak lomba dan pelatihan yang konsisten selama bekerja di kantor layanan publik daerah.
+
+Pengalaman
+Staf Administrasi — Dinas Pendidikan Kota Bandung (2019 - 2024)
+- Meraih Juara I lomba administrasi perkantoran tingkat kota pada tahun pertama bekerja.
+- Mengikuti pelatihan Tahap I dan Tahap II untuk peningkatan kompetensi staf.
+- Menyelesaikan pendidikan Semester I program pelatihan dengan nilai terbaik di kelas.
+- Mendapat Peringkat I pada seleksi staf teladan kantor tahun 2022.
+- Mengelola arsip dokumen dan melayani tamu yang datang ke kantor setiap hari.
+
+Pendidikan
+SMA Negeri 5 Bandung (2016 - 2019)
+
+Keahlian
+Microsoft Word, Microsoft Excel, Arsip, Pelayanan`
+
+check(
+  'Penjaga "I": CV Indonesia dengan angka Romawi "I" berulang TIDAK dihukum (bukan teks dominan Inggris)',
+  !isDominantEnglish(ID_ROMAN_CV) &&
+    findFirstPersonIOccurrences(ID_ROMAN_CV).length === 0 &&
+    checkOf(analyzeCv(ID_ROMAN_CV), 'kerapian-bahasa')?.score === 2,
+  `dominan Inggris: ${isDominantEnglish(ID_ROMAN_CV)}, kemunculan "I" terhitung: ${findFirstPersonIOccurrences(ID_ROMAN_CV).length}, kerapian ${checkOf(analyzeCv(ID_ROMAN_CV), 'kerapian-bahasa')?.score}/2`,
+)
+
+const EN_ROMAN_CV = `Michael Chen
+michael.chen@gmail.com | 0812-9999-0000
+
+Summary
+Training coordinator with experience designing multi-phase programs for the operations team at a logistics company, working with mentors and participants across the region.
+
+Experience
+Training Coordinator — PT Global Logistik (2020 - 2024)
+- Coordinated Phase I orientation for new staff members in the Jakarta office.
+- Designed Part I training modules for the warehouse team and the drivers.
+- Delivered Level I certification sessions for supervisors across the company.
+- Prepared Semester I coursework for the internal academy program in 2021.
+
+Education
+Bachelor of Education — Universitas Negeri Jakarta (2015 - 2019)
+
+Skills
+Training Design, Facilitation, Microsoft PowerPoint, Public Speaking`
+
+check(
+  'Penjaga "I": CV Inggris dengan angka Romawi "I" (Phase I, Part I, Level I, Semester I) TIDAK terhitung sebagai kata ganti',
+  isDominantEnglish(EN_ROMAN_CV) &&
+    findFirstPersonIOccurrences(EN_ROMAN_CV).length === 0 &&
+    checkOf(analyzeCv(EN_ROMAN_CV), 'kerapian-bahasa')?.score === 2,
+  `dominan Inggris: ${isDominantEnglish(EN_ROMAN_CV)}, kemunculan "I" terhitung: ${findFirstPersonIOccurrences(EN_ROMAN_CV).length}, kerapian ${checkOf(analyzeCv(EN_ROMAN_CV), 'kerapian-bahasa')?.score}/2`,
+)
+
+const EN_I_OVERUSE_CV = `David Lee
+david.lee@gmail.com | 0813-4444-5555
+
+Summary
+Sales executive with five years of experience in retail distribution, covering modern trade accounts across Java with a focus on the beverage category and key account management for the company.
+
+Experience
+Sales Executive — PT Sumber Minuman (2019 - 2024)
+- I managed a portfolio of 25 retail accounts in the Jakarta area.
+- I increased sales by 20% in my second year with the company.
+- I built strong relationships with store owners and distributors.
+- I created monthly sales reports for the regional manager.
+- I trained new sales representatives on the ordering system.
+
+Education
+Bachelor of Management — Universitas Bina Nusantara (2014 - 2018)
+
+Skills
+Sales, Negotiation, Microsoft Excel, Distribution`
+
+check(
+  'Inggris: kata ganti "I" berlebihan (5× "I + kata kerja") mengurangi kerapian (1/2, jumlah disebut)',
+  isDominantEnglish(EN_I_OVERUSE_CV) &&
+    findFirstPersonIOccurrences(EN_I_OVERUSE_CV).length === 5 &&
+    checkOf(analyzeCv(EN_I_OVERUSE_CV), 'kerapian-bahasa')?.score === 1 &&
+    (checkOf(analyzeCv(EN_I_OVERUSE_CV), 'kerapian-bahasa')?.message.includes('"I" muncul 5 kali') ?? false),
+  `kemunculan terhitung: ${findFirstPersonIOccurrences(EN_I_OVERUSE_CV).length}, kerapian ${checkOf(analyzeCv(EN_I_OVERUSE_CV), 'kerapian-bahasa')?.score}/2`,
+)
+check(
+  'Inggris: deteksi bahasa dominan tidak menyala untuk CV Indonesia (contoh bawaan & lemah)',
+  !isDominantEnglish(SAMPLE_CV) && !isDominantEnglish(WEAK_CV) && isDominantEnglish(EN_STRONG_CV),
+  `kuat ID: ${isDominantEnglish(SAMPLE_CV)}, lemah ID: ${isDominantEnglish(WEAK_CV)}, kuat EN: ${isDominantEnglish(EN_STRONG_CV)}`,
 )
 
 if (failures > 0) {

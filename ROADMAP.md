@@ -1100,6 +1100,50 @@ perbaikan AI dinaikkan 25 → 30 agar janji "AI memperbaiki semua
 yang gagal" tidak terpotong. 21 uji regresi baru (blok "Pengetatan
 lima dimensi baru"); seluruh suite lolos dan build bersih.
 
+## Kamus bahasa Inggris dilengkapi (2026-11-25)
+
+Atas persetujuan pengguna (menjawab pertanyaannya apakah situs bisa
+untuk CV berbahasa Inggris): tiga kamus pemeriksa yang sebelumnya
+khusus Indonesia kini dwibahasa, agar CV Inggris dinilai sama
+ketatnya. Logika pencocokan dan ambang TIDAK diubah — hanya isi
+kamus di `src/lib/analyze.ts` yang bertambah:
+
+- **ACTION_VERBS Inggris 11 → 35**: ditambah delivered, launched,
+  spearheaded, coordinated, achieved, generated, negotiated,
+  supervised, trained, mentored, implemented, executed, streamlined,
+  optimized, resolved, produced, presented, directed, oversaw,
+  facilitated, engineered, deployed, maintained, tested.
+- **WEAK_PHRASES +14 entri Inggris** (padanan langsung daftar
+  Indonesia): responsible for; hard worker; hardworking; team
+  player; fast learner; quick learner; self-motivated; self
+  motivated; detail-oriented; detail oriented; go-getter; go getter;
+  work under pressure; willing to be placed anywhere.
+- **TYPO_WORDS +28 entri Inggris**: recieve, seperate, occured,
+  managment, experince, experiance, definately, succesful, acheive,
+  developement, employement, knowlege, languge, similiar, writting,
+  tommorow, truely, wich, adress, collegue, commited, refering,
+  requirment, strenght, enviroment, goverment, accomodate,
+  responsibilty. Setiap bentuk "salah" bukan kata sah dalam Inggris
+  maupun Indonesia. Dua kandidat sengaja DITOLAK: 'teh' (kata
+  Indonesia yang sah untuk minuman) dan 'calender' (nama mesin yang
+  sah di industri kertas/tekstil — "calender operator" jabatan
+  sungguhan).
+- **Kata ganti "I" berlebihan** (padanan komponen "saya" pada
+  kerapian bahasa) diterapkan dengan tiga penjaga berlapis: teks
+  harus dominan Inggris menurut kata fungsi (≥10 kata fungsi Inggris
+  dan >2× kata fungsi Indonesia), "I" dicocokkan case-sensitive pada
+  teks asli, dan hanya dihitung bila langsung diikuti kata kerja
+  Inggris — pola angka Romawi "Juara I lomba …", "Phase I
+  orientation …" tidak pernah terhitung. Ambang sama: ≥4.
+
+**Patokan Indonesia TIDAK bergerak sama sekali** (syarat keras):
+kuat 96, menengah 63, lemah 19, lowongan 89/79 & 62/50, fresh
+graduate 55, demo 58→96 — terverifikasi satu per satu. 11 uji baru
+(blok "Kamus bahasa Inggris"): CV Inggris kuat 86 dengan kata kerja
+aksi 5/5, CV Inggris sarat klise frasa-lemah 0/2, salah eja Inggris
+mengurangi kerapian, penjaga tabrakan "teh", dan penjaga angka
+Romawi dua bahasa. Seluruh suite (225 uji) lolos dan build bersih.
+
 ## Parameter yang menentukan orang mau pakai (tolok ukurnya)
 
 - Akurasi yang terasa benar: hasil cocok dengan intuisi pengguna.

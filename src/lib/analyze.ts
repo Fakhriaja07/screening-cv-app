@@ -444,6 +444,33 @@ export const ACTION_VERBS = [
   'designed',
   'automated',
   'reduced',
+  // Inggris lanjutan (2026-11-25): kata kerja lampau kuat yang lazim di
+  // CV berbahasa Inggris, agar cakupan kamus Inggris setara dengan
+  // daftar Indonesia di atas (sebelumnya hanya 11 kata).
+  'delivered',
+  'launched',
+  'spearheaded',
+  'coordinated',
+  'achieved',
+  'generated',
+  'negotiated',
+  'supervised',
+  'trained',
+  'mentored',
+  'implemented',
+  'executed',
+  'streamlined',
+  'optimized',
+  'resolved',
+  'produced',
+  'presented',
+  'directed',
+  'oversaw',
+  'facilitated',
+  'engineered',
+  'deployed',
+  'maintained',
+  'tested',
 ]
 
 function countActionVerbs(lowerText: string): number {
@@ -702,6 +729,93 @@ export function findSayaOccurrences(rawText: string): TextOccurrence[] {
   return out
 }
 
+// ---------- Kata ganti "I" pada CV berbahasa Inggris ----------
+
+// Padanan komponen "saya berlebihan" untuk CV berbahasa Inggris
+// (2026-11-25): kata ganti orang pertama "I" yang berulang di bagian
+// pengalaman. Diterapkan dengan TIGA penjaga berlapis agar tidak
+// pernah menghukum CV Indonesia secara keliru:
+// (1) teks harus dominan bahasa Inggris menurut kata fungsi — teks
+//     Indonesia atau campuran tidak pernah masuk jalur ini;
+// (2) "I" dicocokkan case-sensitive pada teks ASLI (bukan huruf kecil),
+//     sehingga yang terhitung hanya huruf kapital "I" yang berdiri
+//     sendiri persis seperti kata ganti Inggris;
+// (3) "I" hanya dihitung bila langsung diikuti kata kerja Inggris
+//     (pola "I managed …", "I was …"). Pola angka Romawi yang lazim di
+//     CV Indonesia — "Juara I lomba …", "Tahap I …", "Semester I …",
+//     "Peringkat I …" — selalu diikuti kata Indonesia, jadi tidak
+//     terhitung; nama Bali seperti "I Made …" juga tidak, karena kata
+//     sesudahnya bukan kata kerja Inggris.
+const EN_FUNCTION_WORDS = new Set([
+  'the', 'and', 'of', 'to', 'in', 'for', 'with', 'on', 'at', 'by',
+  'from', 'an', 'a', 'is', 'are', 'was', 'were', 'be', 'been', 'or',
+  'it', 'its', 'my', 'our', 'your', 'their', 'this', 'that', 'these',
+  'those', 'who', 'which', 'when', 'where', 'while', 'also', 'into',
+])
+const ID_FUNCTION_WORDS = new Set([
+  'yang', 'dan', 'di', 'ke', 'dari', 'untuk', 'dengan', 'pada',
+  'adalah', 'ini', 'itu', 'juga', 'dalam', 'sebagai', 'atau', 'tidak',
+  'telah', 'selama', 'setiap', 'oleh', 'karena', 'dapat', 'bisa',
+  'saya', 'kami', 'kita', 'serta', 'maupun', 'antara', 'hingga',
+  'melalui', 'terhadap', 'berbagai',
+])
+
+// Bahasa dominan teks dari kata fungsi: bahasa Inggris harus jelas
+// mendominasi (≥10 kata fungsi Inggris DAN >2× kata fungsi Indonesia).
+// Di luar keadaan itu teks dianggap bukan CV Inggris dan komponen "I"
+// tidak dinilai sama sekali — pilihan aman untuk teks campuran.
+export function isDominantEnglish(rawText: string): boolean {
+  const tokens = rawText.toLowerCase().match(/[a-z]+/g) ?? []
+  let en = 0
+  let id = 0
+  for (const t of tokens) {
+    if (EN_FUNCTION_WORDS.has(t)) en++
+    else if (ID_FUNCTION_WORDS.has(t)) id++
+  }
+  return en >= 10 && en > id * 2
+}
+
+// Kata yang lazim langsung mengikuti kata ganti "I" dalam kalimat CV
+// Inggris: kata kerja bantu + kata kerja lampau umum (termasuk seluruh
+// kata kerja aksi Inggris pada ACTION_VERBS).
+const I_FOLLOW_WORDS = new Set([
+  'am', 'was', 'were', 'have', 'has', 'had', 'do', 'did', 'can',
+  'could', 'will', 'would',
+  'increased', 'managed', 'developed', 'built', 'led', 'created',
+  'improved', 'analyzed', 'designed', 'automated', 'reduced',
+  'delivered', 'launched', 'spearheaded', 'coordinated', 'achieved',
+  'generated', 'negotiated', 'supervised', 'trained', 'mentored',
+  'implemented', 'executed', 'streamlined', 'optimized', 'resolved',
+  'produced', 'presented', 'directed', 'oversaw', 'facilitated',
+  'engineered', 'deployed', 'maintained', 'tested',
+  'worked', 'handled', 'completed', 'assisted', 'prepared', 'ensured',
+  'served', 'wrote', 'ran', 'used', 'helped', 'supported', 'provided',
+  'performed', 'planned', 'organized', 'processed', 'monitored',
+  'documented', 'operated', 'collaborated', 'communicated',
+])
+
+// Semua kemunculan kata ganti "I" di bagian pengalaman yang lolos
+// ketiga penjaga di atas, sebagai offset di teks asli. Mengembalikan
+// array kosong untuk teks yang tidak dominan bahasa Inggris.
+export function findFirstPersonIOccurrences(rawText: string): TextOccurrence[] {
+  if (!isDominantEnglish(rawText)) return []
+  const out: TextOccurrence[] = []
+  for (const range of getExperienceSectionRanges(rawText)) {
+    const rawSection = rawText.slice(range.start, range.end)
+    const lead = rawSection.length - rawSection.trimStart().length
+    const section = rawSection.trim()
+    if (!section) continue
+    const base = range.start + lead
+    for (const m of section.matchAll(/\bI[ \t]+([A-Za-z]+)/g)) {
+      const next = (m[1] ?? '').toLowerCase()
+      if (!I_FOLLOW_WORDS.has(next)) continue
+      const idx = m.index ?? 0
+      out.push({ start: base + idx, end: base + idx + 1 })
+    }
+  }
+  return out
+}
+
 // ---------- Konsistensi format periode ----------
 
 export type PeriodFamily = 'tahun' | 'bulan' | 'angka'
@@ -780,6 +894,27 @@ export const WEAK_PHRASES: { core: string; display: string }[] = [
     core: 'bersedia ditempatkan dimana saja',
     display: 'bersedia ditempatkan dimana saja',
   },
+  // Klise bahasa Inggris (2026-11-25): padanan langsung daftar Indonesia
+  // di atas — klaim generik yang sama, dalam bahasa Inggris. Varian eja
+  // (bertanda hubung / tanpa) dimasukkan sebagai entri terpisah, meniru
+  // pola varian eja pada daftar Indonesia.
+  { core: 'responsible for', display: 'responsible for' },
+  { core: 'hard worker', display: 'hard worker' },
+  { core: 'hardworking', display: 'hardworking' },
+  { core: 'team player', display: 'team player' },
+  { core: 'fast learner', display: 'fast learner' },
+  { core: 'quick learner', display: 'quick learner' },
+  { core: 'self-motivated', display: 'self-motivated' },
+  { core: 'self motivated', display: 'self motivated' },
+  { core: 'detail-oriented', display: 'detail-oriented' },
+  { core: 'detail oriented', display: 'detail oriented' },
+  { core: 'go-getter', display: 'go-getter' },
+  { core: 'go getter', display: 'go getter' },
+  { core: 'work under pressure', display: '(able to) work under pressure' },
+  {
+    core: 'willing to be placed anywhere',
+    display: 'willing to be placed anywhere',
+  },
 ]
 
 export interface WeakPhraseOccurrence extends TextOccurrence {
@@ -832,6 +967,43 @@ export const TYPO_WORDS: { wrong: string; right: string }[] = [
   { wrong: 'efektifitas', right: 'efektivitas' },
   { wrong: 'obyek', right: 'objek' },
   { wrong: 'subyek', right: 'subjek' },
+  // Salah eja bahasa Inggris yang sangat lazim di CV (2026-11-25).
+  // Setiap bentuk "wrong" di sini BUKAN kata yang sah dalam bahasa
+  // Inggris maupun Indonesia, sehingga tidak ada risiko positif-palsu
+  // pada CV Indonesia. Dua kandidat sengaja TIDAK dimasukkan:
+  // 'teh' (salah eja "the", tetapi kata Indonesia yang sah untuk
+  // minuman — CV F&B Indonesia bisa memuatnya secara sah) dan
+  // 'calender' (salah eja "calendar", tetapi juga nama mesin yang sah
+  // di industri kertas/tekstil — "calender operator" adalah jabatan
+  // sungguhan).
+  { wrong: 'recieve', right: 'receive' },
+  { wrong: 'seperate', right: 'separate' },
+  { wrong: 'occured', right: 'occurred' },
+  { wrong: 'managment', right: 'management' },
+  { wrong: 'experince', right: 'experience' },
+  { wrong: 'experiance', right: 'experience' },
+  { wrong: 'definately', right: 'definitely' },
+  { wrong: 'succesful', right: 'successful' },
+  { wrong: 'acheive', right: 'achieve' },
+  { wrong: 'developement', right: 'development' },
+  { wrong: 'employement', right: 'employment' },
+  { wrong: 'knowlege', right: 'knowledge' },
+  { wrong: 'languge', right: 'language' },
+  { wrong: 'similiar', right: 'similar' },
+  { wrong: 'writting', right: 'writing' },
+  { wrong: 'tommorow', right: 'tomorrow' },
+  { wrong: 'truely', right: 'truly' },
+  { wrong: 'wich', right: 'which' },
+  { wrong: 'adress', right: 'address' },
+  { wrong: 'collegue', right: 'colleague' },
+  { wrong: 'commited', right: 'committed' },
+  { wrong: 'refering', right: 'referring' },
+  { wrong: 'requirment', right: 'requirement' },
+  { wrong: 'strenght', right: 'strength' },
+  { wrong: 'enviroment', right: 'environment' },
+  { wrong: 'goverment', right: 'government' },
+  { wrong: 'accomodate', right: 'accommodate' },
+  { wrong: 'responsibilty', right: 'responsibility' },
 ]
 
 export function findTypos(lowerText: string): { wrong: string; right: string }[] {
@@ -2106,13 +2278,20 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
     consistencyMessage = parts.join(' ')
   }
 
-  // Kerapian bahasa: kata ganti "saya" berlebihan di bagian pengalaman +
-  // kata yang sering salah eja. Ini pemeriksaan dasar dari daftar kecil,
+  // Kerapian bahasa: kata ganti orang pertama berlebihan ("saya", atau
+  // "I" untuk CV dominan bahasa Inggris) di bagian pengalaman + kata
+  // yang sering salah eja. Ini pemeriksaan dasar dari daftar kecil,
   // bukan pemeriksaan tata bahasa menyeluruh.
   const typos = findTypos(lower)
   // Jumlah kata "saya" diambil dari penemu kemunculan bersama di atas.
   const sayaCount = findSayaOccurrences(text).length
   const sayaOverused = sayaCount >= SAYA_OVERUSE_THRESHOLD
+  // Padanan Inggrisnya: kata ganti "I" berlebihan, hanya untuk teks
+  // dominan bahasa Inggris dan dengan penjaga anti-angka-Romawi pada
+  // penemunya (lihat findFirstPersonIOccurrences). Ambang yang sama.
+  const iCount = findFirstPersonIOccurrences(text).length
+  const iOverused = iCount >= SAYA_OVERUSE_THRESHOLD
+  const pronounOverused = sayaOverused || iOverused
   // Teks yang benar-benar kosong (0 kata) tidak bisa dinilai kerapiannya —
   // jangan beri nilai penuh yang lalu tampil sebagai "kekuatan" (audit
   // 2026-11-24: CV kosong sebelumnya menerima total 3 dari panjang +
@@ -2129,7 +2308,7 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
         ? typos.length > 0
           ? 0
           : 1
-        : Math.max(0, 2 - (typos.length > 0 ? 1 : 0) - (sayaOverused ? 1 : 0))
+        : Math.max(0, 2 - (typos.length > 0 ? 1 : 0) - (pronounOverused ? 1 : 0))
   const neatnessParts: string[] = []
   if (typos.length > 0) {
     neatnessParts.push(
@@ -2142,6 +2321,11 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   if (sayaOverused) {
     neatnessParts.push(
       `Kata "saya" muncul ${sayaCount} kali di bagian pengalaman. Poin pengalaman yang profesional biasanya langsung diawali kata kerja tanpa kata ganti orang pertama.`,
+    )
+  }
+  if (iOverused) {
+    neatnessParts.push(
+      `Kata ganti orang pertama "I" muncul ${iCount} kali di bagian pengalaman. Poin pengalaman yang profesional biasanya langsung diawali kata kerja tanpa kata ganti orang pertama.`,
     )
   }
   const neatnessMessage =
