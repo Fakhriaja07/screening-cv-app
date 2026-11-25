@@ -63,12 +63,13 @@ img {
   position: sticky;
   top: 0;
   z-index: 50;
-  /* Nyaris pekat + blur kuat: teks konten yang tergulir di bawah topbar
-     tidak boleh sampai terbaca seperti teks ganda di area header. */
-  background: rgba(255, 255, 255, 0.97);
-  backdrop-filter: blur(16px) saturate(1.5);
-  -webkit-backdrop-filter: blur(16px) saturate(1.5);
+  /* Latar PEKAT PENUH (alpha 1): translucency + blur sebelumnya masih
+     membiarkan teks yang digulir di bawah topbar terbaca samar seperti
+     teks ganda. Kini putih solid — tidak ada yang menembus sama sekali;
+     pemisah visual cukup dari border bawah + sombra sangat tipis. */
+  background: var(--surface);
   border-bottom: 1px solid var(--line);
+  box-shadow: 0 1px 10px rgba(15, 23, 42, 0.05);
 }
 .topbar-inner {
   max-width: var(--content-w);
