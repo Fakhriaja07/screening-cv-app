@@ -3144,6 +3144,23 @@ check(
     `hasil: ${filterRoleOptions('quality').map((o) => o.value).join(', ')}`,
   )
   check(
+    'Combobox: "fullstack"/"full stack"/"full-stack" menemukan Full Stack Developer (regresi laporan 2026-11-25)',
+    filterRoleOptions('fullstack')[0]?.value === 'Full Stack Developer' &&
+      filterRoleOptions('full stack')[0]?.value === 'Full Stack Developer' &&
+      filterRoleOptions('full-stack')[0]?.value === 'Full Stack Developer' &&
+      filterRoleOptions('full')[0]?.value === 'Full Stack Developer' &&
+      getRoleSkills('Full Stack Developer').id === 'full-stack' &&
+      getRoleSkills('fullstack').id === 'full-stack',
+    `fullstack: ${filterRoleOptions('fullstack').map((o) => o.value).join(', ')}`,
+  )
+  check(
+    'Combobox: ketikan tanpa spasi menemukan peran multi-kata lain ("dataanalyst", "qualitycontrol")',
+    filterRoleOptions('dataanalyst')[0]?.value === 'Data Analyst' &&
+      filterRoleOptions('qualitycontrol')[0]?.value === 'Quality Control' &&
+      filterRoleOptions('backenddeveloper')[0]?.value === 'Backend Developer',
+    `dataanalyst: ${filterRoleOptions('dataanalyst').map((o) => o.value).join(', ')}`,
+  )
+  check(
     'Combobox: ketikan kosong mengembalikan semua pilihan; ketikan asing kosong',
     filterRoleOptions('').length === ROLE_OPTIONS.length &&
       filterRoleOptions('xyzqq-tidak-ada').length === 0,

@@ -422,6 +422,19 @@ export const ROLE_SKILLS: RoleSkills[] = [
     ],
   },
   {
+    // Sengaja SEBELUM entri 'developer': pencocokan kamus memakai frasa
+    // terpanjang dan seri dimenangkan entri pertama, jadi kata kunci
+    // 'full stack'/'fullstack' (yang juga ada di entri developer)
+    // jatuh ke peran yang lebih spesifik ini.
+    id: 'full-stack',
+    label: 'Full Stack Developer',
+    keywords: ['full stack developer', 'fullstack developer', 'full-stack developer', 'full stack', 'fullstack', 'full-stack'],
+    skills: [
+      'JavaScript', 'TypeScript', 'React', 'Node.js & Express', 'REST API',
+      'SQL', 'MongoDB', 'Git & GitHub', 'HTML & CSS', 'Bahasa Inggris',
+    ],
+  },
+  {
     id: 'developer',
     label: 'Software Developer / Programmer',
     keywords: ['programmer', 'programer', 'software developer', 'developer', 'software engineer', 'web developer', 'full stack', 'fullstack', 'frontend', 'backend', 'mobile developer'],

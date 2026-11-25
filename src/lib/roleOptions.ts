@@ -36,6 +36,15 @@ function normalizeName(text: string): string {
   return text.toLowerCase().replace(/\s+/g, ' ').trim()
 }
 
+// Kunci pencocokan longgar: huruf kecil dengan spasi, tanda hubung,
+// dan titik dibuang — supaya ketikan tanpa spasi ("fullstack",
+// "dataanalyst", "qualitycontrol") tetap menemukan nama multi-kata
+// ("Full Stack Developer", "Data Analyst", "Quality Control"), dan
+// "full stack" = "full-stack" = "fullstack" dianggap sama.
+function squashName(text: string): string {
+  return text.toLowerCase().replace(/[\s.\-]+/g, '')
+}
+
 // Kunci pencocokan singkatan: huruf besar, titik dibuang — sejajar
 // normalizeAbbrKey di jobGlossary.ts, jadi "qc", "QC", dan "Q.C."
 // menunjuk singkatan yang sama.
@@ -74,9 +83,10 @@ export const ROLE_OPTIONS: RoleOption[] = [...byKey.values()].sort((a, b) =>
  * semua pilihan (daftar penuh saat kolom difokuskan). Kecocokan diberi
  * peringkat, dari yang paling spesifik:
  *   0 — singkatan persis sama ("qc" → Quality Control, "spv" → Supervisor)
- *   1 — nama diawali ketikan ("data" → Data Analyst)
+ *   1 — nama diawali ketikan ("data" → Data Analyst); juga dalam bentuk
+ *       longgar tanpa spasi/hubung ("fullstack" → Full Stack Developer)
  *   2 — singkatan diawali ketikan (minimal 2 huruf)
- *   3 — nama memuat ketikan sebagai potongan
+ *   3 — nama memuat ketikan sebagai potongan (termasuk bentuk longgar)
  *   4 — setiap kata ketikan muncul di nama (urutan bebas)
  * Di dalam satu peringkat, urutan tetap alfabetis mengikuti ROLE_OPTIONS.
  * Tidak ada hasil bukan kesalahan: teks bebas tetap boleh dipakai.
@@ -85,18 +95,25 @@ export function filterRoleOptions(query: string): RoleOption[] {
   const q = normalizeName(query)
   if (!q) return ROLE_OPTIONS
   const qAbbr = normalizeAbbr(query)
+  // Jalur longgar hanya untuk ketikan ≥3 huruf agar ketikan sangat
+  // pendek tidak memanen kecocokan lintas kata yang tidak dimaksud.
+  const qSquash = squashName(query)
+  const useSquash = qSquash.length >= 3
   const tiers: RoleOption[][] = [[], [], [], [], []]
   for (const opt of ROLE_OPTIONS) {
     const name = normalizeName(opt.value)
+    const nameSquash = squashName(opt.value)
     let tier = -1
     if (opt.abbrs.some((a) => normalizeAbbr(a) === qAbbr)) tier = 0
-    else if (name.startsWith(q)) tier = 1
+    else if (name.startsWith(q) || (useSquash && nameSquash.startsWith(qSquash)))
+      tier = 1
     else if (
       qAbbr.length >= 2 &&
       opt.abbrs.some((a) => normalizeAbbr(a).startsWith(qAbbr))
     )
       tier = 2
-    else if (name.includes(q)) tier = 3
+    else if (name.includes(q) || (useSquash && nameSquash.includes(qSquash)))
+      tier = 3
     else if (q.split(' ').every((w) => name.includes(w))) tier = 4
     if (tier >= 0) tiers[tier].push(opt)
   }
