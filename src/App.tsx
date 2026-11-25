@@ -974,7 +974,7 @@ export default function App() {
             </div>
 
           <label className="field">
-            <span>Posisi yang dilamar (opsional)</span>
+            <span>Posisi yang dilamar</span>
             <input
               type="text"
               value={targetRole}
@@ -984,7 +984,7 @@ export default function App() {
           </label>
 
           <label className="field">
-            <span>Deskripsi lowongan (opsional)</span>
+            <span>Deskripsi lowongan</span>
             <textarea
               value={jobDesc}
               onChange={(e) => setJobDesc(e.target.value)}

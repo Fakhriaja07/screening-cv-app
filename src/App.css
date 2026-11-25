@@ -34,12 +34,20 @@
   --radius-l: 18px;
   --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05), 0 14px 34px -22px rgba(15, 23, 42, 0.28);
   --topbar-h: 57px;
+  /* Lebar kolom isi + padding tepi halaman: SATU sumber kebenaran yang
+     dipakai topbar, layout, demo, hero, dan footer bersama-sama, agar
+     tepi logo topbar selalu sejajar tepi kolom isi di semua lebar. */
+  --content-w: 1080px;
+  --page-pad: 20px;
 }
 
 .page {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  /* Penjaga: tidak ada elemen yang boleh menggeser halaman menyamping
+     (clip tidak membuat wadah scroll baru, jadi sticky tetap bekerja). */
+  overflow-x: clip;
 }
 
 ::selection {
@@ -55,15 +63,17 @@ img {
   position: sticky;
   top: 0;
   z-index: 50;
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  /* Nyaris pekat + blur kuat: teks konten yang tergulir di bawah topbar
+     tidak boleh sampai terbaca seperti teks ganda di area header. */
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: blur(16px) saturate(1.5);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);
   border-bottom: 1px solid var(--line);
 }
 .topbar-inner {
-  max-width: 1080px;
+  max-width: var(--content-w);
   margin: 0 auto;
-  padding: 8px 20px;
+  padding: 8px var(--page-pad);
   min-height: var(--topbar-h);
   display: flex;
   align-items: center;
@@ -120,7 +130,7 @@ img {
     radial-gradient(520px 300px at 6% 112%, rgba(21, 94, 239, 0.5), transparent 60%),
     linear-gradient(135deg, var(--navy-900) 0%, var(--blue-600) 55%, var(--sky-500) 100%);
   color: #fff;
-  padding: 52px 20px 46px;
+  padding: 52px var(--page-pad) 46px;
 }
 .hero-inner {
   max-width: 880px;
@@ -269,10 +279,10 @@ img {
 
 /* ===== Layout ===== */
 .layout {
-  max-width: 1080px;
+  max-width: var(--content-w);
   width: 100%;
   margin: 0 auto;
-  padding: 20px;
+  padding: 20px var(--page-pad);
   display: grid;
   grid-template-columns: 430px 1fr;
   gap: 20px;
@@ -304,16 +314,15 @@ img {
 .form-card {
   margin-bottom: 0;
 }
-@media (min-width: 961px) {
-  .form-card {
-    position: sticky;
-    top: calc(var(--topbar-h) + 16px);
-    max-height: calc(100vh - var(--topbar-h) - 32px);
-    overflow-y: auto;
-  }
-}
+/* DULU (≥961px) kartu formulir sticky bertinggi tetap dengan scroll
+   internal: langkah 3 + tombol Analisis CV terperangkap di dalam kartu
+   dan label bisa terpotong tepi wadah scroll-nya. Kini formulir mengalir
+   mengikuti scroll halaman seperti isi lain — tidak ada scroll internal. */
 .result-col {
   min-width: 0;
+  /* Tujuan scrollIntoView sesudah analisis: beri ruang agar bagian atas
+     hasil (cincin skor) tidak tertutup topbar sticky. */
+  scroll-margin-top: calc(var(--topbar-h) + 12px);
 }
 
 /* ===== Langkah formulir ===== */
@@ -1235,6 +1244,9 @@ img {
   font-size: 14.5px;
   line-height: 1.6;
   margin: 10px 0 12px;
+  /* Lebar baca nyaman: baris teks template tidak membentang selebar
+     kartu pada layar lebar (tidak berpengaruh di ponsel). */
+  max-width: 68ch;
 }
 .skill-list {
   list-style: none;
@@ -1294,7 +1306,7 @@ img {
 /* ===== Footer ===== */
 .footer {
   text-align: center;
-  padding: 24px 20px 34px;
+  padding: 24px var(--page-pad) 34px;
   color: #64748b;
   font-size: 13.5px;
   line-height: 1.6;
@@ -1305,10 +1317,10 @@ img {
 
 /* ===== Contoh hasil (beranda) ===== */
 .demo-section {
-  max-width: 1080px;
+  max-width: var(--content-w);
   width: 100%;
   margin: 0 auto;
-  padding: 34px 20px 6px;
+  padding: 34px var(--page-pad) 6px;
   scroll-margin-top: calc(var(--topbar-h) + 12px);
 }
 .demo-head {
@@ -1456,14 +1468,18 @@ img {
 }
 
 @media (max-width: 560px) {
+  :root {
+    --page-pad: 12px;
+  }
   .topbar-inner {
-    padding: 6px 14px;
+    padding-top: 6px;
+    padding-bottom: 6px;
   }
   .topbar-link {
     display: none;
   }
   .hero {
-    padding: 38px 16px 34px;
+    padding: 38px var(--page-pad) 34px;
   }
   .hero-sub {
     font-size: 15.5px;
@@ -1483,11 +1499,11 @@ img {
     font-size: 22px;
   }
   .layout {
-    padding: 14px 12px;
+    padding: 14px var(--page-pad);
     gap: 14px;
   }
   .demo-section {
-    padding: 26px 12px 2px;
+    padding: 26px var(--page-pad) 2px;
   }
   .demo-head h2 {
     font-size: 25px;
@@ -1527,7 +1543,7 @@ img {
     font-size: 24px;
   }
   .footer {
-    padding: 20px 14px 30px;
+    padding: 20px var(--page-pad) 30px;
   }
 }
 
