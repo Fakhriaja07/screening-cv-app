@@ -52,6 +52,7 @@ import {
   buildPersonalExamples,
   type PersonalExample,
 } from './lib/personalExamples'
+import { filterRoleOptions, type RoleOption } from './lib/roleOptions'
 import { SAMPLE_CV } from './lib/sampleCv'
 import { DEMO_WEAK_CV } from './lib/demoCv'
 import { extractTextFromFile } from './lib/readFile'
@@ -80,6 +81,7 @@ const I = {
   zap: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z',
   book: 'M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15zM4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5',
   search: 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35',
+  chev: 'M6 9l6 6 6-6',
   spark: 'M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4L12 3zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z',
   trendUp: 'M23 6L13.5 15.5L8.5 10.5L1 18M17 6h6v6',
   trendDown: 'M23 18L13.5 8.5L8.5 13.5L1 6M17 18h6v-6',
@@ -291,6 +293,165 @@ function DemoSection() {
         <span className="ai-hint">Analisis standar gratis — tanpa daftar, dan CV tidak diunggah ke server.</span>
       </div>
     </section>
+  )
+}
+
+// ---------- Combobox posisi yang dilamar ----------
+// Kolom teks bebas dengan dropdown pilihan pekerjaan yang terfilter
+// mengikuti ketikan (permintaan pengguna 2026-11-25). Pilihan berasal
+// dari lib/roleOptions (turunan kamus skill + glosarium). Memilih
+// pilihan memasukkan NAMA LENGKAP pekerjaannya ke kolom; mengetik
+// posisi di luar daftar tetap sah dan diteruskan apa adanya — dropdown
+// tidak pernah memaksa pilihan. Nilai yang diteruskan ke analisis
+// selalu persis string di kolom ini.
+function RoleCombobox({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (v: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [highlight, setHighlight] = useState(-1)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLUListElement>(null)
+  const optionRefs = useRef<(HTMLLIElement | null)[]>([])
+  const options = useMemo(() => filterRoleOptions(value), [value])
+  const listId = 'role-combo-list'
+
+  // Baris tersorot selalu terlihat: gulir daftar internal mengikuti
+  // navigasi keyboard, tanpa menggeser halaman.
+  useEffect(() => {
+    if (!open || highlight < 0) return
+    const el = optionRefs.current[highlight]
+    const list = listRef.current
+    if (!el || !list) return
+    if (el.offsetTop < list.scrollTop) {
+      list.scrollTop = el.offsetTop
+    } else if (el.offsetTop + el.offsetHeight > list.scrollTop + list.clientHeight) {
+      list.scrollTop = el.offsetTop + el.offsetHeight - list.clientHeight
+    }
+  }, [highlight, open])
+
+  function choose(opt: RoleOption) {
+    onChange(opt.value)
+    setOpen(false)
+    setHighlight(-1)
+    inputRef.current?.focus()
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      if (!open) setOpen(true)
+      else setHighlight((h) => (h < 0 ? 0 : Math.min(h + 1, options.length - 1)))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (!open) setOpen(true)
+      else
+        setHighlight((h) =>
+          h < 0 ? options.length - 1 : Math.max(h - 1, 0),
+        )
+    } else if (e.key === 'Enter') {
+      if (open && highlight >= 0 && options[highlight]) {
+        e.preventDefault()
+        choose(options[highlight])
+      }
+    } else if (e.key === 'Escape') {
+      if (open) {
+        e.preventDefault()
+        setOpen(false)
+        setHighlight(-1)
+      }
+    }
+  }
+
+  return (
+    <div
+      className="combo"
+      onBlur={(e) => {
+        // Tutup bila fokus benar-benar meninggalkan combobox; klik pada
+        // pilihan ditangani onMouseDown (mencegah blur) sebelum ini.
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+          setOpen(false)
+          setHighlight(-1)
+        }
+      }}
+    >
+      <input
+        ref={inputRef}
+        type="text"
+        role="combobox"
+        aria-label="Posisi yang dilamar"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-activedescendant={
+          open && highlight >= 0 ? `${listId}-${highlight}` : undefined
+        }
+        aria-autocomplete="list"
+        autoComplete="off"
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value)
+          setOpen(true)
+          setHighlight(-1)
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={handleKeyDown}
+        placeholder="Ketik atau pilih posisi, mis. Data Analyst"
+      />
+      <button
+        type="button"
+        className={`combo-toggle${open ? ' open' : ''}`}
+        aria-label="Tampilkan atau sembunyikan pilihan pekerjaan"
+        tabIndex={-1}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => {
+          setOpen((o) => !o)
+          inputRef.current?.focus()
+        }}
+      >
+        <Icon d={I.chev} size={18} />
+      </button>
+      {open && (
+        <ul
+          className="combo-list"
+          role="listbox"
+          id={listId}
+          ref={listRef}
+          aria-label="Pilihan pekerjaan"
+        >
+          {options.map((opt, i) => (
+            <li
+              key={opt.value}
+              id={`${listId}-${i}`}
+              role="option"
+              aria-selected={i === highlight}
+              ref={(el) => {
+                optionRefs.current[i] = el
+              }}
+              className={`combo-option${i === highlight ? ' active' : ''}`}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                choose(opt)
+              }}
+              onMouseEnter={() => setHighlight(i)}
+            >
+              <span className="combo-name">{opt.value}</span>
+              {opt.abbrs.length > 0 && (
+                <span className="combo-abbr">{opt.abbrs.join(' · ')}</span>
+              )}
+            </li>
+          ))}
+          {options.length === 0 && (
+            <li className="combo-empty">
+              Tidak ada pilihan yang cocok — posisi yang kamu ketik tetap
+              bisa dipakai apa adanya.
+            </li>
+          )}
+        </ul>
+      )}
+    </div>
   )
 }
 
@@ -973,15 +1134,10 @@ export default function App() {
               <span className="step-chip">Opsional</span>
             </div>
 
-          <label className="field">
+          <div className="field">
             <span>Posisi yang dilamar</span>
-            <input
-              type="text"
-              value={targetRole}
-              onChange={(e) => setTargetRole(e.target.value)}
-              placeholder="Mis. Data Analyst"
-            />
-          </label>
+            <RoleCombobox value={targetRole} onChange={setTargetRole} />
+          </div>
 
           <label className="field">
             <span>Deskripsi lowongan</span>

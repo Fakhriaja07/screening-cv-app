@@ -84,6 +84,7 @@ import {
   getCheckExample,
   getRoleSkills,
 } from '../src/lib/examples'
+import { ROLE_OPTIONS, filterRoleOptions } from '../src/lib/roleOptions'
 import {
   buildReportText,
   formatReportDate,
@@ -3095,6 +3096,60 @@ check(
     !enPersonalMeas.kutipanAsli.includes('50,000'),
   `entri per entri: ${enPersonalEntries.map((e) => e.measurableCount).join(', ')}; kutipan: ${enPersonalMeas?.kutipanAsli ?? '(tidak ada)'}`,
 )
+
+// ---------- Combobox posisi: daftar pilihan turunan + pemfilteran ----------
+// Pilihan berasal dari kamus skill (examples.ts) + glosarium
+// (jobGlossary.ts); tidak boleh ada duplikat, harus terurut alfabetis,
+// dan label fallback "Umum / Fresh Graduate" bukan posisi — tidak ikut.
+{
+  const keys = ROLE_OPTIONS.map((o) => o.value.toLowerCase())
+  check(
+    'Combobox: pilihan tanpa duplikat & terurut alfabetis',
+    new Set(keys).size === keys.length &&
+      keys.every((k, i) => i === 0 || keys[i - 1] < k),
+    `${ROLE_OPTIONS.length} pilihan unik terurut`,
+  )
+  check(
+    'Combobox: memuat peran kamus & nama lengkap glosarium, tanpa label fallback',
+    ROLE_OPTIONS.some((o) => o.value === 'Data Analyst') &&
+      ROLE_OPTIONS.some((o) => o.value === 'Quality Control') &&
+      !ROLE_OPTIONS.some((o) => o.value.includes('Umum')),
+    'Data Analyst & Quality Control ada; "Umum / Fresh Graduate" tidak ikut',
+  )
+  check(
+    'Combobox: singkatan tergabung per nama (R&D + RND satu pilihan)',
+    ROLE_OPTIONS.filter((o) => o.value === 'Research and Development').length === 1 &&
+      ROLE_OPTIONS.find((o) => o.value === 'Research and Development')!.abbrs.length === 2,
+    'satu entri "Research and Development" membawa dua singkatan',
+  )
+  check(
+    'Combobox: ketik "qc" menemukan Quality Control lewat singkatan',
+    filterRoleOptions('qc')[0]?.value === 'Quality Control',
+    `hasil: ${filterRoleOptions('qc').map((o) => o.value).join(', ')}`,
+  )
+  check(
+    'Combobox: ketik "spv" menemukan Supervisor lewat singkatan',
+    filterRoleOptions('spv')[0]?.value === 'Supervisor',
+    `hasil: ${filterRoleOptions('spv').map((o) => o.value).join(', ')}`,
+  )
+  check(
+    'Combobox: ketik "rnd" menemukan Research and Development',
+    filterRoleOptions('rnd')[0]?.value === 'Research and Development',
+    `hasil: ${filterRoleOptions('rnd').map((o) => o.value).join(', ')}`,
+  )
+  check(
+    'Combobox: ketik nama menemukan peran terkait, terurut',
+    JSON.stringify(filterRoleOptions('quality').map((o) => o.value)) ===
+      JSON.stringify(['Quality Assurance', 'Quality Control', 'Quality Engineer']),
+    `hasil: ${filterRoleOptions('quality').map((o) => o.value).join(', ')}`,
+  )
+  check(
+    'Combobox: ketikan kosong mengembalikan semua pilihan; ketikan asing kosong',
+    filterRoleOptions('').length === ROLE_OPTIONS.length &&
+      filterRoleOptions('xyzqq-tidak-ada').length === 0,
+    'kosong = daftar penuh (teks bebas tetap sah di luar daftar)',
+  )
+}
 
 if (failures > 0) {
   console.error(`\n${failures} uji GAGAL`)

@@ -455,6 +455,80 @@ img {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+/* ===== Combobox posisi (dropdown bisa dicari dengan diketik) ===== */
+.combo {
+  position: relative;
+}
+.combo input {
+  padding-right: 46px;
+}
+.combo-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 44px;
+  height: 100%;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.combo-toggle svg {
+  transition: transform 0.15s ease;
+}
+.combo-toggle.open svg {
+  transform: rotate(180deg);
+}
+.combo-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-card);
+  /* ±8 baris terlihat; sisanya digulir di dalam daftar, bukan halaman. */
+  max-height: 356px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.combo-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 9px 10px;
+  border-radius: var(--radius-s);
+  font-size: 15px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.combo-option.active {
+  background: var(--blue-50);
+}
+.combo-abbr {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.combo-empty {
+  padding: 12px 10px;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
 .form-actions {
   display: flex;
   gap: 10px;
