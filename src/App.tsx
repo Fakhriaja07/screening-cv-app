@@ -1261,18 +1261,18 @@ export default function App() {
         <section className="result-col" ref={resultRef}>
           {!result ? (
             <div className="card empty-card">
-              <span className="badge badge-soft">Contoh hasil — ilustrasi</span>
-              <div className="empty-flex">
-                <ScoreRing score={78} size={130} />
-                <div>
-                  <h3>Seperti ini tampilan hasilmu nanti</h3>
-                  <p>
-                    Skor keseluruhan, label kesiapan, rincian per aspek, daftar kekuatan,
-                    prioritas perbaikan, dan cek kata kunci lowongan. Isi form di samping
-                    lalu klik <strong>Analisis CV</strong>.
-                  </p>
-                </div>
-              </div>
+              <h3>Hasil analisismu akan muncul di sini</h3>
+              <ul className="empty-list">
+                <li><Icon d={I.check} size={15} /> Skor keseluruhan &amp; label kesiapan</li>
+                <li><Icon d={I.check} size={15} /> Rincian skor per aspek</li>
+                <li><Icon d={I.check} size={15} /> Kekuatan CV-mu</li>
+                <li><Icon d={I.check} size={15} /> Prioritas perbaikan, dari yang paling berdampak</li>
+                <li><Icon d={I.check} size={15} /> Cek kata kunci lowongan (bila deskripsi lowongan diisi)</li>
+                <li><Icon d={I.check} size={15} /> Hasil Analisis AI (bila kamu memakainya)</li>
+              </ul>
+              <p className="empty-hint">
+                Isi form di samping lalu klik <strong>Analisis CV</strong>.
+              </p>
             </div>
           ) : (
             <>

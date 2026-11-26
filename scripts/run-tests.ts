@@ -1910,6 +1910,19 @@ check(
     appTsxText.includes('loadPdfLib().catch(() => {})'),
   'efek pra-muat mengimpor lib/pdf segera setelah aiResult ada, selagi deployment tab masih aktif',
 )
+check(
+  'Placeholder hasil: tanpa skor ilustrasi — ringkas berisi daftar isi hasil (keputusan pengguna 2026-11-26)',
+  !appTsxText.includes('Contoh hasil — ilustrasi') &&
+    !appTsxText.includes('Seperti ini tampilan hasilmu nanti') &&
+    !appTsxText.includes('score={78}') &&
+    !appTsxText.includes('empty-flex') &&
+    appTsxText.includes('Hasil analisismu akan muncul di sini') &&
+    appTsxText.includes('empty-list') &&
+    appTsxText.includes('Cek kata kunci lowongan (bila deskripsi lowongan diisi)') &&
+    !appCssText.includes('.empty-flex') &&
+    /\.empty-card \{\s*display: none;/.test(appCssText),
+  'placeholder lama (cincin 78/100 + label ilustrasi) hilang; placeholder baru tanpa angka, tersembunyi di lebar bertumpuk',
+)
 const pdfFileAi = buildReportPdf(analyzeCv(SAMPLE_CV, { targetRole: 'Data Analyst' }), {
   ai: FAKE_AI,
   targetRole: 'Data Analyst',
