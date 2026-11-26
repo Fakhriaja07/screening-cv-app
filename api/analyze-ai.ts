@@ -113,6 +113,16 @@ const MAX_ROLE_VERDICT_CHARS = 1500
 // lebih besar), jadi batas waktu dan jatah token dinaikkan dari nilai
 // lama (55 detik / 3000 token).
 const UPSTREAM_TIMEOUT_MS = 75_000
+// Batas upstream khusus panggilan terpecah (mode "core" cadangan &
+// "fixes") pada jalur non-streaming: 110 detik. Bukti live 2026-11-26
+// malam: model gratis aktif membutuhkan ±90–95 detik per panggilan
+// berapa pun ukuran payload-nya, sehingga plafon 75 detik jalur
+// non-streaming membunuh SETIAP panggilan batch (502 berulang pada
+// dua run uji), sementara panggilan streaming berbatas 150 detik
+// berhasil pada ±90 detik. 110 detik memberi ruang di atas kebutuhan
+// teramati itu, dan kasus terburuknya (header 110 + baca body 110 =
+// 220 detik) tetap di bawah batas klien 240 detik.
+export const SPLIT_CALL_TIMEOUT_MS = 110_000
 const NONSTREAM_MAX_TOKENS = 6500
 // Jatah token per mode pada jalur non-streaming: keluaran mode "core"
 // (tanpa perbaikanLengkap) dan mode "fixes" (≤6 item) jauh lebih kecil
@@ -1158,6 +1168,9 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
       : buildPrompt(cvText, targetRole, jobDesc, effectiveChecks, roleContext, mode === 'core' ? 'core' : 'full')
   const maxTokens =
     mode === 'core' ? CORE_MAX_TOKENS : mode === 'fixes' ? FIXES_MAX_TOKENS : NONSTREAM_MAX_TOKENS
+  // Panggilan terpecah memakai batas upstream yang lebih longgar
+  // (lihat SPLIT_CALL_TIMEOUT_MS); mode "full" mempertahankan 75 detik.
+  const upstreamTimeoutMs = mode === 'full' ? UPSTREAM_TIMEOUT_MS : SPLIT_CALL_TIMEOUT_MS
 
   if (cvText.length < MIN_CV_CHARS) {
     res.status(400).json({
@@ -1213,7 +1226,7 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
     withReasoning: boolean
   }): Promise<Response> => {
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS)
+    const timer = setTimeout(() => controller.abort(), upstreamTimeoutMs)
     try {
       return await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -1316,7 +1329,7 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
     }
   } catch (err) {
     if (err instanceof UpstreamTimeoutError) {
-      console.error(`[analyze-ai] Timeout ${UPSTREAM_TIMEOUT_MS / 1000} detik menunggu OpenRouter`)
+      console.error(`[analyze-ai] Timeout ${upstreamTimeoutMs / 1000} detik menunggu OpenRouter`)
       res.status(502).json({
         error: 'Layanan AI terlalu lama merespons. Coba lagi — hasil analisis standar tetap bisa dipakai.',
       })
@@ -1368,12 +1381,12 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
     data = await Promise.race([
       aiResponse.json(),
       new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new UpstreamTimeoutError()), UPSTREAM_TIMEOUT_MS)
+        setTimeout(() => reject(new UpstreamTimeoutError()), upstreamTimeoutMs)
       }),
     ])
   } catch (err) {
     if (err instanceof UpstreamTimeoutError) {
-      console.error(`[analyze-ai] Timeout ${UPSTREAM_TIMEOUT_MS / 1000} detik membaca body OpenRouter`)
+      console.error(`[analyze-ai] Timeout ${upstreamTimeoutMs / 1000} detik membaca body OpenRouter`)
       res.status(502).json({
         error: 'Layanan AI terlalu lama merespons. Coba lagi — hasil analisis standar tetap bisa dipakai.',
       })

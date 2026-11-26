@@ -111,8 +111,10 @@ export function isRetryableAiError(err: unknown): boolean {
 // Batas waktu sisi klien (audit 2026-11-24: sebelumnya fetch tanpa
 // batas sama sekali — koneksi yang menggantung membuat status
 // "menganalisis" berputar selamanya). Nilai di atas batas server
-// (aliran 150 detik; non-streaming 75 detik × maks 3 percobaan) dengan
-// margin, agar hanya koneksi yang benar-benar mati yang diputus di sini.
+// (aliran 150 detik; non-streaming 75 detik untuk mode "full" dan
+// 110 detik untuk panggilan terpecah core/fixes — kasus terburuk
+// header + baca body 220 detik) dengan margin, agar hanya koneksi
+// yang benar-benar mati yang diputus di sini.
 const NONSTREAM_CLIENT_TIMEOUT_MS = 240_000
 const STREAM_CLIENT_TIMEOUT_MS = 200_000
 

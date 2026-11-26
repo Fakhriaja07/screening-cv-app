@@ -116,6 +116,7 @@ import handler, {
   parseRoleContext,
   shapeResultForMode,
   RATE_LIMIT_MAX,
+  SPLIT_CALL_TIMEOUT_MS,
   FIX_BATCH_SIZE as SERVER_FIX_BATCH_SIZE,
 } from '../api/analyze-ai.js'
 const MEDIUM_CV = `Budi Santoso
@@ -2881,6 +2882,11 @@ for (let i = 0; i < RATE_LIMIT_MAX + 1; i++) {
 }
 const rlOtherIpStatus = await callHandlerForRateLimit('198.51.100.24')
 if (savedOpenRouterKey !== undefined) process.env.OPENROUTER_API_KEY = savedOpenRouterKey
+check(
+  'Timeout AI: panggilan terpecah (core/fixes) berbatas upstream 110 detik, di atas kebutuhan model teramati',
+  SPLIT_CALL_TIMEOUT_MS === 110_000,
+  'bukti live 2026-11-26: batch non-streaming berbatas 75 detik selalu 502 (model butuh ±90 dtk/panggilan) sementara streaming 150 detik berhasil — plafon panggilan terpecah dinaikkan ke 110 dtk, tetap di bawah batas klien 240 dtk',
+)
 check(
   'Rate limit AI: permintaan ke-37 dari IP yang sama ditolak 429; IP lain tidak ikut terkunci',
   rlStatuses.slice(0, RATE_LIMIT_MAX).every((s) => s === 500) &&
