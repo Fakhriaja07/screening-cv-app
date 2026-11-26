@@ -71,6 +71,7 @@ export function buildReportText(result: AnalysisResult, opts: ReportOptions = {}
   if (ai) {
     lines.push('', 'ANALISIS AI:')
     if (ai.ringkasan) lines.push('', `Ringkasan: ${ai.ringkasan}`)
+    if (ai.penilaianPosisi) lines.push('', `Penilaian Posisi: ${ai.penilaianPosisi}`)
     if (ai.saranPenulisanUlang.length > 0) {
       lines.push('', 'Saran Penulisan Ulang:')
       ai.saranPenulisanUlang.forEach((r, i) => {

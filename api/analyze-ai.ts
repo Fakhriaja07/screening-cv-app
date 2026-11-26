@@ -45,6 +45,22 @@ interface AiResult {
   kekurangan: string[]
   saranRingkasan: string
   perbaikanLengkap: FixItem[]
+  // Penilaian kecocokan CV dengan posisi target (2–4 kalimat). Diisi
+  // model hanya bila konteks posisi diberikan; string kosong bila
+  // tidak. OPSIONAL di seluruh jalur validasi: ketiadaannya tidak
+  // menggagalkan hasil dan tidak dihitung sebagai isi substantif.
+  penilaianPosisi: string
+}
+
+// Konteks posisi terstruktur dari frontend, diturunkan dari kamus
+// skill situs sendiri: nama posisi tampilan + skill yang diharapkan
+// peran itu, dipilah mana yang sudah terbukti di CV dan mana yang
+// belum muncul. Inilah satu-satunya rujukan skill posisi bagi model.
+export interface RoleContext {
+  posisi: string
+  skillDiharapkan: string[]
+  skillAda: string[]
+  skillBelum: string[]
 }
 
 // Konteks satu pemeriksaan standar yang gagal, dikirim frontend dari
@@ -71,6 +87,15 @@ const MAX_ROLE_CHARS = 200
 // (audit 2026-11-24; batas dinaikkan dari 25 pada 2026-11-24).
 const MAX_FIX_CHECKS = 30
 const MAX_FIX_ITEMS = 30
+
+// Konteks posisi dari frontend: kamus peran memuat paling banyak 10
+// skill per peran; batas 15 memberi ruang tanpa membuka prompt ke
+// daftar karangan pemanggil. Tiap nama skill dipotong 60 karakter.
+const MAX_ROLE_SKILL_ITEMS = 15
+const MAX_ROLE_SKILL_CHARS = 60
+// penilaianPosisi dibatasi 2–4 kalimat oleh prompt; 1500 karakter
+// adalah plafon keras normalisasi agar bidang ini tidak membengkak.
+const MAX_ROLE_VERDICT_CHARS = 1500
 
 // Batas waktu menunggu respons OpenRouter per permintaan. Model gratis bisa
 // sangat lambat; tanpa batas ini fungsi serverless menggantung sampai
@@ -176,11 +201,51 @@ export function parseFailedChecks(value: unknown): FailedCheckContext[] {
   return out
 }
 
+// Validasi + sanitasi konteks posisi dari body permintaan, dengan pola
+// yang sama seperti parseFailedChecks: tipe tak sah dibuang, tiap field
+// dipotong ke batasnya, duplikat dibuang. Konteks tanpa nama posisi
+// dianggap tidak ada (null) — perilaku lama berlaku persis. Skill yang
+// tercantum sekaligus di "ada" dan "belum" dimenangkan daftar "ada"
+// (bukti di CV lebih kuat daripada ketiadaan hasil pencocokan klien).
+export function parseRoleContext(value: unknown): RoleContext | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const obj = value as Record<string, unknown>
+  const posisi = asString(obj.posisi).trim().slice(0, MAX_ROLE_CHARS)
+  if (!posisi) return null
+  const cleanList = (v: unknown): string[] => {
+    if (!Array.isArray(v)) return []
+    const out: string[] = []
+    const seen = new Set<string>()
+    for (const item of v) {
+      // Nama skill hanya sah sebagai string — angka/boolean/objek dari
+      // pemanggil dibuang, tidak diubah paksa menjadi "skill".
+      if (typeof item !== 'string') continue
+      const s = item.trim().slice(0, MAX_ROLE_SKILL_CHARS)
+      if (!s) continue
+      const key = s.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(s)
+      if (out.length >= MAX_ROLE_SKILL_ITEMS) break
+    }
+    return out
+  }
+  const skillAda = cleanList(obj.skillAda)
+  const adaKeys = new Set(skillAda.map((s) => s.toLowerCase()))
+  return {
+    posisi,
+    skillDiharapkan: cleanList(obj.skillDiharapkan),
+    skillAda,
+    skillBelum: cleanList(obj.skillBelum).filter((s) => !adaKeys.has(s.toLowerCase())),
+  }
+}
+
 function buildPrompt(
   cvText: string,
   targetRole: string,
   jobDesc: string,
   checks: FailedCheckContext[],
+  roleCtx: RoleContext | null,
 ): string {
   const rolePart = targetRole
     ? `\nPOSISI YANG DILAMAR: ${targetRole}\n`
@@ -201,6 +266,35 @@ function buildPrompt(
         '',
       ].join('\n')
     : '\n(Tidak ada daftar pemeriksaan yang dikirim — "perbaikanLengkap" boleh berupa array kosong.)\n'
+  // Blok konteks posisi: rujukan skill posisi SATU-SATUNYA bagi model,
+  // diturunkan dari kamus situs — bukan pengetahuan umum model.
+  const roleCtxPart = roleCtx
+    ? [
+        '',
+        `KONTEKS POSISI "${roleCtx.posisi}" (dari kamus skill situs — satu-satunya rujukan skill untuk posisi ini):`,
+        ...(roleCtx.skillDiharapkan.length
+          ? [`- Skill yang diharapkan posisi ini: ${roleCtx.skillDiharapkan.join(', ')}`]
+          : []),
+        ...(roleCtx.skillAda.length
+          ? [`- Skill posisi yang SUDAH terbukti ada di CV: ${roleCtx.skillAda.join(', ')}`]
+          : []),
+        ...(roleCtx.skillBelum.length
+          ? [`- Skill posisi yang BELUM muncul di CV: ${roleCtx.skillBelum.join(', ')}`]
+          : []),
+        '',
+      ].join('\n')
+    : ''
+  // Aturan tambahan penilaian berbasis posisi (hanya bila konteks ada).
+  const roleRules: string[] = roleCtx
+    ? [
+        `- PENILAIAN POSISI: nilai CV ini dari kacamata posisi "${roleCtx.posisi}". "ringkasan" dan "kekurangan" WAJIB menyebut secara spesifik bukti di CV yang relevan dengan posisi itu serta skill kunci posisi yang belum muncul di CV. Skill posisi yang boleh kamu sebut HANYA yang tercantum pada KONTEKS POSISI di bawah — jangan menyebut skill posisi lain di luar daftar itu dan jangan mengarang pengalaman atau angka di luar teks CV.`,
+        `- "penilaianPosisi" WAJIB diisi (2–4 kalimat): bukti terkuat yang sudah ada di CV untuk posisi "${roleCtx.posisi}" dan celah paling kritisnya untuk posisi itu.`,
+        `- saranPenulisanUlang: gunakan kosakata dan jenis bukti yang dicari posisi "${roleCtx.posisi}" (alat/metode dari daftar skill posisinya), tetap hanya menulis ulang isi CV yang benar-benar ada.`,
+        ...(jobDesc
+          ? ['- Deskripsi lowongan dan konteks posisi sama-sama tersedia: tuntutan deskripsi lowongan DIDAHULUKAN daripada gambaran peran umum.']
+          : []),
+      ]
+    : ['- "penilaianPosisi" kosongkan ("") — pengguna tidak mengisi posisi target.']
   return [
     'Kamu adalah konsultan karier berbahasa Indonesia yang membantu pencari kerja dan fresh graduate memperbaiki CV.',
     'Analisis CV berikut dan balas HANYA dengan JSON valid (tanpa markdown, tanpa teks lain) dengan skema persis ini:',
@@ -209,6 +303,9 @@ function buildPrompt(
     '  "saranPenulisanUlang": [ { "asli": "kalimat/poin asli dari CV", "saran": "versi penulisan ulang", "alasan": "kenapa versi baru lebih baik" } ],',
     '  "kekurangan": [ "kekurangan CV, maksimal 6 butir" ],',
     '  "saranRingkasan": "contoh ringkasan profil 2-3 kalimat berdasarkan isi CV",',
+    roleCtx
+      ? '  "penilaianPosisi": "penilaian kecocokan CV dengan posisi target dalam 2-4 kalimat: bukti terkuat yang sudah ada + celah paling kritis untuk posisi itu",'
+      : '  "penilaianPosisi": "",',
     '  "perbaikanLengkap": [ { "idPemeriksaan": "id pemeriksaan persis seperti pada daftar di bawah", "judul": "nama pemeriksaan", "sebelum": "kutipan asli dari CV yang diperbaiki — kosongkan bila masalahnya sesuatu yang belum ada di CV", "sesudah": "versi perbaikan JADI yang siap disalin pengguna", "catatan": "penjelasan singkat 1 kalimat" } ]',
     '}',
     '',
@@ -224,8 +321,10 @@ function buildPrompt(
       ? '- kekurangan: nilai kesenjangan (gap) CV terhadap deskripsi lowongan secara MAKNA — skill/pengalaman yang dituntut lowongan tapi belum tampak di CV, bukan sekadar daftar kata kunci yang hilang.'
       : '- kekurangan: nilai kekurangan umum CV (struktur, kejelasan, bukti pencapaian, kelengkapan bagian).',
     '- saranRingkasan: tulis berdasarkan fakta di CV saja, jangan menambah klaim baru.',
+    ...roleRules,
     '- Seluruh jawaban dalam Bahasa Indonesia yang jelas dan suportif.',
     rolePart,
+    roleCtxPart,
     jobPart,
     checksPart,
     'TEKS CV:',
@@ -302,6 +401,7 @@ function normalizeResult(raw: unknown, requestedFixIds: string[] = []): AiResult
     'kekurangan',
     'saranRingkasan',
     'perbaikanLengkap',
+    'penilaianPosisi',
   ].some((key) => obj[key] !== undefined && obj[key] !== null)
   if (!hasKnownField) return null
 
@@ -349,6 +449,12 @@ function normalizeResult(raw: unknown, requestedFixIds: string[] = []): AiResult
     kekurangan: asStringList(obj.kekurangan, 6),
     saranRingkasan: asString(obj.saranRingkasan),
     perbaikanLengkap: fixes,
+    // penilaianPosisi sengaja TIDAK ikut menentukan isi substantif di
+    // bawah: bidang ini opsional (model lama/variansi model boleh tidak
+    // mengisinya), dan sebaliknya isinya sendirian tidak cukup untuk
+    // menyatakan hasil berhasil — token pengguna tetap terlindungi
+    // oleh aturan substantif yang sama seperti sebelumnya.
+    penilaianPosisi: asString(obj.penilaianPosisi).trim().slice(0, MAX_ROLE_VERDICT_CHARS),
   }
 
   // Hasil "hampa" BUKAN sukses (audit 2026-11-24): jawaban seperti
@@ -540,6 +646,7 @@ interface StreamOptions {
   targetRole: string
   jobDesc: string
   checks: FailedCheckContext[]
+  roleCtx: RoleContext | null
 }
 
 // Menjalankan analisis dalam mode streaming: meneruskan penalaran model
@@ -549,7 +656,7 @@ interface StreamOptions {
 // fungsi ini hanya dipanggil setelah validasi lolos dan aliran adalah
 // satu-satunya keluaran yang tersisa untuk kegagalan di tengah proses.
 async function streamAnalysis(res: AiResponse, opts: StreamOptions): Promise<void> {
-  const { apiKey, model, cvText, targetRole, jobDesc, checks } = opts
+  const { apiKey, model, cvText, targetRole, jobDesc, checks, roleCtx } = opts
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS)
 
@@ -570,7 +677,7 @@ async function streamAnalysis(res: AiResponse, opts: StreamOptions): Promise<voi
           model,
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: buildPrompt(cvText, targetRole, jobDesc, checks) },
+            { role: 'user', content: buildPrompt(cvText, targetRole, jobDesc, checks, roleCtx) },
           ],
           stream: true,
           ...(options.withResponseFormat ? { response_format: { type: 'json_object' } } : {}),
@@ -877,6 +984,10 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
   // Konteks pemeriksaan standar yang gagal (opsional): AI memperbaiki
   // temuan pemeriksa yang sedang tampil di layar pengguna.
   const failedChecks = parseFailedChecks(payload.perbaikan)
+  // Konteks posisi terstruktur (opsional): hanya ada bila pengguna
+  // mengisi posisi target; AI menilai dari kacamata posisi itu dengan
+  // rujukan skill dari kamus situs, bukan pengetahuan umumnya.
+  const roleContext = parseRoleContext(payload.konteksPosisi)
 
   if (cvText.length < MIN_CV_CHARS) {
     res.status(400).json({
@@ -923,7 +1034,7 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
   // rate limit, dan pemeriksaan key di atas sudah berjalan sama seperti
   // mode biasa — error sebelum aliran dimulai dibalas JSON biasa.
   if (payload.stream === true) {
-    await streamAnalysis(res, { apiKey, model, cvText, targetRole, jobDesc, checks: failedChecks })
+    await streamAnalysis(res, { apiKey, model, cvText, targetRole, jobDesc, checks: failedChecks, roleCtx: roleContext })
     return
   }
 
@@ -946,7 +1057,7 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
           model,
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: buildPrompt(cvText, targetRole, jobDesc, failedChecks) },
+            { role: 'user', content: buildPrompt(cvText, targetRole, jobDesc, failedChecks, roleContext) },
           ],
           ...(options.withResponseFormat ? { response_format: { type: 'json_object' } } : {}),
           // Model reasoning bisa menghabiskan seluruh jatah token hanya

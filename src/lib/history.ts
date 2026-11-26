@@ -5,6 +5,7 @@
 // benar. Data hidup di localStorage perangkat pengguna sendiri, bukan server.
 
 import type { AnalysisResult } from './analyze'
+import { getRoleSkills } from './examples'
 
 export interface AspectScore {
   name: string
@@ -209,6 +210,38 @@ export function compositionDiffers(
     if (mb.get(name) !== max) return true
   }
   return false
+}
+
+// ---------- Label posisi untuk tampilan riwayat ----------
+// Data tersimpan TIDAK diubah: entri menyimpan teks posisi persis seperti
+// diketik pengguna ("fullstack", "data analyst"). Saat DITAMPILKAN,
+// labelnya dirender lewat resolusi nama yang sama seperti judul kartu
+// Daftar Skill (kamus peran + perluasan glosarium), agar entri lama dan
+// baru tampil konsisten: "fullstack" → "Full Stack Developer",
+// "data analyst" → "Data Analyst", "QC" → "Quality Control".
+export function historyRoleLabel(rawRole: string): string {
+  const raw = rawRole.trim()
+  if (!raw) return ''
+  const resolved = getRoleSkills(raw)
+  if (!resolved.posisiKustom) return resolved.label
+  // Posisi tak dikenal: label resolusi adalah teks pengguna sendiri
+  // (atau perluasan glosariumnya) — tampilkan apa adanya. Satu-satunya
+  // penyesuaian: ketikan yang seluruhnya huruf kecil dirapikan
+  // kapitalisasi awal katanya agar sejajar entri lain; kapitalisasi
+  // campuran atau huruf besar dibiarkan persis seperti diketik.
+  const label = resolved.label
+  if (label === label.toLowerCase()) {
+    return label.replace(/(^|\s)(\S)/g, (_m, sep: string, ch: string) => sep + ch.toUpperCase())
+  }
+  return label
+}
+
+// Dua posisi dianggap SAMA bila label tampilannya sama (sesudah
+// resolusi di atas): "data analyst" dan "Data Analyst" adalah posisi
+// yang sama; dua-duanya kosong juga sama. Dipakai spanduk perbandingan
+// riwayat agar selisih skor hanya ditampilkan untuk posisi yang sama.
+export function historyRolesMatch(roleA: string, roleB: string): boolean {
+  return historyRoleLabel(roleA).toLowerCase() === historyRoleLabel(roleB).toLowerCase()
 }
 
 export function formatHistoryDate(iso: string): string {

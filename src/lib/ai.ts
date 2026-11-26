@@ -2,6 +2,7 @@
 // Dipakai hanya bila pengguna mencentang persetujuan pengiriman teks CV.
 import type { AnalysisResult } from './analyze'
 import type { PersonalExample } from './personalExamples'
+import { checkSkills, getRoleSkills } from './examples'
 
 export interface AiRewrite {
   asli: string
@@ -25,6 +26,38 @@ export interface AiAnalysis {
   kekurangan: string[]
   saranRingkasan: string
   perbaikanLengkap: AiFix[]
+  // Penilaian kecocokan CV dengan posisi target (2–4 kalimat). Diisi
+  // model hanya bila konteks posisi dikirim; string kosong bila tidak
+  // ada posisi atau model tidak mengisinya — bidang ini OPSIONAL dan
+  // ketiadaannya tidak menggagalkan hasil (lihat validateAiAnalysis).
+  penilaianPosisi: string
+}
+
+// Konteks posisi terstruktur, diturunkan dari kamus situs sendiri agar
+// AI menilai dari kacamata posisi yang dilamar — bukan menebak skill
+// posisi dari pengetahuan umumnya. "posisi" adalah label tampilan yang
+// sama persis dengan judul kartu Daftar Skill (termasuk perluasan
+// glosarium, mis. "QC" → "Quality Control"); pemilahan skill ada/belum
+// memakai checkSkills yang sama dengan kartu itu, jadi konsisten.
+export interface AiRoleContext {
+  posisi: string
+  skillDiharapkan: string[]
+  skillAda: string[]
+  skillBelum: string[]
+}
+
+// Susun konteks posisi dari posisi target + teks CV yang dianalisis.
+// Posisi kosong → null (tidak ada konteks; perilaku lama persis).
+export function buildAiRoleContext(cvText: string, targetRole: string): AiRoleContext | null {
+  if (!targetRole.trim()) return null
+  const roleSkills = getRoleSkills(targetRole)
+  const status = checkSkills(cvText, roleSkills.skills)
+  return {
+    posisi: roleSkills.label,
+    skillDiharapkan: roleSkills.skills,
+    skillAda: status.filter((s) => s.present).map((s) => s.skill),
+    skillBelum: status.filter((s) => !s.present).map((s) => s.skill),
+  }
 }
 
 // Konteks satu pemeriksaan standar yang gagal, dikirim ke backend agar
@@ -42,6 +75,7 @@ export interface AiRequestInput {
   targetRole?: string
   jobDesc?: string
   perbaikan?: AiCheckContext[]
+  konteksPosisi?: AiRoleContext
 }
 
 // Batas waktu sisi klien (audit 2026-11-24: sebelumnya fetch tanpa
@@ -109,6 +143,11 @@ export function validateAiAnalysis(data: unknown, requestedFixCount = 0): AiAnal
     kekurangan,
     saranRingkasan: asStr(obj.saranRingkasan),
     perbaikanLengkap: fixes,
+    // penilaianPosisi OPSIONAL dan toleran: tipe bukan string → kosong;
+    // ketiadaannya TIDAK menggagalkan hasil dan tidak ikut menentukan
+    // isi substantif (meniru server) — variansi model tidak boleh
+    // membakar token pengguna.
+    penilaianPosisi: asStr(obj.penilaianPosisi).trim().slice(0, 1500),
   }
   const hasSubstance =
     result.ringkasan.trim() !== '' ||

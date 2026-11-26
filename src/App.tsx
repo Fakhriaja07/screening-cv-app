@@ -8,12 +8,15 @@ import {
   compositionDiffers,
   entryFromResult,
   formatHistoryDate,
+  historyRoleLabel,
+  historyRolesMatch,
   loadHistory,
   scoreDelta,
   type ScoreHistoryEntry,
 } from './lib/history'
 import {
   buildAiFixContext,
+  buildAiRoleContext,
   requestAiAnalysis,
   requestAiAnalysisStreaming,
   type AiAnalysis,
@@ -497,6 +500,12 @@ export default function App() {
   const [aiConsent, setAiConsent] = useState(false)
   const [aiLoading, setAiLoading] = useState(false)
   const [aiResult, setAiResult] = useState<AiAnalysis | null>(null)
+  // Label posisi tampilan (perluasan glosarium, sama seperti judul
+  // kartu Daftar Skill) yang dipakai analisis AI yang sedang tampil —
+  // disimpan sebagai snapshot saat analisis berhasil, agar label
+  // "Disesuaikan untuk posisi: …" tidak berubah bila kolom posisi
+  // diedit sesudahnya. Kosong bila analisis dijalankan tanpa posisi.
+  const [aiRoleLabel, setAiRoleLabel] = useState('')
   const [aiError, setAiError] = useState('')
   const [aiThinking, setAiThinking] = useState('')
   const [aiThinkingOpen, setAiThinkingOpen] = useState(false)
@@ -640,6 +649,7 @@ export default function App() {
     setError('')
     setAiConsent(false)
     setAiResult(null)
+    setAiRoleLabel('')
     setAiError('')
     setAiThinking('')
     setAiThinkingOpen(false)
@@ -806,11 +816,17 @@ export default function App() {
     const perbaikan = result
       ? buildAiFixContext(result, buildPersonalExamples(result, analyzedText, analyzedRole))
       : []
+    // Konteks posisi terstruktur dari snapshot yang sama (teks + posisi
+    // saat analisis standar dijalankan): AI menilai dari kacamata
+    // posisi itu dengan rujukan skill kamus situs. Null bila posisi
+    // kosong — permintaan lama terkirim persis seperti sebelumnya.
+    const konteksPosisi = buildAiRoleContext(sourceText, sourceRole)
     const input = {
       cvText: sourceText,
       targetRole: sourceRole,
       jobDesc: sourceJobDesc,
       ...(perbaikan.length ? { perbaikan } : {}),
+      ...(konteksPosisi ? { konteksPosisi } : {}),
     }
     let succeeded = false
     try {
@@ -826,6 +842,7 @@ export default function App() {
       // Pengguna menekan reset selagi analisis berjalan → hasil dibuang.
       if (!isStale()) {
         setAiResult(data)
+        setAiRoleLabel(konteksPosisi?.posisi ?? '')
         succeeded = true
       }
     } catch (streamErr) {
@@ -840,6 +857,7 @@ export default function App() {
           const data = await requestAiAnalysis(input)
           if (!isStale()) {
             setAiResult(data)
+            setAiRoleLabel(konteksPosisi?.posisi ?? '')
             succeeded = true
           }
         } catch (fallbackErr) {
@@ -902,10 +920,11 @@ export default function App() {
     <div className="pay-box">
       <p className="pay-intro">
         Analisis AI berbayar <strong>{formatRupiah(AI_PRICE)} per analisis</strong> —
-        analisis standar (skor dan saran perbaikan di atas) tetap gratis.
-        Bayar dengan memindai QRIS berikut dari aplikasi pembayaran apa pun
-        (GoPay, OVO, DANA, m-banking, dan lainnya). Pastikan nama merchant yang
-        muncul adalah <strong>FAKHRI, DIGITAL &amp; KREATIF</strong>.
+        sekali analisis, <strong>bukan langganan</strong>, lebih murah dari sekali
+        print + fotokopi CV. Analisis standar (skor dan saran perbaikan di atas)
+        tetap gratis. Bayar dengan memindai QRIS berikut dari aplikasi pembayaran
+        apa pun (GoPay, OVO, DANA, m-banking, dan lainnya). Pastikan nama merchant
+        yang muncul adalah <strong>FAKHRI, DIGITAL &amp; KREATIF</strong>.
       </p>
       {qrisError ? (
         <p className="qris-fallback">
@@ -1257,39 +1276,83 @@ export default function App() {
 
                   {prevEntry && (() => {
                     const d = scoreDelta(prevEntry.total, result.total)
-                    const currEntry = entryFromResult(result, targetRole)
-                    const changed = aspectDeltas(prevEntry, currEntry)
-                      .filter((a) => a.delta !== null && a.delta !== 0)
-                    const compositionChanged = compositionDiffers(prevEntry, currEntry)
+                    const currEntry = entryFromResult(result, analyzedRole)
+                    // Spanduk sadar-posisi: selisih skor & delta per aspek
+                    // hanya bermakna bila posisi targetnya sama (sesudah
+                    // resolusi label). Bila berbeda, kedua posisi disebut
+                    // eksplisit agar "turun" antar-posisi tidak terbaca
+                    // sebagai CV yang memburuk.
+                    const sameRole = historyRolesMatch(prevEntry.role, analyzedRole)
+                    const prevRoleLabel = historyRoleLabel(prevEntry.role)
+                    const currRoleLabel = historyRoleLabel(analyzedRole)
+                    const changed = sameRole
+                      ? aspectDeltas(prevEntry, currEntry)
+                          .filter((a) => a.delta !== null && a.delta !== 0)
+                      : []
+                    const compositionChanged = sameRole && compositionDiffers(prevEntry, currEntry)
                     return (
                       <div className="compare-box">
                         <p className="compare-main">
-                          <span className={`delta-badge delta-${d.direction}`}>
-                            <Icon
-                              d={d.direction === 'naik' ? I.trendUp : d.direction === 'turun' ? I.trendDown : I.minus}
-                              size={15}
-                            />
-                            {d.word}
-                          </span>
-                          <span>
-                            Cek terakhir ({formatHistoryDate(prevEntry.at)}):{' '}
-                            <strong>{prevEntry.total}</strong> → Sekarang:{' '}
-                            <strong>{result.total}</strong> ({d.text})
-                          </span>
+                          {sameRole ? (
+                            <>
+                              <span className={`delta-badge delta-${d.direction}`}>
+                                <Icon
+                                  d={d.direction === 'naik' ? I.trendUp : d.direction === 'turun' ? I.trendDown : I.minus}
+                                  size={15}
+                                />
+                                {d.word}
+                              </span>
+                              <span>
+                                Cek terakhir ({formatHistoryDate(prevEntry.at)}):{' '}
+                                <strong>{prevEntry.total}</strong> → Sekarang:{' '}
+                                <strong>{result.total}</strong> ({d.text})
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="delta-badge delta-tetap">
+                                <Icon d={I.minus} size={15} />
+                                Beda posisi
+                              </span>
+                              <span>
+                                Cek terakhir ({formatHistoryDate(prevEntry.at)})
+                                {prevRoleLabel ? (
+                                  <> untuk <strong>{prevRoleLabel}</strong></>
+                                ) : (
+                                  ' tanpa posisi target'
+                                )}
+                                : <strong>{prevEntry.total}</strong> → Sekarang
+                                {currRoleLabel ? (
+                                  <> untuk <strong>{currRoleLabel}</strong></>
+                                ) : (
+                                  ' tanpa posisi target'
+                                )}
+                                : <strong>{result.total}</strong>
+                              </span>
+                            </>
+                          )}
                         </p>
-                        {changed.length > 0 ? (
-                          <ul className="aspect-deltas">
-                            {changed.map((a) => (
-                              <li key={a.name}>
-                                <span className="ad-name">{a.name}:</span> {a.previous} → {a.score}{' '}
-                                <span className={`ad-delta ad-${a.direction}`}>
-                                  ({a.delta !== null && a.delta > 0 ? `+${a.delta}` : a.delta})
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
+                        {sameRole ? (
+                          changed.length > 0 ? (
+                            <ul className="aspect-deltas">
+                              {changed.map((a) => (
+                                <li key={a.name}>
+                                  <span className="ad-name">{a.name}:</span> {a.previous} → {a.score}{' '}
+                                  <span className={`ad-delta ad-${a.direction}`}>
+                                    ({a.delta !== null && a.delta > 0 ? `+${a.delta}` : a.delta})
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="aspect-deltas-note">Semua aspek sama seperti cek terakhir.</p>
+                          )
                         ) : (
-                          <p className="aspect-deltas-note">Semua aspek sama seperti cek terakhir.</p>
+                          <p className="aspect-deltas-note">
+                            Posisi targetnya berbeda dari cek terakhir, jadi selisih skor
+                            dan perbandingan per aspek tidak ditampilkan — kedua skor
+                            dihitung untuk posisi yang berbeda.
+                          </p>
                         )}
                         {compositionChanged && (
                           <p className="aspect-deltas-note">
@@ -1309,7 +1372,7 @@ export default function App() {
                         <span className="history-date">{formatHistoryDate(e.at)}</span>
                         <span className="history-score">{e.total}/100</span>
                         <span className="history-label">{e.label}</span>
-                        {e.role && <span className="history-role">{e.role}</span>}
+                        {e.role && <span className="history-role">{historyRoleLabel(e.role)}</span>}
                       </li>
                     ))}
                   </ul>
@@ -1444,18 +1507,15 @@ export default function App() {
               <div className="card ai-card">
                 <h3><Icon d={I.spark} size={18} /> Analisis AI (OpenRouter) <span className="paid-chip">Berbayar</span></h3>
                 <p>
-                  Mau saran yang lebih dalam dari skor di atas? AI lewat OpenRouter bisa membaca
-                  CV-mu secara kualitatif: menulis ulang poin pengalamanmu, menunjukkan
-                  kekurangan terhadap lowongan, dan memberi contoh ringkasan profil.
-                  Yang terpenting: AI <strong>menuliskan versi perbaikan lengkap untuk semua
-                  prioritas perbaikanmu</strong> — satu per satu sesuai temuan pemeriksa di atas,
-                  dalam bentuk jadi yang siap disalin ke CV, bukan sekadar contoh umum.
-                  Bagian ini terpisah dan <strong>tidak mengubah skor utama</strong>.
-                  Analisis AI berbayar <strong>{formatRupiah(AI_PRICE)} per analisis</strong> lewat
-                  QRIS — analisis standar di atas tetap gratis. {formatRupiah(AI_PRICE)} itu
-                  sekali analisis, <strong>bukan langganan</strong> — lebih murah dari sekali
-                  print + fotokopi CV. Dan <strong>token hanya terpakai bila analisis berhasil —
-                  kalau AI gagal, tokenmu tidak hangus.</strong>
+                  Mau saran yang lebih dalam dari skor di atas? AI membaca CV-mu secara
+                  kualitatif: menulis ulang poin pengalamanmu, menunjukkan kekurangan
+                  terhadap lowongan, dan memberi contoh ringkasan profil. Bila posisi
+                  target terisi, pembahasannya disesuaikan untuk posisi itu. Yang
+                  terpenting, AI <strong>menuliskan versi perbaikan lengkap untuk semua
+                  prioritas perbaikanmu</strong> — dalam bentuk jadi yang siap disalin
+                  ke CV, bukan sekadar contoh umum. Bagian ini terpisah dan{' '}
+                  <strong>tidak mengubah skor utama</strong>. Dan <strong>token hanya terpakai
+                  bila analisis berhasil — kalau AI gagal, tokenmu tidak hangus.</strong>
                 </p>
 
                 {aiCredits > 0 ? (
@@ -1565,10 +1625,22 @@ export default function App() {
 
                 {aiResult && (
                   <div className="ai-result">
+                    {aiRoleLabel && (
+                      <p className="ai-role-label">
+                        Disesuaikan untuk posisi: <strong>{aiRoleLabel}</strong>
+                      </p>
+                    )}
                     {aiResult.ringkasan && (
                       <div className="ai-block">
                         <h4>Ringkasan Penilaian AI</h4>
                         <p>{aiResult.ringkasan}</p>
+                      </div>
+                    )}
+
+                    {aiResult.penilaianPosisi && (
+                      <div className="ai-block">
+                        <h4>Penilaian untuk Posisi{aiRoleLabel ? ` ${aiRoleLabel}` : ''}</h4>
+                        <p>{aiResult.penilaianPosisi}</p>
                       </div>
                     )}
 

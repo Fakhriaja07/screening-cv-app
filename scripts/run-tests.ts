@@ -27,6 +27,8 @@ import {
   clearHistory,
   compositionDiffers,
   entryFromResult,
+  historyRoleLabel,
+  historyRolesMatch,
   loadHistory,
   scoreDelta,
   HISTORY_MAX_ENTRIES,
@@ -92,8 +94,13 @@ import {
 } from '../src/lib/report'
 import { buildPersonalExamples } from '../src/lib/personalExamples'
 import { buildReportPdf, buildReportPdfBytes, sanitizePdfText } from '../src/lib/pdf'
-import { buildAiFixContext, validateAiAnalysis, type AiAnalysis } from '../src/lib/ai'
-import { parseAiJson, parseFailedChecks } from '../api/analyze-ai.js'
+import {
+  buildAiFixContext,
+  buildAiRoleContext,
+  validateAiAnalysis,
+  type AiAnalysis,
+} from '../src/lib/ai'
+import { parseAiJson, parseFailedChecks, parseRoleContext } from '../api/analyze-ai.js'
 const MEDIUM_CV = `Budi Santoso
 budi.santoso@gmail.com | 0812-9876-5432 | linkedin.com/in/budisantoso
 
@@ -1660,6 +1667,8 @@ check(
 )
 const FAKE_AI: AiAnalysis = {
   ringkasan: 'CV cukup kuat untuk posisi data analyst pemula.',
+  penilaianPosisi:
+    'Kecocokan kuat untuk Data Analyst: bukti SQL dan dashboard sudah ada; celah paling kritisnya sertifikasi yang belum dicantumkan.',
   saranPenulisanUlang: [
     {
       asli: 'Membuat laporan penjualan',
@@ -1696,6 +1705,15 @@ check(
     reportAi.includes('- Belum ada sertifikasi pendukung.') &&
     reportAi.includes('Contoh Ringkasan Profil: Data analyst pemula'),
   'ringkasan, saran penulisan ulang, kekurangan & contoh ringkasan tercantum',
+)
+check(
+  'Laporan: Penilaian Posisi tercantum bila terisi, absen bila kosong',
+  reportAi.includes('Penilaian Posisi: Kecocokan kuat untuk Data Analyst') &&
+    !buildReportText(analyzeCv(SAMPLE_CV), {
+      ai: { ...FAKE_AI, penilaianPosisi: '' },
+      date: REPORT_DATE,
+    }).includes('Penilaian Posisi:'),
+  'bidang opsional penilaianPosisi masuk laporan (dan PDF) hanya bila model mengisinya',
 )
 check(
   'Laporan: bagian Perbaikan Lengkap dari AI tercantum bila ada isinya',
@@ -2325,6 +2343,162 @@ check(
     validateAiAnalysis({ ringkasan: 'Bagus.', perbaikanLengkap: [{ idPemeriksaan: 'email', sesudah: 'Tambahkan email' }] }, 1)
       .perbaikanLengkap.length === 1,
   `ditolak ${auditClientThrew}/5 bentuk sampah`,
+)
+
+// ---------- Uji penyesuaian posisi Analisis AI (2026-11-26) ----------
+// Keputusan pengguna: pembahasan AI disesuaikan dengan posisi yang
+// dilamar. Klien menurunkan konteks posisi dari kamus situs sendiri,
+// server membersihkannya seperti konteks pemeriksaan, prompt menilai
+// dari kacamata posisi itu, dan bidang baru "penilaianPosisi" bersifat
+// opsional-toleran di semua validasi.
+const roleCtx = buildAiRoleContext(SAMPLE_CV, 'Data Analyst')
+const daftarSkillStatus = checkSkills(SAMPLE_CV, getRoleSkills('Data Analyst').skills)
+check(
+  'Posisi AI: konteks Data Analyst memilah skill ada/belum persis seperti kartu Daftar Skill',
+  roleCtx !== null &&
+    roleCtx.posisi === 'Data Analyst' &&
+    roleCtx.skillDiharapkan.length === 10 &&
+    roleCtx.skillAda.includes('SQL') &&
+    roleCtx.skillAda.includes('Python') &&
+    roleCtx.skillAda.includes('Power BI') &&
+    roleCtx.skillBelum.includes('Statistik') &&
+    roleCtx.skillBelum.includes('Visualisasi Data') &&
+    roleCtx.skillBelum.includes('PivotTable') &&
+    roleCtx.skillAda.every(
+      (s) => daftarSkillStatus.find((d) => d.skill === s)?.present === true,
+    ) &&
+    roleCtx.skillBelum.every(
+      (s) => daftarSkillStatus.find((d) => d.skill === s)?.present === false,
+    ) &&
+    roleCtx.skillAda.length + roleCtx.skillBelum.length === roleCtx.skillDiharapkan.length,
+  `ada: ${roleCtx?.skillAda.join(', ')}; belum: ${roleCtx?.skillBelum.join(', ')}`,
+)
+check(
+  'Posisi AI: posisi kosong → tanpa konteks; singkatan tampil sebagai nama lengkap glosarium',
+  buildAiRoleContext(SAMPLE_CV, '') === null &&
+    buildAiRoleContext(SAMPLE_CV, '   ') === null &&
+    buildAiRoleContext(SAMPLE_CV, 'QC')?.posisi === 'Quality Control' &&
+    buildAiRoleContext(SAMPLE_CV, 'fullstack')?.posisi === 'Full Stack Developer',
+  'label konteks = label kartu Daftar Skill, termasuk perluasan glosarium & kamus peran',
+)
+const parsedRoleCtx = parseRoleContext({
+  posisi: 'Data Analyst',
+  skillDiharapkan: ['SQL', 'Python'],
+  skillAda: ['SQL', 'sql', 42, ''],
+  skillBelum: ['Python', 'SQL', 'Tableau'],
+})
+check(
+  'Posisi AI: parseRoleContext membersihkan daftar (duplikat, non-string, tumpang tindih ada/belum)',
+  parsedRoleCtx !== null &&
+    parsedRoleCtx.posisi === 'Data Analyst' &&
+    parsedRoleCtx.skillAda.length === 1 &&
+    parsedRoleCtx.skillBelum.join(',') === 'Python,Tableau' &&
+    parseRoleContext(null) === null &&
+    parseRoleContext('Data Analyst') === null &&
+    parseRoleContext({ posisi: '  ' }) === null &&
+    parseRoleContext({ skillAda: ['SQL'] }) === null,
+  'konteks tak sah → null (perilaku lama); skill yang terbukti ada dimenangkan atas daftar belum',
+)
+check(
+  'Posisi AI: parseRoleContext membatasi jumlah & panjang item',
+  (() => {
+    const many = parseRoleContext({
+      posisi: 'Data Analyst',
+      skillDiharapkan: Array.from({ length: 20 }, (_, i) => `Skill ${i}`),
+      skillAda: ['x'.repeat(120)],
+      skillBelum: [],
+    })
+    return (
+      many !== null &&
+      many.skillDiharapkan.length === 15 &&
+      many.skillAda[0].length === 60
+    )
+  })(),
+  'maksimal 15 skill per daftar, tiap nama maks 60 karakter',
+)
+const parsedWithVerdict = parseAiJson(
+  JSON.stringify({
+    ringkasan: 'CV kuat.',
+    penilaianPosisi: 'Sangat cocok untuk Data Analyst: SQL dan Power BI terbukti; celah kritisnya PivotTable belum muncul.',
+  }),
+)
+const parsedNoVerdict = parseAiJson(JSON.stringify({ ringkasan: 'CV kuat.' }))
+const parsedBadVerdict = parseAiJson(
+  JSON.stringify({ ringkasan: 'CV kuat.', penilaianPosisi: { aneh: true } }),
+)
+check(
+  'Posisi AI: parser server menoleransi penilaianPosisi (ada terbawa, absen/aneh jadi kosong, hasil tetap sah)',
+  parsedWithVerdict !== null &&
+    parsedWithVerdict.penilaianPosisi.includes('Sangat cocok untuk Data Analyst') &&
+    parsedNoVerdict !== null &&
+    parsedNoVerdict.penilaianPosisi === '' &&
+    parsedBadVerdict !== null &&
+    parsedBadVerdict.penilaianPosisi === '' &&
+    parseAiJson(JSON.stringify({ penilaianPosisi: 'Hanya bidang ini.' })) === null,
+  'bidang opsional tidak menggagalkan hasil, dan isinya sendirian tidak menyatakan hasil berhasil',
+)
+check(
+  'Posisi AI: validasi klien menoleransi penilaianPosisi (ada terbawa, absen/aneh jadi kosong)',
+  validateAiAnalysis({ ringkasan: 'Ok.', penilaianPosisi: 'Cocok untuk posisi itu.' })
+    .penilaianPosisi === 'Cocok untuk posisi itu.' &&
+    validateAiAnalysis({ ringkasan: 'Ok.' }).penilaianPosisi === '' &&
+    validateAiAnalysis({ ringkasan: 'Ok.', penilaianPosisi: 42 }).penilaianPosisi === '',
+  'variansi model pada bidang opsional tidak membakar token pengguna',
+)
+check(
+  'Posisi AI: kartu AI menampilkan label posisi + blok penilaian posisi, konteks dibangun dari snapshot',
+  appTsxText.includes('Disesuaikan untuk posisi:') &&
+    appTsxText.includes('Penilaian untuk Posisi') &&
+    appTsxText.includes('buildAiRoleContext(sourceText, sourceRole)') &&
+    appTsxText.includes('aiResult.penilaianPosisi'),
+  'label memakai label snapshot analisis (aiRoleLabel), bukan isi kolom posisi saat ini',
+)
+check(
+  'Kartu AI: harga & "bukan langganan" hanya di kotak pembayaran; paragraf kepala tanpa harga',
+  !appTsxText.includes('per analisis</strong> lewat') &&
+    appTsxText.includes('sekali analisis, <strong>bukan langganan</strong>') &&
+    appTsxText.includes('print + fotokopi CV') &&
+    appTsxText.includes('tokenmu tidak hangus') &&
+    appTsxText.includes('FAKHRI, DIGITAL &amp; KREATIF'),
+  'pesan harga satu kali di pay-intro; janji token tidak hangus tetap di paragraf kepala',
+)
+
+// ---------- Uji label posisi Riwayat Skor (2026-11-26) ----------
+// Data tersimpan tetap teks mentah pengguna; hanya TAMPILAN yang
+// dinormalisasi lewat resolusi nama kartu Daftar Skill.
+check(
+  'Riwayat: label posisi tampilan diresolusi seperti judul kartu Daftar Skill',
+  historyRoleLabel('fullstack') === 'Full Stack Developer' &&
+    historyRoleLabel('data analyst') === 'Data Analyst' &&
+    historyRoleLabel('Data Analyst') === 'Data Analyst' &&
+    historyRoleLabel('QC') === 'Quality Control' &&
+    historyRoleLabel('') === '',
+  `"fullstack"→"${historyRoleLabel('fullstack')}", "data analyst"→"${historyRoleLabel('data analyst')}", "QC"→"${historyRoleLabel('QC')}"`,
+)
+check(
+  'Riwayat: posisi tak dikenal tampil apa adanya; ketikan serba kecil dirapikan kapitalnya',
+  historyRoleLabel('petugas parkir') === 'Petugas Parkir' &&
+    historyRoleLabel('Staff Gudang') === 'Staff Gudang' &&
+    historyRoleLabel('WH') === 'Staf Gudang' &&
+    historyRoleLabel('SPV Produksi') === 'Operator Produksi',
+  'teks kustom tidak diganti (WH→perluasan glosarium); "SPV Produksi" cocok langsung ke kamus lewat kata "produksi" — persis perilaku kartu Daftar Skill',
+)
+check(
+  'Riwayat: kesamaan posisi untuk spanduk dihitung dari label resolusi',
+  historyRolesMatch('data analyst', 'Data Analyst') === true &&
+    historyRolesMatch('fullstack', 'Full Stack Developer') === true &&
+    historyRolesMatch('fullstack', 'Data Analyst') === false &&
+    historyRolesMatch('', '') === true &&
+    historyRolesMatch('Data Analyst', '') === false,
+  'beda ejaan posisi yang sama tetap cocok; beda posisi (atau satu kosong) tidak',
+)
+check(
+  'Riwayat: spanduk perbandingan sadar-posisi (label resolusi + cabang Beda posisi)',
+  appTsxText.includes('historyRolesMatch(prevEntry.role, analyzedRole)') &&
+    appTsxText.includes('Beda posisi') &&
+    appTsxText.includes('historyRoleLabel(e.role)') &&
+    appTsxText.includes('Posisi targetnya berbeda dari cek terakhir'),
+  'delta skor & per aspek hanya untuk posisi sama; baris riwayat memakai historyRoleLabel',
 )
 
 // --- Audit 13: sanitasi teks PDF (encoding WinAnsi jsPDF) ---
