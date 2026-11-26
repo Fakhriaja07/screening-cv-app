@@ -1589,15 +1589,26 @@ export default function App() {
                 )}
 
                 {(aiLoading || aiThinking) && (
-                  <div className="thinking-panel">
+                  <div className={aiLoading ? 'thinking-panel' : 'thinking-panel thinking-done'}>
                     {aiLoading ? (
                       <>
                         <div className="thinking-head">
-                          <span>Proses berpikir AI</span>
+                          <span className="thinking-title">
+                            <Icon d={I.spark} size={15} />
+                            <span>Proses Berpikir AI</span>
+                            <span className="thinking-live">
+                              <span className="thinking-dot" aria-hidden="true" />
+                              Sedang berpikir
+                            </span>
+                          </span>
                           <span className="thinking-time">{aiElapsed} detik</span>
                         </div>
                         <div className="thinking-body" ref={thinkingBodyRef}>
-                          {aiThinking || 'Menghubungi model AI…'}
+                          {aiThinking ? (
+                            aiThinking
+                          ) : (
+                            <span className="thinking-wait">Menghubungi model AI…</span>
+                          )}
                         </div>
                       </>
                     ) : (
@@ -1606,10 +1617,17 @@ export default function App() {
                           type="button"
                           className="thinking-summary"
                           onClick={() => setAiThinkingOpen((o) => !o)}
+                          aria-expanded={aiThinkingOpen}
                         >
-                          {aiError
-                            ? `Proses berpikir terhenti (±${aiDuration ?? aiElapsed} detik) — klik untuk ${aiThinkingOpen ? 'menutup' : 'melihat'}`
-                            : `Proses berpikir selesai (±${aiDuration ?? aiElapsed} detik) — klik untuk ${aiThinkingOpen ? 'menutup' : 'melihat'}`}
+                          <Icon d={I.spark} size={15} />
+                          <span>
+                            {aiError
+                              ? `Proses berpikir terhenti (±${aiDuration ?? aiElapsed} detik) — klik untuk ${aiThinkingOpen ? 'menutup' : 'melihat'}`
+                              : `Proses berpikir selesai (±${aiDuration ?? aiElapsed} detik) — klik untuk ${aiThinkingOpen ? 'menutup' : 'melihat'}`}
+                          </span>
+                          <span className={aiThinkingOpen ? 'thinking-chev open' : 'thinking-chev'} aria-hidden="true">
+                            <Icon d={I.chev} size={16} />
+                          </span>
                         </button>
                         {aiThinkingOpen && (
                           <div className="thinking-body thinking-body-bordered" ref={thinkingBodyRef}>
