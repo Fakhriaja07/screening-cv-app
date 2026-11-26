@@ -88,6 +88,15 @@ const MAX_ROLE_CHARS = 200
 const MAX_FIX_CHECKS = 30
 const MAX_FIX_ITEMS = 30
 
+// Ukuran batch mode "fixes": satu panggilan hanya memperbaiki paling
+// banyak 6 pemeriksaan. Permintaan raksasa (semua bidang + perbaikan
+// untuk ±29 pemeriksaan sekaligus) berulang melewati batas waktu model
+// gratis, jadi klien memecah perbaikan menjadi batch-batch kecil yang
+// masing-masing jauh di bawah batas waktu (perbaikan 2026-11-26).
+// Server menegakkan plafon yang sama agar pemanggil tidak bisa
+// memaksa prompt raksasa lewat mode ini.
+export const FIX_BATCH_SIZE = 6
+
 // Konteks posisi dari frontend: kamus peran memuat paling banyak 10
 // skill per peran; batas 15 memberi ruang tanpa membuka prompt ke
 // daftar karangan pemanggil. Tiap nama skill dipotong 60 karakter.
@@ -105,6 +114,13 @@ const MAX_ROLE_VERDICT_CHARS = 1500
 // lama (55 detik / 3000 token).
 const UPSTREAM_TIMEOUT_MS = 75_000
 const NONSTREAM_MAX_TOKENS = 6500
+// Jatah token per mode pada jalur non-streaming: keluaran mode "core"
+// (tanpa perbaikanLengkap) dan mode "fixes" (≤6 item) jauh lebih kecil
+// daripada jawaban gabungan mode "full", jadi plafonnya lebih rendah —
+// model berhenti lebih cepat dan tidak menghabiskan waktu menulis
+// melebihi kebutuhan panggilan itu.
+const CORE_MAX_TOKENS = 5000
+const FIXES_MAX_TOKENS = 5000
 
 // Mode streaming: batas waktu keseluruhan aliran lebih longgar karena proses
 // berpikir model ditampilkan langsung ke pengguna, dan jatah token keluaran
@@ -128,7 +144,17 @@ class UpstreamTimeoutError extends Error {
 // serverless, jadi bukan batas global. Cukup untuk menahan penyalahgunaan
 // kasual; untuk batas yang tegas gunakan penyimpanan bersama
 // (mis. Vercel KV / Upstash) di lapisan berikutnya.
-const RATE_LIMIT_MAX = 5
+//
+// Anggaran batas diselaraskan dengan pola multi-panggilan klien
+// (2026-11-26): satu Analisis AI penuh kini terdiri dari 1 panggilan
+// inti + batch perbaikan (@6 id; terburuk 29 pemeriksaan → 5 batch) =
+// 6 permintaan, dan tiap panggilan boleh diulang sekali oleh klien →
+// terburuk 12 permintaan per analisis. Batas 36 per 10 menit menampung
+// ±3 analisis penuh terburuk (atau belasan analisis bersih tanpa
+// pengulangan) dari satu IP — jauh di atas pemakaian manusia wajar
+// (satu analisis saja memakan 1–4 menit waktu nyata) — sambil tetap
+// menjadi plafon keras terhadap pembakaran kuota upstream.
+export const RATE_LIMIT_MAX = 36
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000
 const rateBuckets = new Map<string, { count: number; windowStart: number }>()
 
@@ -240,6 +266,13 @@ export function parseRoleContext(value: unknown): RoleContext | null {
   }
 }
 
+// Mode panggilan Analisis AI (2026-11-26): klien memecah satu analisis
+// menjadi panggilan "core" (bidang inti saja) + panggilan "fixes"
+// (perbaikanLengkap per batch ≤6 id). Mode "full" adalah perilaku lama
+// (satu panggilan gabungan) dan tetap menjadi bawaan agar pemanggil
+// lama — termasuk tab pengguna yang belum memuat ulang — tidak rusak.
+export type AiCallMode = 'full' | 'core' | 'fixes'
+
 // Diekspor agar standar kualitas prompt (struktur saranRingkasan &
 // pola kekurangan) bisa dikunci oleh uji di scripts/run-tests.ts.
 export function buildPrompt(
@@ -248,6 +281,7 @@ export function buildPrompt(
   jobDesc: string,
   checks: FailedCheckContext[],
   roleCtx: RoleContext | null,
+  variant: 'full' | 'core' = 'full',
 ): string {
   const rolePart = targetRole
     ? `\nPOSISI YANG DILAMAR: ${targetRole}\n`
@@ -255,19 +289,22 @@ export function buildPrompt(
   const jobPart = jobDesc
     ? `\nDESKRIPSI LOWONGAN:\n${jobDesc}\n`
     : '\n(Tidak ada deskripsi lowongan — nilai kekurangan umum CV saja.)\n'
-  const checksPart = checks.length
-    ? [
-        '',
-        'PEMERIKSAAN STANDAR YANG GAGAL (hasil mesin penilaian situs atas CV ini — perbaiki SEMUANYA di "perbaikanLengkap"):',
-        ...checks.map((c, i) => {
-          const lines = [`${i + 1}. [id: ${c.id}] ${c.judul}`]
-          if (c.pesan) lines.push(`   Temuan pemeriksa: ${c.pesan}`)
-          if (c.kutipan) lines.push(`   Kutipan dari CV pengguna: "${c.kutipan}"`)
-          return lines.join('\n')
-        }),
-        '',
-      ].join('\n')
-    : '\n(Tidak ada daftar pemeriksaan yang dikirim — "perbaikanLengkap" boleh berupa array kosong.)\n'
+  const checksPart =
+    variant === 'core'
+      ? '\n(Perbaikan per pemeriksaan diminta pada panggilan terpisah — pada panggilan ini "perbaikanLengkap" WAJIB berupa array kosong.)\n'
+      : checks.length
+        ? [
+            '',
+            'PEMERIKSAAN STANDAR YANG GAGAL (hasil mesin penilaian situs atas CV ini — perbaiki SEMUANYA di "perbaikanLengkap"):',
+            ...checks.map((c, i) => {
+              const lines = [`${i + 1}. [id: ${c.id}] ${c.judul}`]
+              if (c.pesan) lines.push(`   Temuan pemeriksa: ${c.pesan}`)
+              if (c.kutipan) lines.push(`   Kutipan dari CV pengguna: "${c.kutipan}"`)
+              return lines.join('\n')
+            }),
+            '',
+          ].join('\n')
+        : '\n(Tidak ada daftar pemeriksaan yang dikirim — "perbaikanLengkap" boleh berupa array kosong.)\n'
   // Blok konteks posisi: rujukan skill posisi SATU-SATUNYA bagi model,
   // diturunkan dari kamus situs — bukan pengetahuan umum model.
   const roleCtxPart = roleCtx
@@ -308,16 +345,22 @@ export function buildPrompt(
     roleCtx
       ? '  "penilaianPosisi": "penilaian kecocokan CV dengan posisi target dalam 2-4 kalimat: bukti terkuat yang sudah ada + celah paling kritis untuk posisi itu",'
       : '  "penilaianPosisi": "",',
-    '  "perbaikanLengkap": [ { "idPemeriksaan": "id pemeriksaan persis seperti pada daftar di bawah", "judul": "nama pemeriksaan", "sebelum": "kutipan asli dari CV yang diperbaiki — kosongkan bila masalahnya sesuatu yang belum ada di CV", "sesudah": "versi perbaikan JADI yang siap disalin pengguna", "catatan": "penjelasan singkat 1 kalimat" } ]',
+    variant === 'core'
+      ? '  "perbaikanLengkap": []'
+      : '  "perbaikanLengkap": [ { "idPemeriksaan": "id pemeriksaan persis seperti pada daftar di bawah", "judul": "nama pemeriksaan", "sebelum": "kutipan asli dari CV yang diperbaiki — kosongkan bila masalahnya sesuatu yang belum ada di CV", "sesudah": "versi perbaikan JADI yang siap disalin pengguna", "catatan": "penjelasan singkat 1 kalimat" } ]',
     '}',
     '',
     'Aturan ketat:',
     '- saranPenulisanUlang: ambil maksimal 5 poin dari bagian pengalaman CV. Tulis ulang dengan kata kerja aksi yang kuat dan struktur pencapaian.',
-    '- perbaikanLengkap: buat SATU item untuk SETIAP pemeriksaan pada daftar "PEMERIKSAAN STANDAR YANG GAGAL" di bawah — tidak boleh ada yang terlewat dan jangan menambah pemeriksaan di luar daftar itu. Urutannya sama seperti daftar.',
-    '- "sesudah" pada perbaikanLengkap harus teks FINAL yang utuh dan siap disalin ke CV, ditulis dari teks pengguna sendiri — bukan contoh umum dan bukan placeholder umum. Placeholder kurung siku HANYA untuk fakta yang memang tidak ada di CV (angka pencapaian, nama, tanggal) dan harus spesifik, mis. [jumlah dokumen yang diproses per bulan], bukan [angka].',
-    '- Bila masalahnya sesuatu yang BELUM ADA di CV (mis. belum ada tautan LinkedIn, sertifikasi, atau bagian yang hilang): "sebelum" dikosongkan dan "sesudah" berisi templat konkret yang siap diisi pengguna (format persisnya) + di "catatan" satu kalimat cara mengisinya.',
-    '- "sebelum" pada perbaikanLengkap: pakai kutipan yang tercantum pada daftar pemeriksaan bila ada; bila tidak ada, ambil kalimat/bagian CV yang persis diperbaiki; kosongkan hanya untuk masalah ketiadaan.',
-    '- Jaga setiap item perbaikanLengkap ringkas: "sesudah" maksimal sekitar 3 baris/kalimat, "catatan" 1 kalimat. Jawaban memuat banyak item, jadi jangan bertele-tele.',
+    ...(variant === 'core'
+      ? []
+      : [
+          '- perbaikanLengkap: buat SATU item untuk SETIAP pemeriksaan pada daftar "PEMERIKSAAN STANDAR YANG GAGAL" di bawah — tidak boleh ada yang terlewat dan jangan menambah pemeriksaan di luar daftar itu. Urutannya sama seperti daftar.',
+          '- "sesudah" pada perbaikanLengkap harus teks FINAL yang utuh dan siap disalin ke CV, ditulis dari teks pengguna sendiri — bukan contoh umum dan bukan placeholder umum. Placeholder kurung siku HANYA untuk fakta yang memang tidak ada di CV (angka pencapaian, nama, tanggal) dan harus spesifik, mis. [jumlah dokumen yang diproses per bulan], bukan [angka].',
+          '- Bila masalahnya sesuatu yang BELUM ADA di CV (mis. belum ada tautan LinkedIn, sertifikasi, atau bagian yang hilang): "sebelum" dikosongkan dan "sesudah" berisi templat konkret yang siap diisi pengguna (format persisnya) + di "catatan" satu kalimat cara mengisinya.',
+          '- "sebelum" pada perbaikanLengkap: pakai kutipan yang tercantum pada daftar pemeriksaan bila ada; bila tidak ada, ambil kalimat/bagian CV yang persis diperbaiki; kosongkan hanya untuk masalah ketiadaan.',
+          '- Jaga setiap item perbaikanLengkap ringkas: "sesudah" maksimal sekitar 3 baris/kalimat, "catatan" 1 kalimat. Jawaban memuat banyak item, jadi jangan bertele-tele.',
+        ]),
     '- JANGAN mengarang pengalaman, perusahaan, atau angka baru. Bila angka pencapaian tidak ada di CV, pakai placeholder seperti [X%], [jumlah], atau [angka] di dalam saran, dan jelaskan di alasan bahwa pengguna harus mengisi angka aslinya sendiri.',
     '- kekurangan: SETIAP butir wajib berpola tiga unsur: (1) SPESIFIK — tunjuk bagian/bukti konkret pada CV yang dimaksud (nama bagian, entri pengalaman, atau periode tertentu), bukan kalimat umum yang bisa menempel ke CV mana pun; (2) ALASAN — jelaskan mengapa hal itu merugikan di mata perekrut' +
       (roleCtx ? ', terutama untuk posisi target' : '') +
@@ -339,6 +382,97 @@ export function buildPrompt(
     'TEKS CV:',
     cvText,
   ].join('\n')
+}
+
+// Prompt khusus mode "fixes": SATU panggilan hanya menulis
+// perbaikanLengkap untuk satu batch kecil pemeriksaan (≤ FIX_BATCH_SIZE
+// id). Tanpa bidang inti sama sekali — keluaran kecil inilah yang
+// membuat panggilan ini jauh lebih ringan daripada prompt gabungan
+// dan selesai jauh di bawah batas waktu model. Aturan kualitas itemnya
+// sama persis dengan aturan perbaikanLengkap pada prompt gabungan.
+export function buildFixPrompt(
+  cvText: string,
+  targetRole: string,
+  checks: FailedCheckContext[],
+  roleCtx: RoleContext | null,
+): string {
+  const rolePart = targetRole
+    ? `\nPOSISI YANG DILAMAR: ${targetRole}\n`
+    : ''
+  const checksPart = [
+    '',
+    'PEMERIKSAAN STANDAR YANG GAGAL (hasil mesin penilaian situs atas CV ini — perbaiki SEMUANYA di "perbaikanLengkap"):',
+    ...checks.map((c, i) => {
+      const lines = [`${i + 1}. [id: ${c.id}] ${c.judul}`]
+      if (c.pesan) lines.push(`   Temuan pemeriksa: ${c.pesan}`)
+      if (c.kutipan) lines.push(`   Kutipan dari CV pengguna: "${c.kutipan}"`)
+      return lines.join('\n')
+    }),
+    '',
+  ].join('\n')
+  // Konteks posisi ikut serta agar kosakata perbaikan mengikuti posisi
+  // yang dilamar — rujukan skillnya tetap HANYA daftar dari kamus ini.
+  const roleCtxPart = roleCtx
+    ? [
+        '',
+        `KONTEKS POSISI "${roleCtx.posisi}" (dari kamus skill situs — satu-satunya rujukan skill untuk posisi ini):`,
+        ...(roleCtx.skillDiharapkan.length
+          ? [`- Skill yang diharapkan posisi ini: ${roleCtx.skillDiharapkan.join(', ')}`]
+          : []),
+        ...(roleCtx.skillAda.length
+          ? [`- Skill posisi yang SUDAH terbukti ada di CV: ${roleCtx.skillAda.join(', ')}`]
+          : []),
+        ...(roleCtx.skillBelum.length
+          ? [`- Skill posisi yang BELUM muncul di CV: ${roleCtx.skillBelum.join(', ')}`]
+          : []),
+        '',
+      ].join('\n')
+    : ''
+  return [
+    'Kamu adalah konsultan karier berbahasa Indonesia yang membantu pencari kerja dan fresh graduate memperbaiki CV.',
+    'Tulis HANYA versi perbaikan jadi untuk daftar pemeriksaan di bawah, dan balas HANYA dengan JSON valid (tanpa markdown, tanpa teks lain) dengan skema persis ini:',
+    '{',
+    '  "perbaikanLengkap": [ { "idPemeriksaan": "id pemeriksaan persis seperti pada daftar di bawah", "judul": "nama pemeriksaan", "sebelum": "kutipan asli dari CV yang diperbaiki — kosongkan bila masalahnya sesuatu yang belum ada di CV", "sesudah": "versi perbaikan JADI yang siap disalin pengguna", "catatan": "penjelasan singkat 1 kalimat" } ]',
+    '}',
+    '',
+    'Aturan ketat:',
+    '- perbaikanLengkap: buat SATU item untuk SETIAP pemeriksaan pada daftar "PEMERIKSAAN STANDAR YANG GAGAL" di bawah — tidak boleh ada yang terlewat dan jangan menambah pemeriksaan di luar daftar itu. Urutannya sama seperti daftar.',
+    '- "sesudah" pada perbaikanLengkap harus teks FINAL yang utuh dan siap disalin ke CV, ditulis dari teks pengguna sendiri — bukan contoh umum dan bukan placeholder umum. Placeholder kurung siku HANYA untuk fakta yang memang tidak ada di CV (angka pencapaian, nama, tanggal) dan harus spesifik, mis. [jumlah dokumen yang diproses per bulan], bukan [angka].',
+    '- Bila masalahnya sesuatu yang BELUM ADA di CV (mis. belum ada tautan LinkedIn, sertifikasi, atau bagian yang hilang): "sebelum" dikosongkan dan "sesudah" berisi templat konkret yang siap diisi pengguna (format persisnya) + di "catatan" satu kalimat cara mengisinya.',
+    '- "sebelum" pada perbaikanLengkap: pakai kutipan yang tercantum pada daftar pemeriksaan bila ada; bila tidak ada, ambil kalimat/bagian CV yang persis diperbaiki; kosongkan hanya untuk masalah ketiadaan.',
+    '- Jaga setiap item perbaikanLengkap ringkas: "sesudah" maksimal sekitar 3 baris/kalimat, "catatan" 1 kalimat.',
+    '- JANGAN mengarang pengalaman, perusahaan, atau angka baru. Bila angka pencapaian tidak ada di CV, pakai placeholder seperti [X%], [jumlah], atau [angka] di dalam "sesudah".',
+    ...(roleCtx
+      ? [
+          `- Kosakata dan jenis bukti pada perbaikan mengikuti posisi "${roleCtx.posisi}"; skill posisi yang boleh kamu sebut HANYA yang tercantum pada KONTEKS POSISI di bawah.`,
+        ]
+      : []),
+    '- Seluruh jawaban dalam Bahasa Indonesia yang jelas dan suportif.',
+    rolePart,
+    roleCtxPart,
+    checksPart,
+    'TEKS CV:',
+    cvText,
+  ].join('\n')
+}
+
+// Membentuk hasil akhir sesuai mode panggilan: mode "core" tidak boleh
+// membawa perbaikan (klien memintanya terpisah), dan mode "fixes" hanya
+// membawa perbaikanLengkap — bidang lain dikosongkan agar klien tidak
+// mencampur keluaran dua panggilan.
+export function shapeResultForMode(result: AiResult, mode: AiCallMode): AiResult {
+  if (mode === 'core') return { ...result, perbaikanLengkap: [] }
+  if (mode === 'fixes') {
+    return {
+      ringkasan: '',
+      saranPenulisanUlang: [],
+      kekurangan: [],
+      saranRingkasan: '',
+      perbaikanLengkap: result.perbaikanLengkap,
+      penilaianPosisi: '',
+    }
+  }
+  return result
 }
 
 function asString(value: unknown): string {
@@ -651,11 +785,13 @@ class ThinkSplitter {
 interface StreamOptions {
   apiKey: string
   model: string
-  cvText: string
-  targetRole: string
-  jobDesc: string
-  checks: FailedCheckContext[]
-  roleCtx: RoleContext | null
+  // Prompt sudah disusun pemanggil sesuai mode panggilan (core/fixes/
+  // full) — jalur aliran hanya meneruskannya ke upstream.
+  promptText: string
+  // Id pemeriksaan yang diminta pada panggilan ini (untuk rekonsiliasi
+  // perbaikanLengkap); kosong pada mode "core".
+  requestedFixIds: string[]
+  mode: AiCallMode
 }
 
 // Menjalankan analisis dalam mode streaming: meneruskan penalaran model
@@ -665,7 +801,7 @@ interface StreamOptions {
 // fungsi ini hanya dipanggil setelah validasi lolos dan aliran adalah
 // satu-satunya keluaran yang tersisa untuk kegagalan di tengah proses.
 async function streamAnalysis(res: AiResponse, opts: StreamOptions): Promise<void> {
-  const { apiKey, model, cvText, targetRole, jobDesc, checks, roleCtx } = opts
+  const { apiKey, model, promptText, requestedFixIds, mode } = opts
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS)
 
@@ -686,7 +822,7 @@ async function streamAnalysis(res: AiResponse, opts: StreamOptions): Promise<voi
           model,
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: buildPrompt(cvText, targetRole, jobDesc, checks, roleCtx) },
+            { role: 'user', content: promptText },
           ],
           stream: true,
           ...(options.withResponseFormat ? { response_format: { type: 'json_object' } } : {}),
@@ -938,11 +1074,10 @@ async function streamAnalysis(res: AiResponse, opts: StreamOptions): Promise<voi
     return
   }
 
-  const requestedFixIds = checks.map((c) => c.id)
   let result = contentAll ? parseAiJson(contentAll, requestedFixIds) : null
   if (!result && reasoningAll) result = parseAiJson(reasoningAll, requestedFixIds)
   if (result) {
-    send({ type: 'result', data: result })
+    send({ type: 'result', data: shapeResultForMode(result, mode) })
   } else {
     const rawText = contentAll || reasoningAll
     const snippet = rawText.slice(0, 200)
@@ -998,6 +1133,32 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
   // rujukan skill dari kamus situs, bukan pengetahuan umumnya.
   const roleContext = parseRoleContext(payload.konteksPosisi)
 
+  // Mode panggilan (2026-11-26): klien memecah analisis menjadi
+  // panggilan "core" (bidang inti, tanpa perbaikanLengkap) dan
+  // panggilan "fixes" (perbaikanLengkap untuk satu batch ≤6 id),
+  // karena satu panggilan gabungan raksasa berulang melewati batas
+  // waktu model gratis. Nilai lain/tidak ada → "full" (perilaku lama).
+  const mode: AiCallMode =
+    payload.mode === 'core' || payload.mode === 'fixes' ? payload.mode : 'full'
+  // Pemeriksaan efektif per mode: core tidak membawa daftar sama
+  // sekali; fixes ditegakkan ke satu batch (plafon FIX_BATCH_SIZE)
+  // walau pemanggil mengirim lebih.
+  const effectiveChecks =
+    mode === 'core' ? [] : mode === 'fixes' ? failedChecks.slice(0, FIX_BATCH_SIZE) : failedChecks
+  if (mode === 'fixes' && effectiveChecks.length === 0) {
+    res.status(400).json({
+      error: 'Mode perbaikan memerlukan daftar pemeriksaan yang gagal (bidang "perbaikan").',
+    })
+    return
+  }
+  const requestedFixIds = effectiveChecks.map((c) => c.id)
+  const promptText =
+    mode === 'fixes'
+      ? buildFixPrompt(cvText, targetRole, effectiveChecks, roleContext)
+      : buildPrompt(cvText, targetRole, jobDesc, effectiveChecks, roleContext, mode === 'core' ? 'core' : 'full')
+  const maxTokens =
+    mode === 'core' ? CORE_MAX_TOKENS : mode === 'fixes' ? FIXES_MAX_TOKENS : NONSTREAM_MAX_TOKENS
+
   if (cvText.length < MIN_CV_CHARS) {
     res.status(400).json({
       error: `Teks CV terlalu pendek (minimal ${MIN_CV_CHARS} karakter). Upload atau tempel CV yang lengkap dulu.`,
@@ -1043,7 +1204,7 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
   // rate limit, dan pemeriksaan key di atas sudah berjalan sama seperti
   // mode biasa — error sebelum aliran dimulai dibalas JSON biasa.
   if (payload.stream === true) {
-    await streamAnalysis(res, { apiKey, model, cvText, targetRole, jobDesc, checks: failedChecks, roleCtx: roleContext })
+    await streamAnalysis(res, { apiKey, model, promptText, requestedFixIds, mode })
     return
   }
 
@@ -1066,7 +1227,7 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
           model,
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: buildPrompt(cvText, targetRole, jobDesc, failedChecks, roleContext) },
+            { role: 'user', content: promptText },
           ],
           ...(options.withResponseFormat ? { response_format: { type: 'json_object' } } : {}),
           // Model reasoning bisa menghabiskan seluruh jatah token hanya
@@ -1079,9 +1240,10 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
             ? { reasoning: { effort: 'low', max_tokens: 1500 } }
             : {}),
           temperature: 0.4,
-          // Jatah token besar agar JSON jawaban — kini termasuk perbaikan
-          // untuk semua pemeriksaan yang gagal — tidak terpotong.
-          max_tokens: NONSTREAM_MAX_TOKENS,
+          // Jatah token mengikuti mode: jawaban gabungan mode "full"
+          // (termasuk perbaikan untuk semua pemeriksaan yang gagal)
+          // paling besar; keluaran core/fixes jauh lebih kecil.
+          max_tokens: maxTokens,
         }),
       })
     } catch (err) {
@@ -1220,7 +1382,7 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
     data = null
   }
 
-  const parsed = parseAiResponse(data, failedChecks.map((c) => c.id))
+  const parsed = parseAiResponse(data, requestedFixIds)
   if (!parsed.result) {
     // Diagnostik parse hanya di log server: finish_reason, panjang teks
     // mentah, dan cuplikan awal JAWABAN model (bukan input CV mentah).
@@ -1236,5 +1398,5 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
     return
   }
 
-  res.status(200).json(parsed.result)
+  res.status(200).json(shapeResultForMode(parsed.result, mode))
 }

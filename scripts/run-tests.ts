@@ -97,10 +97,27 @@ import { buildReportPdf, buildReportPdfBytes, sanitizePdfText } from '../src/lib
 import {
   buildAiFixContext,
   buildAiRoleContext,
+  isRetryableAiError,
+  mergeAiFixes,
+  runAiAnalysis,
+  splitFixBatches,
   validateAiAnalysis,
+  FIX_BATCH_SIZE,
   type AiAnalysis,
+  type AiCheckContext,
+  type AiFix,
+  type AiTransport,
 } from '../src/lib/ai'
-import { buildPrompt, parseAiJson, parseFailedChecks, parseRoleContext } from '../api/analyze-ai.js'
+import handler, {
+  buildFixPrompt,
+  buildPrompt,
+  parseAiJson,
+  parseFailedChecks,
+  parseRoleContext,
+  shapeResultForMode,
+  RATE_LIMIT_MAX,
+  FIX_BATCH_SIZE as SERVER_FIX_BATCH_SIZE,
+} from '../api/analyze-ai.js'
 const MEDIUM_CV = `Budi Santoso
 budi.santoso@gmail.com | 0812-9876-5432 | linkedin.com/in/budisantoso
 
@@ -1860,6 +1877,10 @@ const appTsxText = readFileSync(
   resolve(dirname(fileURLToPath(import.meta.url)), '../src/App.tsx'),
   'utf8',
 )
+const aiTsText = readFileSync(
+  resolve(dirname(fileURLToPath(import.meta.url)), '../src/lib/ai.ts'),
+  'utf8',
+)
 check(
   'Laporan: baris tombol kartu hasil dihapus (Salin/.txt/print hilang)',
   !appTsxText.includes('Salin Laporan') &&
@@ -1938,10 +1959,10 @@ check(
     appTsxText.includes('Menyusun perbaikan lengkap untuk semua prioritasmu') &&
     appTsxText.includes('Analisis selesai') &&
     appTsxText.includes('onActivity') &&
-    appTsxText.includes('onReasoning: () => {}') &&
+    aiTsText.includes('onReasoning: () => {}') &&
     appCssText.includes('.thinking-stages') &&
     !appCssText.includes('.thinking-body'),
-  'state/render penalaran mentah hilang; panel menampilkan 5 tahapan + pil status tunggal; aliran streaming tetap berjalan lewat onActivity',
+  'state/render penalaran mentah hilang; panel menampilkan 5 tahapan + pil status tunggal; aliran streaming tetap berjalan lewat onActivity (pengkabelan kini di orkestrator ai.ts)',
 )
 const pdfFileAi = buildReportPdf(analyzeCv(SAMPLE_CV, { targetRole: 'Data Analyst' }), {
   ai: FAKE_AI,
@@ -1966,8 +1987,10 @@ check(
   'AI lengkap: kegagalan streaming di tengah aliran pun dicoba cadangan non-streaming',
   !appTsxText.includes('if (!receivedEvent)') &&
     !appTsxText.includes('receivedEvent') &&
-    appTsxText.includes('const data = await requestAiAnalysis(input)'),
-  'gerbang receivedEvent dihapus; catch streaming selalu mencoba requestAiAnalysis sekali',
+    !aiTsText.includes('receivedEvent') &&
+    aiTsText.includes('core = await transport.corePlain(input)') &&
+    appTsxText.includes('const data = await runAiAnalysis(input, {'),
+  'gerbang receivedEvent dihapus; orkestrator ai.ts selalu mencoba jalur non-streaming sekali pada kegagalan streaming inti; App memanggil runAiAnalysis',
 )
 check(
   'Template: tombol Salin Template sudah dihapus (keputusan 2026-11-21)',
@@ -2564,6 +2587,306 @@ check(
     promptPolosStandar.includes('SPESIFIK') &&
     !promptPolosStandar.includes('terutama untuk posisi target'),
   'pola tiga unsur selalu ada; penekanan posisi target hanya bila konteks posisi ada',
+)
+
+// ---------- Orkestrasi multi-panggilan AI (2026-11-26) ----------
+// Satu panggilan gabungan (inti + perbaikan untuk semua pemeriksaan
+// gagal) berulang melewati batas waktu model gratis. Analisis dipecah:
+// panggilan inti ringan + batch perbaikan ≤6 id, masing-masing dengan
+// satu percobaan ulang pada kegagalan sisi model. Yang dikunci di
+// sini: pembagian batch, penggabungan urutan, kelengkapan per batch,
+// kebijakan ulang, dan kegagalan total run — App hanya memotong token
+// SETELAH runAiAnalysis berhasil, jadi run yang gagal berarti token
+// aman dan tidak ada hasil parsial yang tampil.
+const ORCH_CHECKS: AiCheckContext[] = Array.from({ length: 13 }, (_, i) => ({
+  id: `cek-${i + 1}`,
+  judul: `Pemeriksaan ${i + 1}`,
+  pesan: '',
+  kutipan: '',
+}))
+const orchFixFor = (c: AiCheckContext): AiFix => ({
+  idPemeriksaan: c.id,
+  judul: c.judul,
+  sebelum: '',
+  sesudah: `Versi perbaikan ${c.id}`,
+  catatan: '',
+})
+const ORCH_CORE: AiAnalysis = {
+  ringkasan: 'CV cukup baik.',
+  saranPenulisanUlang: [],
+  kekurangan: [],
+  saranRingkasan: '',
+  perbaikanLengkap: [],
+  penilaianPosisi: '',
+}
+const orchInput = { cvText: MEDIUM_CV, perbaikan: ORCH_CHECKS }
+function orchTransport(overrides: Partial<AiTransport>): AiTransport {
+  return {
+    coreStreaming: async () => ORCH_CORE,
+    corePlain: async () => ORCH_CORE,
+    fixBatch: async (_input, batch) => batch.map(orchFixFor),
+    ...overrides,
+  }
+}
+
+check(
+  'Orkestrasi AI: batch perbaikan dibagi maksimal 6 id per panggilan',
+  FIX_BATCH_SIZE === 6 &&
+    SERVER_FIX_BATCH_SIZE === 6 &&
+    JSON.stringify(splitFixBatches(ORCH_CHECKS).map((b) => b.length)) === '[6,6,1]' &&
+    splitFixBatches([]).length === 0 &&
+    splitFixBatches(ORCH_CHECKS.slice(0, 6)).length === 1,
+  '13 pemeriksaan → batch 6/6/1; kosong → tanpa batch; plafon klien sama dengan plafon server',
+)
+check(
+  'Orkestrasi AI: penggabungan mengikuti urutan prioritas; id asing & duplikat dibuang',
+  (() => {
+    const shuffled = [ORCH_CHECKS[5], ORCH_CHECKS[0], ORCH_CHECKS[5], ORCH_CHECKS[12]].map(orchFixFor)
+    const foreign: AiFix = { idPemeriksaan: 'asing', judul: 'Asing', sebelum: '', sesudah: 'x', catatan: '' }
+    const merged = mergeAiFixes(ORCH_CHECKS, [...shuffled, foreign])
+    return merged.map((f) => f.idPemeriksaan).join(',') === 'cek-1,cek-6,cek-13'
+  })(),
+  'item yang tiba acak dari batch-batch dinormalkan ke urutan daftar yang diminta',
+)
+
+const orchFull = await runAiAnalysis(orchInput, {}, orchTransport({}))
+check(
+  'Orkestrasi AI: run penuh menggabungkan inti + semua batch secara utuh dan berurutan',
+  orchFull.perbaikanLengkap.length === 13 &&
+    orchFull.perbaikanLengkap.map((f) => f.idPemeriksaan).join(',') ===
+      ORCH_CHECKS.map((c) => c.id).join(',') &&
+    orchFull.ringkasan === ORCH_CORE.ringkasan,
+  '13/13 item perbaikan kembali dalam urutan prioritas, bidang inti dari panggilan inti',
+)
+const orchProgressSeen: string[] = []
+await runAiAnalysis(
+  orchInput,
+  { onProgress: (p) => orchProgressSeen.push(`${p.phase}:${p.batchIndex}/${p.batchTotal}`) },
+  orchTransport({}),
+)
+check(
+  'Orkestrasi AI: kemajuan dilaporkan per batch (inti, lalu bagian 1..3)',
+  orchProgressSeen.join(' ') === 'core:0/3 fixes:1/3 fixes:2/3 fixes:3/3',
+  orchProgressSeen.join(' '),
+)
+
+let flakyCalls = 0
+const orchFlaky = await runAiAnalysis(
+  orchInput,
+  {},
+  orchTransport({
+    fixBatch: async (_input, batch) => {
+      flakyCalls++
+      if (flakyCalls === 2) throw new Error('Layanan AI terlalu lama merespons.')
+      return batch.map(orchFixFor)
+    },
+  }),
+)
+check(
+  'Orkestrasi AI: kegagalan sisi model pada satu batch diulang sekali dan run pulih',
+  orchFlaky.perbaikanLengkap.length === 13 && flakyCalls === 4,
+  `batch ke-2 gagal sekali lalu berhasil; total panggilan batch ${flakyCalls} (3 batch + 1 ulang)`,
+)
+
+let incompleteCalls = 0
+const orchIncomplete = await runAiAnalysis(
+  orchInput,
+  {},
+  orchTransport({
+    fixBatch: async (_input, batch) => {
+      incompleteCalls++
+      if (incompleteCalls === 1) return batch.slice(1).map(orchFixFor)
+      return batch.map(orchFixFor)
+    },
+  }),
+)
+check(
+  'Orkestrasi AI: batch yang menjawab tidak lengkap diperlakukan sebagai kegagalan dan diulang',
+  orchIncomplete.perbaikanLengkap.length === 13 && incompleteCalls === 4,
+  'satu id hilang pada jawaban pertama → batch diulang dan akhirnya lengkap 13/13',
+)
+
+let deadCalls = 0
+let orchDeadError: unknown = null
+try {
+  await runAiAnalysis(
+    orchInput,
+    {},
+    orchTransport({
+      fixBatch: async () => {
+        deadCalls++
+        throw new Error('Layanan AI terlalu lama merespons.')
+      },
+    }),
+  )
+} catch (err) {
+  orchDeadError = err
+}
+check(
+  'Orkestrasi AI: batch gagal pada kedua percobaan → seluruh run gagal (token aman, parsial dibuang)',
+  orchDeadError instanceof Error && deadCalls === 2,
+  'run melempar setelah 1 percobaan + 1 ulang; tidak ada hasil parsial yang dinyatakan sukses',
+)
+
+let badReqCalls = 0
+let orchBadReqError: unknown = null
+try {
+  await runAiAnalysis(
+    orchInput,
+    {},
+    orchTransport({
+      fixBatch: async () => {
+        badReqCalls++
+        throw Object.assign(new Error('Permintaan tidak sah.'), { status: 400 })
+      },
+    }),
+  )
+} catch (err) {
+  orchBadReqError = err
+}
+check(
+  'Orkestrasi AI: penolakan 4xx tidak diulang; error jaringan/5xx layak diulang',
+  orchBadReqError instanceof Error &&
+    badReqCalls === 1 &&
+    isRetryableAiError(orchBadReqError) === false &&
+    isRetryableAiError(new Error('jaringan putus')) === true &&
+    isRetryableAiError(Object.assign(new Error('server'), { status: 502 })) === true,
+  'satu panggilan saja untuk 4xx; klasifikasi ulang sesuai status HTTP',
+)
+
+let plainUsed = false
+const orchCoreFallback = await runAiAnalysis(
+  orchInput,
+  {},
+  orchTransport({
+    coreStreaming: async () => {
+      throw new Error('aliran terputus')
+    },
+    corePlain: async () => {
+      plainUsed = true
+      return ORCH_CORE
+    },
+  }),
+)
+check(
+  'Orkestrasi AI: kegagalan streaming inti jatuh ke cadangan non-streaming',
+  plainUsed && orchCoreFallback.perbaikanLengkap.length === 13,
+  'inti pulih lewat jalur biasa; batch sesudahnya tetap lengkap',
+)
+
+let noCheckBatchCalls = 0
+const orchNoChecks = await runAiAnalysis(
+  { cvText: MEDIUM_CV },
+  {},
+  orchTransport({
+    fixBatch: async () => {
+      noCheckBatchCalls++
+      return []
+    },
+  }),
+)
+check(
+  'Orkestrasi AI: tanpa daftar perbaikan hanya panggilan inti yang berjalan',
+  noCheckBatchCalls === 0 && orchNoChecks.perbaikanLengkap.length === 0,
+  'batch dilewati seluruhnya; perbaikanLengkap kosong seperti perilaku lama',
+)
+
+const promptCoreMode = buildPrompt(MEDIUM_CV, 'Data Analyst', '', ORCH_CHECKS, roleCtx, 'core')
+check(
+  'Prompt AI: mode core ringan — tanpa daftar/skema perbaikan, perbaikanLengkap wajib kosong',
+  promptCoreMode.includes('"perbaikanLengkap": []') &&
+    promptCoreMode.includes('diminta pada panggilan terpisah') &&
+    !promptCoreMode.includes('[id: cek-1]') &&
+    !promptCoreMode.includes('buat SATU item untuk SETIAP pemeriksaan') &&
+    promptCoreMode.includes('alur WAJIB'),
+  'panggilan inti hanya bidang inti; standar saranRingkasan tetap terkunci di dalamnya',
+)
+const fixPromptText = buildFixPrompt(MEDIUM_CV, 'Data Analyst', ORCH_CHECKS.slice(0, 2), roleCtx)
+check(
+  'Prompt AI: prompt batch hanya meminta perbaikanLengkap untuk id pada batch itu',
+  fixPromptText.includes('"perbaikanLengkap"') &&
+    fixPromptText.includes('[id: cek-1]') &&
+    fixPromptText.includes('[id: cek-2]') &&
+    !fixPromptText.includes('[id: cek-3]') &&
+    fixPromptText.includes('buat SATU item untuk SETIAP pemeriksaan') &&
+    !fixPromptText.includes('"saranRingkasan"') &&
+    fixPromptText.includes('KONTEKS POSISI'),
+  'skema tunggal perbaikanLengkap + konteks posisi; id di luar batch tidak ikut terkirim',
+)
+check(
+  'Prompt AI: pembentukan hasil per mode memisahkan keluaran inti dan batch',
+  (() => {
+    const full = parseAiJson(
+      JSON.stringify({ ringkasan: 'Ok.', perbaikanLengkap: [{ idPemeriksaan: 'cek-1', sesudah: 'Jadi.' }] }),
+      ['cek-1'],
+    )
+    if (!full) return false
+    const coreShaped = shapeResultForMode(full, 'core')
+    const fixesShaped = shapeResultForMode(full, 'fixes')
+    return (
+      coreShaped.perbaikanLengkap.length === 0 &&
+      coreShaped.ringkasan === 'Ok.' &&
+      fixesShaped.perbaikanLengkap.length === 1 &&
+      fixesShaped.ringkasan === ''
+    )
+  })(),
+  'mode core membuang perbaikan; mode fixes hanya membawa perbaikanLengkap',
+)
+check(
+  'Panel AI: label tahap terakhir menyebut batch yang berjalan (bagian X dari Y)',
+  appTsxText.includes('runAiAnalysis(input, {') &&
+    appTsxText.includes('(bagian ${aiFixBatch.current} dari ${aiFixBatch.total})') &&
+    appTsxText.includes('setAiFixBatch({ current: progress.batchIndex, total: progress.batchTotal })'),
+  'kemajuan batch dari orkestrator menggerakkan label tahap "Menyusun perbaikan lengkap…"',
+)
+
+// ---------- Rate limit endpoint AI (2026-11-26) ----------
+// Batas dinaikkan 5 → 36 per 10 menit per IP agar pola multi-panggilan
+// (1 inti + ≤5 batch, masing-masing boleh diulang sekali = terburuk 12
+// permintaan per analisis) tidak mengunci pengguna wajar, sambil tetap
+// menjadi plafon keras pembakaran kuota. Diuji lewat handler sungguhan
+// TANPA API key: permintaan yang lolos batas berhenti di 500 (key
+// belum terpasang), yang melewati batas berhenti di 429 — tanpa satu
+// pun panggilan upstream.
+check(
+  'Rate limit AI: plafon 36 permintaan per 10 menit per IP',
+  RATE_LIMIT_MAX === 36,
+  `RATE_LIMIT_MAX = ${RATE_LIMIT_MAX} (cukup untuk ±3 analisis penuh terburuk termasuk pengulangan)`,
+)
+async function callHandlerForRateLimit(ip: string): Promise<number> {
+  let status = 0
+  const res = {
+    status(code: number) {
+      status = code
+      return this
+    },
+    json() {},
+    setHeader() {},
+    write() {
+      return true
+    },
+    end() {},
+  }
+  await handler(
+    { method: 'POST', headers: { 'x-real-ip': ip }, body: { cvText: MEDIUM_CV }, socket: {} } as never,
+    res as never,
+  )
+  return status
+}
+const savedOpenRouterKey = process.env.OPENROUTER_API_KEY
+delete process.env.OPENROUTER_API_KEY
+const rlStatuses: number[] = []
+for (let i = 0; i < RATE_LIMIT_MAX + 1; i++) {
+  rlStatuses.push(await callHandlerForRateLimit('198.51.100.23'))
+}
+const rlOtherIpStatus = await callHandlerForRateLimit('198.51.100.24')
+if (savedOpenRouterKey !== undefined) process.env.OPENROUTER_API_KEY = savedOpenRouterKey
+check(
+  'Rate limit AI: permintaan ke-37 dari IP yang sama ditolak 429; IP lain tidak ikut terkunci',
+  rlStatuses.slice(0, RATE_LIMIT_MAX).every((s) => s === 500) &&
+    rlStatuses[RATE_LIMIT_MAX] === 429 &&
+    rlOtherIpStatus === 500,
+  '36 pertama lolos batas (berhenti di pemeriksaan key → 500); ke-37 → 429; bucket per IP terpisah',
 )
 
 // ---------- Uji label posisi Riwayat Skor (2026-11-26) ----------

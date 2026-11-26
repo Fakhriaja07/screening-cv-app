@@ -76,6 +76,36 @@ export interface AiRequestInput {
   jobDesc?: string
   perbaikan?: AiCheckContext[]
   konteksPosisi?: AiRoleContext
+  // Mode panggilan (2026-11-26): server mendukung pemecahan analisis
+  // menjadi panggilan "core" (bidang inti saja) dan "fixes"
+  // (perbaikanLengkap per batch). Tanpa mode, server menjalankan
+  // perilaku lama "full" (satu panggilan gabungan).
+  mode?: 'full' | 'core' | 'fixes'
+}
+
+// Error permintaan AI dengan status HTTP asal (bila ada), agar
+// orkestrasi bisa membedakan kegagalan sisi model yang layak diulang
+// (jaringan/timeout/5xx/jawaban tak terbaca) dari penolakan permintaan
+// yang mengulanginya pun percuma (4xx selain timeout).
+export interface AiHttpError extends Error {
+  status?: number
+}
+
+function aiHttpError(message: string, status: number): AiHttpError {
+  const err = new Error(message) as AiHttpError
+  err.status = status
+  return err
+}
+
+// Apakah kegagalan ini layak dicoba sekali lagi? Kegagalan sisi model
+// (tanpa status: jaringan putus, batas waktu klien, validasi jawaban)
+// dan 5xx dari server layak diulang; 4xx (permintaan tidak sah, API
+// key ditolak, kredit habis, rate limit server) tidak — pengulangan
+// langsung hanya membakar kuota dan waktu pengguna.
+export function isRetryableAiError(err: unknown): boolean {
+  const status = (err as AiHttpError | null)?.status
+  if (typeof status !== 'number') return true
+  return status >= 500
 }
 
 // Batas waktu sisi klien (audit 2026-11-24: sebelumnya fetch tanpa
@@ -226,7 +256,7 @@ export async function requestAiAnalysis(input: AiRequestInput): Promise<AiAnalys
       data && typeof data === 'object' && 'error' in data
         ? String((data as { error: unknown }).error)
         : 'Analisis AI gagal. Coba lagi nanti.'
-    throw new Error(message)
+    throw aiHttpError(message, response.status)
   }
 
   return validateAiAnalysis(data, input.perbaikan?.length ?? 0)
@@ -279,7 +309,7 @@ export async function requestAiAnalysisStreaming(
         data && typeof data === 'object' && 'error' in data
           ? String((data as { error: unknown }).error)
           : 'Analisis AI gagal. Coba lagi nanti.'
-      throw new Error(message)
+      throw aiHttpError(message, response.status)
     }
 
     if (!response.body) {
@@ -347,4 +377,152 @@ export async function requestAiAnalysisStreaming(
   } finally {
     clearTimeout(timer)
   }
+}
+
+// --- Orkestrasi multi-panggilan (2026-11-26) -------------------------------
+// Satu panggilan gabungan (bidang inti + perbaikan untuk SEMUA
+// pemeriksaan yang gagal, hingga ±29 item) berulang melewati batas
+// waktu model gratis dan pengguna hanya menerima pesan timeout.
+// Analisis kini dipecah: satu panggilan inti yang ringan + panggilan
+// perbaikan per batch kecil yang berurutan. Setiap panggilan mendapat
+// satu percobaan ulang pada kegagalan sisi model; run hanya berhasil
+// bila inti DAN semua batch lolos — di titik itulah pemanggil memotong
+// token, jadi kegagalan di tengah jalan tidak pernah membakar token
+// dan hasil parsial tidak pernah tampil sebagai hasil final.
+
+// Ukuran batch perbaikan: maksimal 6 id pemeriksaan per panggilan
+// (plafon yang sama ditegakkan server lewat mode "fixes").
+export const FIX_BATCH_SIZE = 6
+
+export function splitFixBatches(
+  checks: AiCheckContext[],
+  size: number = FIX_BATCH_SIZE,
+): AiCheckContext[][] {
+  const out: AiCheckContext[][] = []
+  for (let i = 0; i < checks.length; i += size) out.push(checks.slice(i, i + size))
+  return out
+}
+
+// Gabung item perbaikan dari semua batch menjadi satu daftar utuh:
+// urutan mengikuti daftar pemeriksaan yang diminta (urutan prioritas),
+// id asing dibuang, duplikat dimenangkan yang pertama.
+export function mergeAiFixes(requested: AiCheckContext[], collected: AiFix[]): AiFix[] {
+  const byId = new Map<string, AiFix>()
+  for (const fix of collected) {
+    if (fix.idPemeriksaan && !byId.has(fix.idPemeriksaan)) {
+      byId.set(fix.idPemeriksaan, fix)
+    }
+  }
+  const out: AiFix[] = []
+  for (const check of requested) {
+    const fix = byId.get(check.id)
+    if (fix) out.push(fix)
+  }
+  return out
+}
+
+export interface AiProgress {
+  phase: 'core' | 'fixes'
+  // Nomor batch yang sedang berjalan (1-based) saat phase 'fixes'; 0
+  // saat phase 'core'. batchTotal = jumlah seluruh batch perbaikan.
+  batchIndex: number
+  batchTotal: number
+}
+
+export interface AiRunHandlers {
+  // Event aliran pertama panggilan inti sudah tiba (pemicu tahapan).
+  onActivity?: () => void
+  onProgress?: (progress: AiProgress) => void
+}
+
+// Lapisan transport agar orkestrasi bisa diuji tanpa jaringan: produksi
+// memakai panggilan HTTP sungguhan di bawah, uji menyuntikkan tiruan.
+export interface AiTransport {
+  coreStreaming: (input: AiRequestInput, handlers: AiStreamHandlers) => Promise<AiAnalysis>
+  corePlain: (input: AiRequestInput) => Promise<AiAnalysis>
+  fixBatch: (input: AiRequestInput, batch: AiCheckContext[]) => Promise<AiFix[]>
+}
+
+function coreInputOf(input: AiRequestInput): AiRequestInput {
+  // Panggilan inti tidak membawa daftar perbaikan sama sekali — daftar
+  // itu hanya untuk panggilan batch.
+  return { ...input, mode: 'core', perbaikan: undefined }
+}
+
+export const defaultAiTransport: AiTransport = {
+  coreStreaming: (input, handlers) => requestAiAnalysisStreaming(coreInputOf(input), handlers),
+  corePlain: (input) => requestAiAnalysis(coreInputOf(input)),
+  fixBatch: async (input, batch) => {
+    const data = await requestAiAnalysis({ ...input, mode: 'fixes', perbaikan: batch })
+    return data.perbaikanLengkap
+  },
+}
+
+const INCOMPLETE_BATCH_MESSAGE =
+  'Jawaban AI tidak lengkap atau kosong. Coba lagi — tokenmu tidak terpakai bila analisis gagal.'
+
+// Jalankan satu Analisis AI penuh: inti (streaming, cadangan
+// non-streaming) lalu batch perbaikan berurutan sampai semua
+// pemeriksaan gagal terliput. Melempar Error berpesan ramah yang sama
+// seperti jalur lama pada kegagalan apa pun yang tidak terpulihkan.
+export async function runAiAnalysis(
+  input: AiRequestInput,
+  handlers: AiRunHandlers = {},
+  transport: AiTransport = defaultAiTransport,
+): Promise<AiAnalysis> {
+  const checks = input.perbaikan ?? []
+  const batches = splitFixBatches(checks)
+  handlers.onProgress?.({ phase: 'core', batchIndex: 0, batchTotal: batches.length })
+
+  // Panggilan inti: streaming lebih dulu (aliran berjalan di latar;
+  // penalaran mentah tidak disimpan/ditampilkan), dan kegagalannya —
+  // sebelum event pertama maupun di tengah aliran — dicoba sekali
+  // lewat cadangan non-streaming, persis pola sebelumnya. Itulah
+  // percobaan ulang jalur inti; token tetap hanya terpotong pada
+  // keberhasilan akhir keseluruhan run.
+  let core: AiAnalysis
+  try {
+    core = await transport.coreStreaming(input, {
+      onReasoning: () => {},
+      onActivity: () => handlers.onActivity?.(),
+    })
+  } catch {
+    core = await transport.corePlain(input)
+  }
+
+  // Panggilan batch perbaikan, berurutan. Tiap batch: satu percobaan
+  // + satu pengulangan pada kegagalan sisi model. Batch yang menjawab
+  // tapi TIDAK meliput semua id-nya diperlakukan sebagai kegagalan
+  // yang sama — janji "AI memperbaiki SEMUA prioritas" tidak boleh
+  // dikurangi diam-diam oleh jawaban parsial.
+  const collected: AiFix[] = []
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i]
+    handlers.onProgress?.({ phase: 'fixes', batchIndex: i + 1, batchTotal: batches.length })
+    let batchFixes: AiFix[] | null = null
+    let lastError: unknown = null
+    for (let attempt = 0; attempt < 2 && batchFixes === null; attempt++) {
+      try {
+        const fixes = await transport.fixBatch(input, batch)
+        const covered = new Set(fixes.map((f) => f.idPemeriksaan))
+        if (batch.every((c) => covered.has(c.id))) {
+          batchFixes = fixes
+        } else {
+          lastError = new Error(INCOMPLETE_BATCH_MESSAGE)
+        }
+      } catch (err) {
+        if (!isRetryableAiError(err)) throw err
+        lastError = err
+      }
+    }
+    if (batchFixes === null) {
+      throw lastError instanceof Error ? lastError : new Error(INCOMPLETE_BATCH_MESSAGE)
+    }
+    collected.push(...batchFixes)
+  }
+
+  const merged = mergeAiFixes(checks, collected)
+  // Gerbang terakhir: gabungan akhir tetap divalidasi bentuknya secara
+  // penuh sebelum dinyatakan sukses — hasil parsial tidak lolos.
+  return validateAiAnalysis({ ...core, perbaikanLengkap: merged }, checks.length)
 }

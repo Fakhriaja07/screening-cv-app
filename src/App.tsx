@@ -17,8 +17,7 @@ import {
 import {
   buildAiFixContext,
   buildAiRoleContext,
-  requestAiAnalysis,
-  requestAiAnalysisStreaming,
+  runAiAnalysis,
   type AiAnalysis,
 } from './lib/ai'
 import {
@@ -513,6 +512,10 @@ export default function App() {
   // TIDAK ditampilkan lagi (keputusan pengguna 2026-11-26) — panel
   // menampilkan tahapan loading, bukan penalaran mentah.
   const [aiConnected, setAiConnected] = useState(false)
+  // Batch perbaikan yang sedang berjalan pada orkestrasi multi-
+  // panggilan ({ current, total }, 1-based) — menggerakkan label tahap
+  // terakhir panel ("… (bagian 2 dari 3)"). Null selama panggilan inti.
+  const [aiFixBatch, setAiFixBatch] = useState<{ current: number; total: number } | null>(null)
   const [aiStageRole, setAiStageRole] = useState('')
   const [aiRunDone, setAiRunDone] = useState(false)
   const [aiElapsed, setAiElapsed] = useState(0)
@@ -819,6 +822,7 @@ export default function App() {
     setAiLoading(true)
     setAiError('')
     setAiConnected(false)
+    setAiFixBatch(null)
     setAiStageRole('')
     setAiRunDone(false)
     setAiElapsed(0)
@@ -844,14 +848,21 @@ export default function App() {
     }
     let succeeded = false
     try {
-      const data = await requestAiAnalysisStreaming(input, {
-        // Teks penalaran mentah tidak lagi disimpan/ditampilkan
-        // (keputusan pengguna 2026-11-26) — aliran tetap berjalan sama,
-        // yang dipakai hanya sinyal aktivitas pertama untuk memajukan
-        // tahapan loading di panel.
-        onReasoning: () => {},
+      // Orkestrasi multi-panggilan (2026-11-26): panggilan inti ringan
+      // (streaming; cadangan non-streaming) lalu panggilan perbaikan
+      // per batch ≤6 pemeriksaan sampai semua prioritas terliput —
+      // menggantikan satu panggilan raksasa yang berulang timeout.
+      // Run hanya berhasil bila inti + SEMUA batch lolos; kegagalan di
+      // titik mana pun melempar ke catch di bawah dan token aman.
+      const data = await runAiAnalysis(input, {
         onActivity: () => {
           if (!isStale()) setAiConnected(true)
+        },
+        onProgress: (progress) => {
+          if (isStale()) return
+          if (progress.phase === 'fixes') {
+            setAiFixBatch({ current: progress.batchIndex, total: progress.batchTotal })
+          }
         },
       })
       // Pengguna menekan reset selagi analisis berjalan → hasil dibuang.
@@ -861,37 +872,20 @@ export default function App() {
         setAiRunDone(true)
         succeeded = true
       }
-    } catch (streamErr) {
-      // Streaming gagal — sebelum event pertama (jaringan/HTTP error)
-      // ATAU di tengah aliran (model kehabisan batas waktu hanya untuk
-      // berpikir sebelum JSON selesai): coba sekali mode non-streaming
-      // sebagai cadangan. Token tetap hanya terpotong bila salah satu
-      // jalur berhasil, jadi cadangan ini tidak merugikan pengguna.
-      // Bila pengguna sudah menekan reset, cadangan tidak perlu dijalankan.
+    } catch (err) {
       if (!isStale()) {
-        try {
-          const data = await requestAiAnalysis(input)
-          if (!isStale()) {
-            setAiResult(data)
-            setAiRoleLabel(konteksPosisi?.posisi ?? '')
-            setAiRunDone(true)
-            succeeded = true
-          }
-        } catch (fallbackErr) {
-          if (!isStale()) {
-            setAiError(
-              fallbackErr instanceof Error ? fallbackErr.message : 'Analisis AI gagal. Coba lagi nanti.',
-            )
-          }
-        }
+        setAiError(
+          err instanceof Error ? err.message : 'Analisis AI gagal. Coba lagi nanti.',
+        )
       }
     } finally {
       // Token hanya terpotong bila hasil berhasil diterima — tepat satu
-      // kali per analisis, termasuk bila jalur streaming sempat gagal dan
-      // cadangan non-streaming yang berhasil (atau sebaliknya).
+      // kali per analisis penuh, hanya setelah inti + semua batch
+      // perbaikan lolos validasi di dalam runAiAnalysis.
       if (succeeded && consumeCredit()) {
         setAiCredits(getCredits())
       }
+      setAiFixBatch(null)
       setAiLoading(false)
     }
   }
@@ -962,6 +956,8 @@ export default function App() {
   // sinyal event pertama (aiConnected) + waktu berlalu (aiElapsed hanya
   // pemicu internal — TIDAK ditampilkan sebagai angka di panel). Tahap
   // terakhir tetap aktif sampai hasil tiba; tidak ada persen karangan.
+  // Selama batch perbaikan berjalan, tahap terakhir dipaksa aktif dan
+  // labelnya menyebut batch ke berapa dari berapa (bukan persen).
   const aiStages = [
     'Menghubungi model AI',
     'AI membaca CV-mu',
@@ -971,7 +967,17 @@ export default function App() {
     'Menulis ulang poin pengalamanmu',
     'Menyusun perbaikan lengkap untuk semua prioritasmu',
   ]
-  const aiStage = !aiConnected ? 0 : aiElapsed < 8 ? 1 : aiElapsed < 28 ? 2 : aiElapsed < 58 ? 3 : 4
+  const aiStage = aiFixBatch
+    ? 4
+    : !aiConnected
+      ? 0
+      : aiElapsed < 8
+        ? 1
+        : aiElapsed < 28
+          ? 2
+          : aiElapsed < 58
+            ? 3
+            : 4
 
   const redeemLocked = redeemFails >= 5
   const paymentSection = (
@@ -1672,7 +1678,11 @@ export default function App() {
                           <span className="stage-mark" aria-hidden="true">
                             {i < aiStage ? <Icon d={I.check} size={13} /> : <span className="stage-dot" />}
                           </span>
-                          <span>{label}</span>
+                          <span>
+                            {i === aiStages.length - 1 && aiFixBatch && aiFixBatch.total > 1
+                              ? `${label} (bagian ${aiFixBatch.current} dari ${aiFixBatch.total})`
+                              : label}
+                          </span>
                         </li>
                       ))}
                     </ol>
