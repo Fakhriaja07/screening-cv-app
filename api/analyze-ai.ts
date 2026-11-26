@@ -240,7 +240,9 @@ export function parseRoleContext(value: unknown): RoleContext | null {
   }
 }
 
-function buildPrompt(
+// Diekspor agar standar kualitas prompt (struktur saranRingkasan &
+// pola kekurangan) bisa dikunci oleh uji di scripts/run-tests.ts.
+export function buildPrompt(
   cvText: string,
   targetRole: string,
   jobDesc: string,
@@ -301,8 +303,8 @@ function buildPrompt(
     '{',
     '  "ringkasan": "penilaian kualitatif CV dalam 2-3 kalimat",',
     '  "saranPenulisanUlang": [ { "asli": "kalimat/poin asli dari CV", "saran": "versi penulisan ulang", "alasan": "kenapa versi baru lebih baik" } ],',
-    '  "kekurangan": [ "kekurangan CV, maksimal 6 butir" ],',
-    '  "saranRingkasan": "contoh ringkasan profil 2-3 kalimat berdasarkan isi CV",',
+    '  "kekurangan": [ "kekurangan CV: bukti konkret di CV + mengapa merugikan + tindakan perbaikan, maksimal 6 butir" ],',
+    '  "saranRingkasan": "contoh ringkasan profil JADI 3-4 kalimat siap tempel, mengikuti struktur ringkasan wajib di bawah",',
     roleCtx
       ? '  "penilaianPosisi": "penilaian kecocokan CV dengan posisi target dalam 2-4 kalimat: bukti terkuat yang sudah ada + celah paling kritis untuk posisi itu",'
       : '  "penilaianPosisi": "",',
@@ -317,10 +319,17 @@ function buildPrompt(
     '- "sebelum" pada perbaikanLengkap: pakai kutipan yang tercantum pada daftar pemeriksaan bila ada; bila tidak ada, ambil kalimat/bagian CV yang persis diperbaiki; kosongkan hanya untuk masalah ketiadaan.',
     '- Jaga setiap item perbaikanLengkap ringkas: "sesudah" maksimal sekitar 3 baris/kalimat, "catatan" 1 kalimat. Jawaban memuat banyak item, jadi jangan bertele-tele.',
     '- JANGAN mengarang pengalaman, perusahaan, atau angka baru. Bila angka pencapaian tidak ada di CV, pakai placeholder seperti [X%], [jumlah], atau [angka] di dalam saran, dan jelaskan di alasan bahwa pengguna harus mengisi angka aslinya sendiri.',
+    '- kekurangan: SETIAP butir wajib berpola tiga unsur: (1) SPESIFIK — tunjuk bagian/bukti konkret pada CV yang dimaksud (nama bagian, entri pengalaman, atau periode tertentu), bukan kalimat umum yang bisa menempel ke CV mana pun; (2) ALASAN — jelaskan mengapa hal itu merugikan di mata perekrut' +
+      (roleCtx ? ', terutama untuk posisi target' : '') +
+      '; (3) TINDAKAN — akhiri dengan arahan perbaikan konkret yang bisa langsung dilakukan pengguna.',
     jobDesc
-      ? '- kekurangan: nilai kesenjangan (gap) CV terhadap deskripsi lowongan secara MAKNA — skill/pengalaman yang dituntut lowongan tapi belum tampak di CV, bukan sekadar daftar kata kunci yang hilang.'
-      : '- kekurangan: nilai kekurangan umum CV (struktur, kejelasan, bukti pencapaian, kelengkapan bagian).',
-    '- saranRingkasan: tulis berdasarkan fakta di CV saja, jangan menambah klaim baru.',
+      ? '- kekurangan menilai kesenjangan (gap) CV terhadap deskripsi lowongan secara MAKNA — skill/pengalaman yang dituntut lowongan tapi belum tampak di CV, bukan sekadar daftar kata kunci yang hilang.'
+      : '- kekurangan menilai celah kualitatif CV (struktur, kejelasan, bukti pencapaian, kelengkapan bagian).',
+    '- kekurangan adalah celah kualitatif — JANGAN mengulang persis isi "perbaikanLengkap": bila topiknya sama, kekurangan membahas bukti dan dampaknya saja, karena versi perbaikan jadinya sudah ditulis di perbaikanLengkap.',
+    '- saranRingkasan: tulis ringkasan profil JADI yang siap ditempel pengguna ke CV, 3–4 kalimat, dengan alur WAJIB: (1) kualifikasi terkuat lebih dulu — pendidikan terakhir dan/atau pengalaman utama, sertakan IPK atau lama pengalaman bila ada di CV; (2) keterampilan inti yang disertai bukti/alat konkret dari CV (nama perangkat lunak, metode, atau teknologi yang benar-benar tertulis); (3) pencapaian, proyek, atau publikasi paling menonjol dari CV; (4) posisi yang dituju (posisi target bila diisi, selain itu bidang pekerjaan dari isi CV) + nilai konkret yang ditawarkan ke pemberi kerja, dirumuskan dari keterampilan yang terbukti di CV.',
+    '- saranRingkasan hanya memakai fakta dari teks CV — jangan menambah klaim, pengalaman, atau angka baru; fakta penting yang memang tidak ada di CV ditulis sebagai placeholder kurung siku yang spesifik (mis. [IPK], [nama sertifikasi]).',
+    '- saranRingkasan TANPA frasa lemah/klise: dilarang klaim sifat tanpa bukti seperti "pekerja keras", "mampu bekerja di bawah tekanan", "dapat bekerja dalam tim", "bersedia ditempatkan di mana saja", "bertanggung jawab atas", atau "semangat belajar tinggi" — ganti dengan bukti konkret dari CV.',
+    '- Gaya saranRingkasan: profesional dengan subjek tersirat (tanpa kata ganti "saya" yang berulang di tiap kalimat), dan kosakata disesuaikan dengan posisi target bila konteks posisi tersedia.',
     ...roleRules,
     '- Seluruh jawaban dalam Bahasa Indonesia yang jelas dan suportif.',
     rolePart,

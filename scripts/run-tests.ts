@@ -100,7 +100,7 @@ import {
   validateAiAnalysis,
   type AiAnalysis,
 } from '../src/lib/ai'
-import { parseAiJson, parseFailedChecks, parseRoleContext } from '../api/analyze-ai.js'
+import { buildPrompt, parseAiJson, parseFailedChecks, parseRoleContext } from '../api/analyze-ai.js'
 const MEDIUM_CV = `Budi Santoso
 budi.santoso@gmail.com | 0812-9876-5432 | linkedin.com/in/budisantoso
 
@@ -2461,6 +2461,39 @@ check(
     appTsxText.includes('tokenmu tidak hangus') &&
     appTsxText.includes('FAKHRI, DIGITAL &amp; KREATIF'),
   'pesan harga satu kali di pay-intro; janji token tidak hangus tetap di paragraf kepala',
+)
+
+// ---------- Standar kualitas ringkasan & kekurangan AI (2026-11-26) ----------
+// Permintaan pengguna dari hasil analisis CV-nya sendiri (Data Analyst):
+// saranRingkasan mengikuti alur 4 langkah (kualifikasi terkuat → skill
+// disertai bukti/alat → pencapaian/proyek/publikasi teratas → posisi
+// tujuan + nilai tawar) dan bebas frasa lemah; setiap butir kekurangan
+// berpola spesifik + alasan + tindakan dan tidak mengulang persis isi
+// perbaikanLengkap. Yang dikunci di sini adalah ATURAN di dalam prompt
+// (buildPrompt) — kepatuhan modelnya diverifikasi lewat uji live.
+const promptRoleStandar = buildPrompt(MEDIUM_CV, 'Data Analyst', '', [], roleCtx)
+const promptPolosStandar = buildPrompt(MEDIUM_CV, '', '', [], null)
+check(
+  'Prompt AI: saranRingkasan dikunci ke alur 4 langkah + anti-klise + fakta CV saja',
+  promptRoleStandar.includes('alur WAJIB') &&
+    promptRoleStandar.includes('kualifikasi terkuat lebih dulu') &&
+    promptRoleStandar.includes('pencapaian, proyek, atau publikasi paling menonjol') &&
+    promptRoleStandar.includes('nilai konkret yang ditawarkan ke pemberi kerja') &&
+    promptRoleStandar.includes('TANPA frasa lemah/klise') &&
+    promptRoleStandar.includes('pekerja keras') &&
+    promptPolosStandar.includes('alur WAJIB'),
+  'struktur ringkasan wajib ada di prompt berposisi maupun tanpa posisi',
+)
+check(
+  'Prompt AI: kekurangan berpola spesifik + alasan + tindakan, terpisah dari perbaikanLengkap',
+  promptRoleStandar.includes('SPESIFIK') &&
+    promptRoleStandar.includes('ALASAN') &&
+    promptRoleStandar.includes('TINDAKAN') &&
+    promptRoleStandar.includes('terutama untuk posisi target') &&
+    promptRoleStandar.includes('JANGAN mengulang persis isi "perbaikanLengkap"') &&
+    promptPolosStandar.includes('SPESIFIK') &&
+    !promptPolosStandar.includes('terutama untuk posisi target'),
+  'pola tiga unsur selalu ada; penekanan posisi target hanya bila konteks posisi ada',
 )
 
 // ---------- Uji label posisi Riwayat Skor (2026-11-26) ----------
