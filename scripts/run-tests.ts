@@ -901,6 +901,10 @@ const roleCases: Array<[string, string]> = [
   ['Social Media Specialist', 'content-creator'],
   ['Programmer', 'developer'],
   ['Web Developer', 'developer'],
+  ['Software Developer', 'developer'],
+  ['Mobile Developer', 'mobile-developer'],
+  ['Android Developer', 'mobile-developer'],
+  ['Flutter Developer', 'mobile-developer'],
   ['Customer Service', 'customer-service'],
   ['Staff Accounting', 'akuntansi'],
 ]
@@ -3165,6 +3169,28 @@ check(
     filterRoleOptions('').length === ROLE_OPTIONS.length &&
       filterRoleOptions('xyzqq-tidak-ada').length === 0,
     'kosong = daftar penuh (teks bebas tetap sah di luar daftar)',
+  )
+  check(
+    'Peran Mobile Developer: variasi masukan terdeteksi ke peran mobile (persetujuan pengguna 2026-11-25)',
+    getRoleSkills('Mobile Developer').id === 'mobile-developer' &&
+      getRoleSkills('mobile').id === 'mobile-developer' &&
+      getRoleSkills('Android').id === 'mobile-developer' &&
+      getRoleSkills('iOS Developer').id === 'mobile-developer' &&
+      getRoleSkills('React Native Developer').id === 'mobile-developer' &&
+      getRoleSkills('Mobile Developer').label === 'Mobile Developer' &&
+      getRoleSkills('Mobile Developer').skills.length === 10 &&
+      getRoleSkills('Mobile Developer').skills.includes('Flutter & Dart') &&
+      getRoleSkills('Mobile Developer').skills.includes('Kotlin'),
+    `Mobile→${getRoleSkills('Mobile Developer').id}, Android→${getRoleSkills('Android Developer').id}, iOS→${getRoleSkills('iOS Developer').id}`,
+  )
+  check(
+    'Combobox: "Mobile Developer" pilihan ke-100; "mobile"/"mobiledeveloper"/"android" menemukannya',
+    ROLE_OPTIONS.length === 100 &&
+      ROLE_OPTIONS.some((o) => o.value === 'Mobile Developer') &&
+      filterRoleOptions('mobile')[0]?.value === 'Mobile Developer' &&
+      filterRoleOptions('mobiledeveloper')[0]?.value === 'Mobile Developer' &&
+      filterRoleOptions('android')[0]?.value === 'Mobile Developer',
+    `jumlah: ${ROLE_OPTIONS.length}; android: ${filterRoleOptions('android').map((o) => o.value).join(', ')}`,
   )
 }
 

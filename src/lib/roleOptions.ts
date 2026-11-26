@@ -14,6 +14,12 @@
 //       "Quality Control"), tetapi nilai yang masuk ke kolom selalu
 //       NAMA LENGKAPNYA.
 //
+// Kata kunci kamus peran (ROLE_SKILLS.keywords) ikut disimpan sebagai
+// ALIAS pencarian tersembunyi pada pilihan yang berasal dari label
+// peran itu: ketikan yang persis sama dengan kata kunci ("android"
+// adalah kata kunci peran Mobile Developer) menemukan labelnya,
+// tanpa alias pernah ditampilkan atau masuk ke kolom.
+//
 // Pilihan digabung, dideduplikasi per nama (huruf besar/kecil diabaikan;
 // singkatan dari entri yang namanya sama digabung, mis. "Research and
 // Development" membawa R&D dan RND), lalu diurutkan alfabetis.
@@ -29,6 +35,9 @@ export interface RoleOption {
   value: string
   /** Singkatan glosarium untuk nama ini (boleh kosong). */
   abbrs: string[]
+  /** Kata kunci kamus peran sumber label ini — alias pencarian
+   *  tersembunyi saja, tidak ditampilkan (boleh kosong). */
+  aliases: string[]
 }
 
 // Kunci deduplikasi & pencocokan nama: huruf kecil, spasi dirapikan.
@@ -54,20 +63,28 @@ function normalizeAbbr(text: string): string {
 
 const byKey = new Map<string, RoleOption>()
 
-function addOption(value: string, abbr?: string) {
+function addOption(value: string, abbr?: string, aliases?: string[]) {
   const v = value.replace(/\s+/g, ' ').trim()
   if (!v) return
   const key = normalizeName(v)
   const existing = byKey.get(key)
   if (existing) {
     if (abbr && !existing.abbrs.includes(abbr)) existing.abbrs.push(abbr)
+    for (const a of aliases ?? []) {
+      if (!existing.aliases.some((x) => normalizeName(x) === normalizeName(a)))
+        existing.aliases.push(a)
+    }
   } else {
-    byKey.set(key, { value: v, abbrs: abbr ? [abbr] : [] })
+    byKey.set(key, {
+      value: v,
+      abbrs: abbr ? [abbr] : [],
+      aliases: aliases ? [...aliases] : [],
+    })
   }
 }
 
 for (const role of ROLE_SKILLS) {
-  for (const part of role.label.split('/')) addOption(part)
+  for (const part of role.label.split('/')) addOption(part, undefined, role.keywords)
 }
 for (const entry of JOB_GLOSSARY) {
   addOption(entry.fullName, entry.abbr)
@@ -88,6 +105,9 @@ export const ROLE_OPTIONS: RoleOption[] = [...byKey.values()].sort((a, b) =>
  *   2 — singkatan diawali ketikan (minimal 2 huruf)
  *   3 — nama memuat ketikan sebagai potongan (termasuk bentuk longgar)
  *   4 — setiap kata ketikan muncul di nama (urutan bebas)
+ *   5 — ketikan persis sama dengan kata kunci kamus peran label ini
+ *       (alias tersembunyi; termasuk bentuk longgar — "android"
+ *       menemukan "Mobile Developer")
  * Di dalam satu peringkat, urutan tetap alfabetis mengikuti ROLE_OPTIONS.
  * Tidak ada hasil bukan kesalahan: teks bebas tetap boleh dipakai.
  */
@@ -99,7 +119,7 @@ export function filterRoleOptions(query: string): RoleOption[] {
   // pendek tidak memanen kecocokan lintas kata yang tidak dimaksud.
   const qSquash = squashName(query)
   const useSquash = qSquash.length >= 3
-  const tiers: RoleOption[][] = [[], [], [], [], []]
+  const tiers: RoleOption[][] = [[], [], [], [], [], []]
   for (const opt of ROLE_OPTIONS) {
     const name = normalizeName(opt.value)
     const nameSquash = squashName(opt.value)
@@ -115,6 +135,12 @@ export function filterRoleOptions(query: string): RoleOption[] {
     else if (name.includes(q) || (useSquash && nameSquash.includes(qSquash)))
       tier = 3
     else if (q.split(' ').every((w) => name.includes(w))) tier = 4
+    else if (
+      opt.aliases.some(
+        (a) => normalizeName(a) === q || (useSquash && squashName(a) === qSquash),
+      )
+    )
+      tier = 5
     if (tier >= 0) tiers[tier].push(opt)
   }
   return tiers.flat()

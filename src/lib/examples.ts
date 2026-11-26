@@ -424,8 +424,7 @@ export const ROLE_SKILLS: RoleSkills[] = [
   {
     // Sengaja SEBELUM entri 'developer': pencocokan kamus memakai frasa
     // terpanjang dan seri dimenangkan entri pertama, jadi kata kunci
-    // 'full stack'/'fullstack' (yang juga ada di entri developer)
-    // jatuh ke peran yang lebih spesifik ini.
+    // 'full stack'/'fullstack' jatuh ke peran yang lebih spesifik ini.
     id: 'full-stack',
     label: 'Full Stack Developer',
     keywords: ['full stack developer', 'fullstack developer', 'full-stack developer', 'full stack', 'fullstack', 'full-stack'],
@@ -435,9 +434,28 @@ export const ROLE_SKILLS: RoleSkills[] = [
     ],
   },
   {
+    // Sengaja SEBELUM entri 'developer': kata kunci spesifik mobile
+    // ('mobile developer', 'android developer', dst.) hanya ada di
+    // sini — entri developer umum di bawah tidak memuatnya — jadi
+    // masukan mobile selalu jatuh ke peran ini, sementara masukan
+    // developer umum ('programmer', 'software developer',
+    // 'web developer') tetap ke entri developer.
+    id: 'mobile-developer',
+    label: 'Mobile Developer',
+    keywords: ['mobile developer', 'android developer', 'ios developer', 'flutter developer', 'react native developer', 'mobile', 'android'],
+    skills: [
+      'Flutter & Dart', 'Kotlin', 'Swift', 'React Native', 'Android Studio',
+      'REST API', 'Firebase', 'Git & GitHub', 'UI/UX Mobile', 'Bahasa Inggris',
+    ],
+  },
+  {
     id: 'developer',
     label: 'Software Developer / Programmer',
-    keywords: ['programmer', 'programer', 'software developer', 'developer', 'software engineer', 'web developer', 'full stack', 'fullstack', 'frontend', 'backend', 'mobile developer'],
+    // Kata kunci 'full stack'/'fullstack' dan frasa mobile
+    // ('mobile developer' dst.) sengaja TIDAK di sini — sudah
+    // ditangani entri 'full-stack' dan 'mobile-developer' yang lebih
+    // spesifik di atas, dengan hasil pencocokan yang sama.
+    keywords: ['programmer', 'programer', 'software developer', 'developer', 'software engineer', 'web developer', 'frontend', 'backend'],
     skills: [
       'JavaScript', 'TypeScript', 'React', 'Node.js', 'Git & GitHub',
       'REST API', 'SQL', 'HTML & CSS', 'Testing & Debugging', 'Bahasa Inggris',
