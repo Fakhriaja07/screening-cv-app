@@ -1883,6 +1883,43 @@ check(
     /aiResult \? \([\s\S]{0,400}Unduh Laporan \(PDF\)/.test(appTsxText),
   'blok .ai-report-actions dirender kondisional pada aiResult; sebelum itu tampil petunjuk pengganti',
 )
+// Regresi 2026-11-26: pengguna melaporkan klik "Unduh Laporan (PDF)"
+// tidak bereaksi sama sekali. Akarnya terbukti: tab pengguna masih
+// menjalankan build lama saat deployment baru mendarat, chunk PDF
+// hash lama berstatus 404 di domain live, impor dinamis di handler
+// lama (tanpa try/catch) menolak janji tanpa jejak UI. Jalur data PDF
+// sendiri sehat (uji Blob di bawah), jadi yang dijaga di sini adalah
+// ketahanan handler: galat TIDAK boleh diam lagi + pra-muat chunk.
+const downloadHandlerSrc = appTsxText.slice(
+  appTsxText.indexOf('async function handleDownloadPdf'),
+  appTsxText.indexOf('async function handleDownloadPdf') + 1800,
+)
+check(
+  'Laporan: kegagalan unduh PDF tidak diam — try/catch + pesan galat terlihat (regresi 2026-11-26)',
+  downloadHandlerSrc.includes('try {') &&
+    downloadHandlerSrc.includes('catch') &&
+    downloadHandlerSrc.includes('setDownloadError(') &&
+    appTsxText.includes('downloadError &&') &&
+    appTsxText.includes('Berkas PDF gagal dibuat.'),
+  'handler unduh membungkus impor + pembuatan PDF dalam try/catch dan merender pesan galat di kartu AI',
+)
+check(
+  'Laporan: modul PDF dipra-muat saat hasil AI tampil (cegah chunk basi 404)',
+  appTsxText.includes('pdfLibRef') &&
+    /useEffect\(\(\) => \{\s*if \(!aiResult\) return/.test(appTsxText) &&
+    appTsxText.includes('loadPdfLib().catch(() => {})'),
+  'efek pra-muat mengimpor lib/pdf segera setelah aiResult ada, selagi deployment tab masih aktif',
+)
+const pdfFileAi = buildReportPdf(analyzeCv(SAMPLE_CV, { targetRole: 'Data Analyst' }), {
+  ai: FAKE_AI,
+  targetRole: 'Data Analyst',
+  date: REPORT_DATE,
+})
+check(
+  'Laporan PDF: panggilan persis produksi (AI lengkap, penilaianPosisi terisi) menghasilkan Blob PDF',
+  pdfFileAi.blob.type === 'application/pdf' && pdfFileAi.blob.size > 2000,
+  `${pdfFileAi.blob.type}, ${pdfFileAi.blob.size} byte`,
+)
 check(
   'AI lengkap: kartu AI menampilkan bagian Perbaikan Lengkap + janji token tidak hangus',
   appTsxText.includes('Perbaikan Lengkap dari AI') &&

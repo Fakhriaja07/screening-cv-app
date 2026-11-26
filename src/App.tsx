@@ -507,6 +507,7 @@ export default function App() {
   // diedit sesudahnya. Kosong bila analisis dijalankan tanpa posisi.
   const [aiRoleLabel, setAiRoleLabel] = useState('')
   const [aiError, setAiError] = useState('')
+  const [downloadError, setDownloadError] = useState('')
   const [aiThinking, setAiThinking] = useState('')
   const [aiThinkingOpen, setAiThinkingOpen] = useState(false)
   const [aiElapsed, setAiElapsed] = useState(0)
@@ -547,6 +548,9 @@ export default function App() {
   // reset dibuang (tidak tampil, token tidak terpotong) — audit 2026-11-24.
   const aiRunRef = useRef(0)
   const thinkingBodyRef = useRef<HTMLDivElement>(null)
+  // Modul PDF (jsPDF) yang sudah berhasil dimuat, disimpan agar klik
+  // unduh tidak perlu mengambil chunk-nya lagi (lihat loadPdfLib).
+  const pdfLibRef = useRef<typeof import('./lib/pdf') | null>(null)
 
   // Penghitung detik berjalan selama analisis AI berlangsung.
   useEffect(() => {
@@ -562,6 +566,18 @@ export default function App() {
     const el = thinkingBodyRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [aiThinking, aiThinkingOpen])
+
+  // Pra-muat modul PDF begitu hasil AI tampil: chunk-nya diambil selagi
+  // deployment yang memuat tab ini masih aktif. Tanpa ini, deploy baru
+  // di tengah sesi membuat chunk lama berstatus 404 dan klik unduh
+  // gagal total tanpa pesan apa pun (bug yang dilaporkan 2026-11-26).
+  // Kegagalan pra-muat diabaikan di sini — klik unduh akan mencoba lagi
+  // dan menampilkan galat secara terlihat bila tetap gagal.
+  useEffect(() => {
+    if (!aiResult) return
+    setDownloadError('')
+    loadPdfLib().catch(() => {})
+  }, [aiResult])
 
   // Mode pembayaran otomatis dibaca sekali dari server saat halaman
   // dimuat. Gagal memuat → payConfig tetap null → jalur manual.
@@ -893,21 +909,48 @@ export default function App() {
     window.setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
+  // Muat modul PDF (chunk jsPDF) sekali lalu simpan di pdfLibRef.
+  // Memakai impor dinamis agar bundel awal tetap ringan.
+  async function loadPdfLib(): Promise<typeof import('./lib/pdf')> {
+    if (!pdfLibRef.current) {
+      pdfLibRef.current = await import('./lib/pdf')
+    }
+    return pdfLibRef.current
+  }
+
   // "Unduh Laporan (PDF)": berkas PDF sungguhan dibuat di browser oleh
   // lib/pdf.ts (jsPDF, dimuat dinamis agar bundel awal tetap ringan) lalu
   // langsung terunduh — tanpa dialog cetak. Isinya laporan gabungan:
   // skor standar + bagian Analisis AI bila hasil AI sudah dibuat.
+  // Seluruh jalur dibungkus try/catch dengan pesan galat TERLIHAT:
+  // versi tanpa pengaman (sampai 2026-11-26) gagal diam-diam total —
+  // misalnya saat chunk PDF versi lama sudah 404 karena situs
+  // diperbarui di tengah sesi pengguna — dan tombol terasa mati.
   async function handleDownloadPdf() {
     if (!result) return
-    const { buildReportPdf } = await import('./lib/pdf')
-    const { blob, fileName } = buildReportPdf(result, {
-      ai: aiResult,
-      // Posisi pada laporan = posisi saat analisis dijalankan (snapshot),
-      // bukan isi kolom posisi yang mungkin sudah diedit sesudahnya.
-      targetRole: analyzedRole,
-      date: analysisDate ?? new Date(),
-    })
-    downloadBlob(blob, fileName)
+    setDownloadError('')
+    try {
+      let pdfLib: typeof import('./lib/pdf')
+      try {
+        pdfLib = await loadPdfLib()
+      } catch {
+        // Satu kali percobaan ulang dari nol untuk kegagalan sesaat.
+        pdfLibRef.current = null
+        pdfLib = await loadPdfLib()
+      }
+      const { blob, fileName } = pdfLib.buildReportPdf(result, {
+        ai: aiResult,
+        // Posisi pada laporan = posisi saat analisis dijalankan (snapshot),
+        // bukan isi kolom posisi yang mungkin sudah diedit sesudahnya.
+        targetRole: analyzedRole,
+        date: analysisDate ?? new Date(),
+      })
+      downloadBlob(blob, fileName)
+    } catch {
+      setDownloadError(
+        'Berkas PDF gagal dibuat. Coba klik sekali lagi; bila tetap gagal, muat ulang halaman ini — situs mungkin baru saja diperbarui (hasil AI di halaman ini akan hilang setelah muat ulang).',
+      )
+    }
   }
 
   // Bagian pembayaran QRIS manual + kode token: tampil saat token habis,
@@ -1579,6 +1622,11 @@ export default function App() {
                       Laporan langsung terunduh sebagai berkas PDF — mencakup skor standar
                       dan hasil Analisis AI.
                     </span>
+                    {downloadError && (
+                      <div className="alert alert-error">
+                        <Icon d={I.alert} size={16} /> {downloadError}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="report-actions ai-report-actions">
