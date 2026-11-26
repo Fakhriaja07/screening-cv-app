@@ -223,6 +223,13 @@ function PriorityRow({
 // mengunggah CV-nya sendiri.
 const DEMO_BEFORE = analyzeCv(DEMO_WEAK_CV)
 const DEMO_AFTER = analyzeCv(SAMPLE_CV)
+// Peta pemeriksaan hasil "Sesudah" berdasarkan id, agar kartu Sesudah
+// bisa menampilkan baris pemeriksaan yang sama persis dengan tiga
+// prioritas teratas kartu Sebelum — dengan poin dari hasil sesudah
+// yang sebenarnya, bukan angka yang diketik manual.
+const DEMO_AFTER_BY_ID = new Map(
+  DEMO_AFTER.aspects.flatMap((a) => a.checks).map((c) => [c.id, c]),
+)
 
 function DemoSection() {
   const delta = DEMO_AFTER.total - DEMO_BEFORE.total
@@ -232,17 +239,15 @@ function DemoSection() {
         <span className="badge badge-soft"><Icon d={I.chart} size={14} /> Contoh hasil analisis</span>
         <h2>Lihat Contoh Hasil</h2>
         <p>
-          Dua CV contoh di bawah ini dianalisis langsung oleh mesin penilaian
-          yang sama dengan yang akan menilai CV-mu — bukan testimoni pengguna
-          dan bukan angka karangan. Yang satu ditulis seadanya; yang lain
-          ditulis dengan bukti hasil kerja.
+          Ini dua CV contoh yang dinilai mesin yang sama persis dengan yang
+          akan menilai CV-mu.
         </p>
       </div>
       <div className="demo-grid">
         <div className="card demo-card">
           <div className="demo-card-head">
             <span className="demo-tag demo-tag-before">Sebelum</span>
-            <span className="demo-cv-name">CV contoh — ditulis seadanya</span>
+            <span className="demo-cv-name">CV contoh — seadanya</span>
           </div>
           <div className="demo-score-row">
             <ScoreRing score={DEMO_BEFORE.total} size={108} />
@@ -263,7 +268,7 @@ function DemoSection() {
         <div className="card demo-card demo-card-after">
           <div className="demo-card-head">
             <span className="demo-tag demo-tag-after">Sesudah</span>
-            <span className="demo-cv-name">CV contoh — ditulis dengan bukti hasil</span>
+            <span className="demo-cv-name">CV contoh — dengan bukti hasil</span>
           </div>
           <div className="demo-score-row">
             <ScoreRing score={DEMO_AFTER.total} size={108} />
@@ -272,19 +277,30 @@ function DemoSection() {
               <p className="demo-delta">
                 <Icon d={I.trendUp} size={16} /> Naik {delta} poin dari contoh “Sebelum”
               </p>
-              <p className="demo-note">
-                Selisihnya datang dari hal yang bisa kamu perbaiki juga: angka
-                hasil kerja, kata kerja aksi, skill yang spesifik, dan kontak
-                yang lengkap.
-              </p>
+              <p className="demo-note">Pemeriksaan yang sama pada CV ini:</p>
+              <ol className="demo-priorities demo-priorities-after">
+                {DEMO_BEFORE.priorities.slice(0, 3).map((c) => {
+                  const a = DEMO_AFTER_BY_ID.get(c.id)
+                  return (
+                    <li key={c.id}>
+                      <strong>{c.title}</strong> — {a ? `${a.score}/${a.max}` : '–'} poin
+                    </li>
+                  )
+                })}
+              </ol>
             </div>
           </div>
-          <p className="demo-note">
-            Kedua CV di atas adalah contoh bawaan situs — bukan CV pengguna
-            asli — dan skornya dihitung langsung oleh mesin penilaian saat
-            halaman ini dimuat.
-          </p>
         </div>
+      </div>
+      <div className="demo-caption">
+        <p>
+          Selisihnya datang dari hal yang bisa kamu perbaiki juga: angka hasil
+          kerja, kata kerja aksi, skill yang spesifik, dan kontak yang lengkap.
+        </p>
+        <p className="demo-disclaimer">
+          Contoh bawaan situs, skornya dihitung langsung oleh mesin penilaian
+          — bukan testimoni pengguna.
+        </p>
       </div>
       <div className="demo-cta">
         <a className="btn btn-primary" href="#analisis">

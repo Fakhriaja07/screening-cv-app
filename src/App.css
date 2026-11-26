@@ -1612,6 +1612,23 @@ img {
   color: #d97706;
   font-weight: 700;
 }
+.demo-priorities-after li::marker {
+  color: var(--green-dark);
+}
+.demo-caption {
+  text-align: center;
+  max-width: 680px;
+  margin: 18px auto 0;
+  color: var(--muted);
+  font-size: 14.5px;
+  line-height: 1.65;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.demo-disclaimer {
+  font-size: 13px;
+}
 .demo-cta {
   display: flex;
   align-items: center;
