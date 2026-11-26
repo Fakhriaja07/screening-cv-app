@@ -1923,6 +1923,26 @@ check(
     /\.empty-card \{\s*display: none;/.test(appCssText),
   'placeholder lama (cincin 78/100 + label ilustrasi) hilang; placeholder baru tanpa angka, tersembunyi di lebar bertumpuk',
 )
+check(
+  'Panel AI: penalaran mentah TIDAK ditampilkan — tahapan loading + satu pil status (keputusan pengguna 2026-11-26, membalikkan pilihan 2026-11-18)',
+  !appTsxText.includes('aiThinking') &&
+    !appTsxText.includes('thinking-body') &&
+    !appTsxText.includes('thinking-time') &&
+    !appTsxText.includes('thinking-summary') &&
+    appTsxText.includes('AI sedang memproses · Mohon tunggu') &&
+    appTsxText.includes('thinking-stages') &&
+    appTsxText.includes('Menghubungi model AI') &&
+    appTsxText.includes('AI membaca CV-mu') &&
+    appTsxText.includes('Menilai CV-mu berdasarkan posisi') &&
+    appTsxText.includes('Menilai kekuatan & kekurangan CV-mu') &&
+    appTsxText.includes('Menyusun perbaikan lengkap untuk semua prioritasmu') &&
+    appTsxText.includes('Analisis selesai') &&
+    appTsxText.includes('onActivity') &&
+    appTsxText.includes('onReasoning: () => {}') &&
+    appCssText.includes('.thinking-stages') &&
+    !appCssText.includes('.thinking-body'),
+  'state/render penalaran mentah hilang; panel menampilkan 5 tahapan + pil status tunggal; aliran streaming tetap berjalan lewat onActivity',
+)
 const pdfFileAi = buildReportPdf(analyzeCv(SAMPLE_CV, { targetRole: 'Data Analyst' }), {
   ai: FAKE_AI,
   targetRole: 'Data Analyst',

@@ -508,10 +508,14 @@ export default function App() {
   const [aiRoleLabel, setAiRoleLabel] = useState('')
   const [aiError, setAiError] = useState('')
   const [downloadError, setDownloadError] = useState('')
-  const [aiThinking, setAiThinking] = useState('')
-  const [aiThinkingOpen, setAiThinkingOpen] = useState(false)
+  // Sinyal aliran streaming: event pertama sudah tiba (pemicu tahapan
+  // loading panel AI). Teks penalaran mentah model TIDAK disimpan dan
+  // TIDAK ditampilkan lagi (keputusan pengguna 2026-11-26) — panel
+  // menampilkan tahapan loading, bukan penalaran mentah.
+  const [aiConnected, setAiConnected] = useState(false)
+  const [aiStageRole, setAiStageRole] = useState('')
+  const [aiRunDone, setAiRunDone] = useState(false)
   const [aiElapsed, setAiElapsed] = useState(0)
-  const [aiDuration, setAiDuration] = useState<number | null>(null)
   const [aiCredits, setAiCredits] = useState<number>(() => getCredits())
   const [pendingCode, setPendingCode] = useState<number>(() => getOrCreatePendingCode())
   const [payOpen, setPayOpen] = useState(false)
@@ -547,7 +551,6 @@ export default function App() {
   // menaikkannya, sehingga hasil AI yang tiba SETELAH pengguna menekan
   // reset dibuang (tidak tampil, token tidak terpotong) — audit 2026-11-24.
   const aiRunRef = useRef(0)
-  const thinkingBodyRef = useRef<HTMLDivElement>(null)
   // Modul PDF (jsPDF) yang sudah berhasil dimuat, disimpan agar klik
   // unduh tidak perlu mengambil chunk-nya lagi (lihat loadPdfLib).
   const pdfLibRef = useRef<typeof import('./lib/pdf') | null>(null)
@@ -560,12 +563,6 @@ export default function App() {
     }, 500)
     return () => window.clearInterval(id)
   }, [aiLoading])
-
-  // Panel proses berpikir selalu bergulir mengikuti teks terbaru.
-  useEffect(() => {
-    const el = thinkingBodyRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [aiThinking, aiThinkingOpen])
 
   // Pra-muat modul PDF begitu hasil AI tampil: chunk-nya diambil selagi
   // deployment yang memuat tab ini masih aktif. Tanpa ini, deploy baru
@@ -667,10 +664,10 @@ export default function App() {
     setAiResult(null)
     setAiRoleLabel('')
     setAiError('')
-    setAiThinking('')
-    setAiThinkingOpen(false)
+    setAiConnected(false)
+    setAiStageRole('')
+    setAiRunDone(false)
     setAiElapsed(0)
-    setAiDuration(null)
     setPrevEntry(null)
   }
 
@@ -821,9 +818,9 @@ export default function App() {
     const isStale = () => aiRunRef.current !== runId
     setAiLoading(true)
     setAiError('')
-    setAiThinking('')
-    setAiThinkingOpen(false)
-    setAiDuration(null)
+    setAiConnected(false)
+    setAiStageRole('')
+    setAiRunDone(false)
     setAiElapsed(0)
     aiStartRef.current = Date.now()
     // Konteks pemeriksaan yang gagal dari hasil standar yang sedang
@@ -837,6 +834,7 @@ export default function App() {
     // posisi itu dengan rujukan skill kamus situs. Null bila posisi
     // kosong — permintaan lama terkirim persis seperti sebelumnya.
     const konteksPosisi = buildAiRoleContext(sourceText, sourceRole)
+    setAiStageRole(konteksPosisi?.posisi ?? '')
     const input = {
       cvText: sourceText,
       targetRole: sourceRole,
@@ -847,18 +845,20 @@ export default function App() {
     let succeeded = false
     try {
       const data = await requestAiAnalysisStreaming(input, {
-        onReasoning: (text) => {
-          setAiThinking((prev) => {
-            if (prev.length >= 8000) return prev
-            const next = prev + text
-            return next.length > 8000 ? `${next.slice(0, 8000)}…` : next
-          })
+        // Teks penalaran mentah tidak lagi disimpan/ditampilkan
+        // (keputusan pengguna 2026-11-26) — aliran tetap berjalan sama,
+        // yang dipakai hanya sinyal aktivitas pertama untuk memajukan
+        // tahapan loading di panel.
+        onReasoning: () => {},
+        onActivity: () => {
+          if (!isStale()) setAiConnected(true)
         },
       })
       // Pengguna menekan reset selagi analisis berjalan → hasil dibuang.
       if (!isStale()) {
         setAiResult(data)
         setAiRoleLabel(konteksPosisi?.posisi ?? '')
+        setAiRunDone(true)
         succeeded = true
       }
     } catch (streamErr) {
@@ -874,6 +874,7 @@ export default function App() {
           if (!isStale()) {
             setAiResult(data)
             setAiRoleLabel(konteksPosisi?.posisi ?? '')
+            setAiRunDone(true)
             succeeded = true
           }
         } catch (fallbackErr) {
@@ -891,7 +892,6 @@ export default function App() {
       if (succeeded && consumeCredit()) {
         setAiCredits(getCredits())
       }
-      setAiDuration(Math.max(1, Math.round((Date.now() - aiStartRef.current) / 1000)))
       setAiLoading(false)
     }
   }
@@ -958,6 +958,21 @@ export default function App() {
   // kode unik yang sedang berlaku untuk pengguna ini. Token didapat dari
   // kode yang diberikan admin setelah pembayaran diperiksa — tidak ada
   // lagi tombol konfirmasi kepercayaan.
+  // Tahapan loading panel AI (keputusan pengguna 2026-11-26): digerakkan
+  // sinyal event pertama (aiConnected) + waktu berlalu (aiElapsed hanya
+  // pemicu internal — TIDAK ditampilkan sebagai angka di panel). Tahap
+  // terakhir tetap aktif sampai hasil tiba; tidak ada persen karangan.
+  const aiStages = [
+    'Menghubungi model AI',
+    'AI membaca CV-mu',
+    aiStageRole
+      ? `Menilai CV-mu berdasarkan posisi ${aiStageRole}`
+      : 'Menilai kekuatan & kekurangan CV-mu',
+    'Menulis ulang poin pengalamanmu',
+    'Menyusun perbaikan lengkap untuk semua prioritasmu',
+  ]
+  const aiStage = !aiConnected ? 0 : aiElapsed < 8 ? 1 : aiElapsed < 28 ? 2 : aiElapsed < 58 ? 3 : 4
+
   const redeemLocked = redeemFails >= 5
   const paymentSection = (
     <div className="pay-box">
@@ -1636,56 +1651,42 @@ export default function App() {
                   </div>
                 )}
 
-                {(aiLoading || aiThinking) && (
-                  <div className={aiLoading ? 'thinking-panel' : 'thinking-panel thinking-done'}>
-                    {aiLoading ? (
-                      <>
-                        <div className="thinking-head">
-                          <span className="thinking-title">
-                            <Icon d={I.spark} size={15} />
-                            <span>Proses Berpikir AI</span>
-                            <span className="thinking-live">
-                              <span className="thinking-dot" aria-hidden="true" />
-                              Sedang berpikir
-                            </span>
-                          </span>
-                          <span className="thinking-time">{aiElapsed} detik</span>
-                        </div>
-                        <div className="thinking-body" ref={thinkingBodyRef}>
-                          {aiThinking ? (
-                            aiThinking
-                          ) : (
-                            <span className="thinking-wait">Menghubungi model AI…</span>
-                          )}
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          className="thinking-summary"
-                          onClick={() => setAiThinkingOpen((o) => !o)}
-                          aria-expanded={aiThinkingOpen}
+                {aiLoading ? (
+                  <div className="thinking-panel">
+                    <div className="thinking-head">
+                      <span className="thinking-title">
+                        <Icon d={I.spark} size={15} />
+                        <span>Proses Berpikir AI</span>
+                      </span>
+                      <span className="thinking-status">
+                        <span className="thinking-dot" aria-hidden="true" />
+                        AI sedang memproses · Mohon tunggu
+                      </span>
+                    </div>
+                    <ol className="thinking-stages">
+                      {aiStages.map((label, i) => (
+                        <li
+                          key={label}
+                          className={i < aiStage ? 'stage-done' : i === aiStage ? 'stage-active' : 'stage-todo'}
                         >
-                          <Icon d={I.spark} size={15} />
-                          <span>
-                            {aiError
-                              ? `Proses berpikir terhenti (±${aiDuration ?? aiElapsed} detik) — klik untuk ${aiThinkingOpen ? 'menutup' : 'melihat'}`
-                              : `Proses berpikir selesai (±${aiDuration ?? aiElapsed} detik) — klik untuk ${aiThinkingOpen ? 'menutup' : 'melihat'}`}
+                          <span className="stage-mark" aria-hidden="true">
+                            {i < aiStage ? <Icon d={I.check} size={13} /> : <span className="stage-dot" />}
                           </span>
-                          <span className={aiThinkingOpen ? 'thinking-chev open' : 'thinking-chev'} aria-hidden="true">
-                            <Icon d={I.chev} size={16} />
-                          </span>
-                        </button>
-                        {aiThinkingOpen && (
-                          <div className="thinking-body thinking-body-bordered" ref={thinkingBodyRef}>
-                            {aiThinking}
-                          </div>
-                        )}
-                      </>
-                    )}
+                          <span>{label}</span>
+                        </li>
+                      ))}
+                    </ol>
+                    <p className="thinking-note">
+                      Analisis mendalam biasanya butuh 1–2 menit — tokenmu hanya terpakai bila analisis berhasil.
+                    </p>
                   </div>
-                )}
+                ) : aiRunDone ? (
+                  <div className="thinking-panel thinking-done">
+                    <span className="thinking-done-label">
+                      <Icon d={I.check} size={15} /> Analisis selesai
+                    </span>
+                  </div>
+                ) : null}
 
                 {aiError && <div className="alert alert-error"><Icon d={I.alert} size={16} /> {aiError}</div>}
 
