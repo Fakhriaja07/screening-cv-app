@@ -1045,15 +1045,14 @@ export default function App() {
       {/* ===== HERO ===== */}
       <header className="hero">
         <div className="hero-inner">
-          <span className="badge"><Icon d={I.zap} size={14} /> Penilaian CV Bahasa Indonesia</span>
-          <h1>Screening CV</h1>
+          <span className="badge"><Icon d={I.zap} size={14} /> Screening CV · Penilaian CV Bahasa Indonesia</span>
+          <h1>CV-mu sudah siap <span className="hero-accent">dikirim?</span></h1>
           <p className="hero-sub">
-            Masukkan CV-mu, dapatkan skor 0–100 dari 6 aspek dan 27 pemeriksaan,
-            lengkap dengan bagian mana saja yang harus diperbaiki. Bila kamu
-            menempel deskripsi lowongan, kecocokan CV-mu dengan lowongan itu
-            ikut menjadi aspek penilaian tersendiri. Analisis standar
-            berjalan 100% di browser — file CV tidak diunggah ke server mana pun.
-            Ada juga Analisis AI opsional (berbayar) untuk saran penulisan ulang.
+            Unggah atau tempel CV-mu di sini, lalu lihat skornya: 0–100 dari
+            6 aspek lewat 27 pemeriksaan. Kamu juga dapat daftar bagian yang
+            perlu diperbaiki, jadi tahu harus mulai dari mana. Ada deskripsi
+            lowongannya? Tempel sekalian, kecocokan CV-mu dengan lowongan
+            itu ikut dinilai.
           </p>
           <div className="hero-actions">
             <a className="btn btn-primary" href="#analisis"><Icon d={I.chart} size={18} /> Mulai Analisis</a>
@@ -1061,6 +1060,14 @@ export default function App() {
               <Icon d={I.file} size={18} /> Coba CV Contoh
             </button>
           </div>
+          <p className="hero-note">
+            <Icon d={I.check} size={15} />
+            <span>
+              CV-mu tetap di sini: analisis standar berjalan 100% di browser,
+              file-mu tidak diunggah ke server mana pun. Mau dibantu menulis
+              ulang? Ada Analisis AI berbayar untuk itu.
+            </span>
+          </p>
           <div className="hero-stats">
             <div><strong>100</strong><span>total poin</span></div>
             <div><strong>6+1</strong><span>aspek dinilai</span></div>
