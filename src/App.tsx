@@ -1687,7 +1687,7 @@ export default function App() {
                       ))}
                     </ol>
                     <p className="thinking-note">
-                      Analisis mendalam biasanya butuh 1–2 menit — tokenmu hanya terpakai bila analisis berhasil.
+                      Analisis mendalam biasanya butuh 1–2 menit. Saat layanan AI sedang sibuk, prosesnya bisa lebih lama — tahapan di atas menunjukkan prosesnya sudah sampai mana. Tokenmu hanya terpakai bila analisis berhasil.
                     </p>
                   </div>
                 ) : aiRunDone ? (
