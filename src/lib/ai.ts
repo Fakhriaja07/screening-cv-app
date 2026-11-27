@@ -381,20 +381,31 @@ export async function requestAiAnalysisStreaming(
   }
 }
 
-// --- Orkestrasi multi-panggilan (2026-11-26) -------------------------------
+// --- Orkestrasi multi-panggilan (2026-11-26; paralel 2026-11-27) ----------
 // Satu panggilan gabungan (bidang inti + perbaikan untuk SEMUA
 // pemeriksaan yang gagal, hingga ±29 item) berulang melewati batas
 // waktu model gratis dan pengguna hanya menerima pesan timeout.
 // Analisis kini dipecah: satu panggilan inti yang ringan + panggilan
-// perbaikan per batch kecil yang berurutan. Setiap panggilan mendapat
-// satu percobaan ulang pada kegagalan sisi model; run hanya berhasil
-// bila inti DAN semua batch lolos — di titik itulah pemanggil memotong
-// token, jadi kegagalan di tengah jalan tidak pernah membakar token
-// dan hasil parsial tidak pernah tampil sebagai hasil final.
+// perbaikan per batch kecil. Setiap panggilan mendapat satu percobaan
+// ulang pada kegagalan sisi model; run hanya berhasil bila inti DAN
+// semua batch lolos — di titik itulah pemanggil memotong token, jadi
+// kegagalan di tengah jalan tidak pernah membakar token dan hasil
+// parsial tidak pernah tampil sebagai hasil final.
+// Batch perbaikan berjalan PARALEL dengan konkurensi terbatas (pilihan
+// pengguna 2026-11-27 setelah mengeluh loading lama): model gratis
+// butuh ±90 detik per panggilan berapa pun muatannya, jadi menjalankan
+// batch berurutan membuat tahap perbaikan sepanjang jumlah batch-nya.
+// Maksimal 3 batch berjalan bersamaan (jendela geser); urutan hasil
+// akhir tetap urutan prioritas, bukan urutan selesai.
 
 // Ukuran batch perbaikan: maksimal 6 id pemeriksaan per panggilan
 // (plafon yang sama ditegakkan server lewat mode "fixes").
 export const FIX_BATCH_SIZE = 6
+
+// Konkurensi batch perbaikan: maksimal 3 batch berjalan bersamaan.
+// Jumlah permintaan per analisis tidak berubah (hanya tumpang tindih
+// waktunya), jadi hitungan rate limit endpoint tetap sama.
+export const FIX_BATCH_CONCURRENCY = 3
 
 export function splitFixBatches(
   checks: AiCheckContext[],
@@ -425,8 +436,11 @@ export function mergeAiFixes(requested: AiCheckContext[], collected: AiFix[]): A
 
 export interface AiProgress {
   phase: 'core' | 'fixes'
-  // Nomor batch yang sedang berjalan (1-based) saat phase 'fixes'; 0
-  // saat phase 'core'. batchTotal = jumlah seluruh batch perbaikan.
+  // Saat phase 'fixes': batchIndex = jumlah batch yang SUDAH SELESAI
+  // ditambah 1 (dibatasi batchTotal) — karena batch berjalan paralel,
+  // angka ini berarti "bagian ke-X yang sedang dikerjakan", bukan
+  // nomor urut satu batch tunggal. 0 saat phase 'core'.
+  // batchTotal = jumlah seluruh batch perbaikan.
   batchIndex: number
   batchTotal: number
 }
@@ -464,9 +478,10 @@ const INCOMPLETE_BATCH_MESSAGE =
   'Jawaban AI tidak lengkap atau kosong. Coba lagi — tokenmu tidak terpakai bila analisis gagal.'
 
 // Jalankan satu Analisis AI penuh: inti (streaming, cadangan
-// non-streaming) lalu batch perbaikan berurutan sampai semua
-// pemeriksaan gagal terliput. Melempar Error berpesan ramah yang sama
-// seperti jalur lama pada kegagalan apa pun yang tidak terpulihkan.
+// non-streaming) lalu batch perbaikan paralel (konkurensi terbatas)
+// sampai semua pemeriksaan gagal terliput. Melempar Error berpesan
+// ramah yang sama seperti jalur lama pada kegagalan apa pun yang
+// tidak terpulihkan.
 export async function runAiAnalysis(
   input: AiRequestInput,
   handlers: AiRunHandlers = {},
@@ -492,15 +507,25 @@ export async function runAiAnalysis(
     core = await transport.corePlain(input)
   }
 
-  // Panggilan batch perbaikan, berurutan. Tiap batch: satu percobaan
-  // + satu pengulangan pada kegagalan sisi model. Batch yang menjawab
-  // tapi TIDAK meliput semua id-nya diperlakukan sebagai kegagalan
-  // yang sama — janji "AI memperbaiki SEMUA prioritas" tidak boleh
-  // dikurangi diam-diam oleh jawaban parsial.
-  const collected: AiFix[] = []
-  for (let i = 0; i < batches.length; i++) {
-    const batch = batches[i]
-    handlers.onProgress?.({ phase: 'fixes', batchIndex: i + 1, batchTotal: batches.length })
+  // Panggilan batch perbaikan, PARALEL dengan jendela geser: maksimal
+  // FIX_BATCH_CONCURRENCY batch berjalan bersamaan; batch berikutnya
+  // mulai begitu satu selesai. Tiap batch: satu percobaan + satu
+  // pengulangan pada kegagalan sisi model. Batch yang menjawab tapi
+  // TIDAK meliput semua id-nya diperlakukan sebagai kegagalan yang
+  // sama — janji "AI memperbaiki SEMUA prioritas" tidak boleh
+  // dikurangi diam-diam oleh jawaban parsial. Satu batch gagal tuntas
+  // (atau menolak 4xx) menggagalkan seluruh run: batch baru tidak
+  // dimulai lagi, batch yang telanjur berjalan dibiarkan selesai
+  // tetapi hasilnya dibuang bersama hasil parsial lainnya.
+  const perBatch: (AiFix[] | null)[] = batches.map(() => null)
+  let completedBatches = 0
+  let nextBatchIndex = 0
+  let runFailure: unknown = null
+  if (batches.length > 0) {
+    handlers.onProgress?.({ phase: 'fixes', batchIndex: 1, batchTotal: batches.length })
+  }
+  const runBatch = async (index: number): Promise<void> => {
+    const batch = batches[index]
     let batchFixes: AiFix[] | null = null
     let lastError: unknown = null
     for (let attempt = 0; attempt < 2 && batchFixes === null; attempt++) {
@@ -520,7 +545,39 @@ export async function runAiAnalysis(
     if (batchFixes === null) {
       throw lastError instanceof Error ? lastError : new Error(INCOMPLETE_BATCH_MESSAGE)
     }
-    collected.push(...batchFixes)
+    perBatch[index] = batchFixes
+    completedBatches += 1
+    // Kemajuan dilaporkan per penyelesaian batch: X = batch selesai
+    // + 1 selama masih ada yang berjalan (label "bagian X dari Y").
+    if (completedBatches < batches.length) {
+      handlers.onProgress?.({
+        phase: 'fixes',
+        batchIndex: Math.min(completedBatches + 1, batches.length),
+        batchTotal: batches.length,
+      })
+    }
+  }
+  const batchWorker = async (): Promise<void> => {
+    while (runFailure === null) {
+      const index = nextBatchIndex
+      nextBatchIndex += 1
+      if (index >= batches.length) return
+      try {
+        await runBatch(index)
+      } catch (err) {
+        if (runFailure === null) runFailure = err
+        return
+      }
+    }
+  }
+  const workerCount = Math.min(FIX_BATCH_CONCURRENCY, batches.length)
+  await Promise.all(Array.from({ length: workerCount }, () => batchWorker()))
+  if (runFailure !== null) throw runFailure
+  // Hasil digabung mengikuti indeks batch (urutan prioritas asli),
+  // tidak peduli batch mana yang selesai lebih dulu.
+  const collected: AiFix[] = []
+  for (const fixes of perBatch) {
+    if (fixes) collected.push(...fixes)
   }
 
   const merged = mergeAiFixes(checks, collected)

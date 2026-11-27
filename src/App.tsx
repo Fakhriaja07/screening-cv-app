@@ -512,9 +512,12 @@ export default function App() {
   // TIDAK ditampilkan lagi (keputusan pengguna 2026-11-26) — panel
   // menampilkan tahapan loading, bukan penalaran mentah.
   const [aiConnected, setAiConnected] = useState(false)
-  // Batch perbaikan yang sedang berjalan pada orkestrasi multi-
-  // panggilan ({ current, total }, 1-based) — menggerakkan label tahap
-  // terakhir panel ("… (bagian 2 dari 3)"). Null selama panggilan inti.
+  // Kemajuan tahap perbaikan pada orkestrasi multi-panggilan
+  // ({ current, total }) — menggerakkan label tahap terakhir panel
+  // ("… (bagian 2 dari 3)"). Batch berjalan paralel, jadi current =
+  // jumlah batch yang sudah selesai + 1 selama masih ada yang
+  // berjalan (bagian yang sedang dikerjakan), bukan nomor urut satu
+  // batch tunggal. Null selama panggilan inti.
   const [aiFixBatch, setAiFixBatch] = useState<{ current: number; total: number } | null>(null)
   const [aiStageRole, setAiStageRole] = useState('')
   const [aiRunDone, setAiRunDone] = useState(false)
@@ -850,7 +853,8 @@ export default function App() {
     try {
       // Orkestrasi multi-panggilan (2026-11-26): panggilan inti ringan
       // (streaming; cadangan non-streaming) lalu panggilan perbaikan
-      // per batch ≤6 pemeriksaan sampai semua prioritas terliput —
+      // per batch ≤6 pemeriksaan — paralel maks 3 batch bersamaan
+      // (2026-11-27) — sampai semua prioritas terliput —
       // menggantikan satu panggilan raksasa yang berulang timeout.
       // Run hanya berhasil bila inti + SEMUA batch lolos; kegagalan di
       // titik mana pun melempar ke catch di bawah dan token aman.
@@ -956,8 +960,9 @@ export default function App() {
   // sinyal event pertama (aiConnected) + waktu berlalu (aiElapsed hanya
   // pemicu internal — TIDAK ditampilkan sebagai angka di panel). Tahap
   // terakhir tetap aktif sampai hasil tiba; tidak ada persen karangan.
-  // Selama batch perbaikan berjalan, tahap terakhir dipaksa aktif dan
-  // labelnya menyebut batch ke berapa dari berapa (bukan persen).
+  // Selama tahap perbaikan berjalan, tahap terakhir dipaksa aktif dan
+  // labelnya menyebut bagian ke berapa dari berapa yang sedang
+  // dikerjakan (bukan persen).
   const aiStages = [
     'Menghubungi model AI',
     'AI membaca CV-mu',

@@ -102,6 +102,7 @@ import {
   runAiAnalysis,
   splitFixBatches,
   validateAiAnalysis,
+  FIX_BATCH_CONCURRENCY,
   FIX_BATCH_SIZE,
   type AiAnalysis,
   type AiCheckContext,
@@ -2590,15 +2591,17 @@ check(
   'pola tiga unsur selalu ada; penekanan posisi target hanya bila konteks posisi ada',
 )
 
-// ---------- Orkestrasi multi-panggilan AI (2026-11-26) ----------
+// ---------- Orkestrasi multi-panggilan AI (2026-11-26; paralel 2026-11-27) ----------
 // Satu panggilan gabungan (inti + perbaikan untuk semua pemeriksaan
 // gagal) berulang melewati batas waktu model gratis. Analisis dipecah:
 // panggilan inti ringan + batch perbaikan ≤6 id, masing-masing dengan
-// satu percobaan ulang pada kegagalan sisi model. Yang dikunci di
-// sini: pembagian batch, penggabungan urutan, kelengkapan per batch,
-// kebijakan ulang, dan kegagalan total run — App hanya memotong token
-// SETELAH runAiAnalysis berhasil, jadi run yang gagal berarti token
-// aman dan tidak ada hasil parsial yang tampil.
+// satu percobaan ulang pada kegagalan sisi model. Batch berjalan
+// PARALEL maks 3 bersamaan (pilihan pengguna 2026-11-27) — yang
+// dikunci di sini: plafon konkurensi, penggabungan tetap urutan
+// prioritas walau selesai acak, kelengkapan per batch, kebijakan
+// ulang, dan kegagalan total run — App hanya memotong token SETELAH
+// runAiAnalysis berhasil, jadi run yang gagal berarti token aman dan
+// tidak ada hasil parsial yang tampil.
 const ORCH_CHECKS: AiCheckContext[] = Array.from({ length: 13 }, (_, i) => ({
   id: `cek-${i + 1}`,
   judul: `Pemeriksaan ${i + 1}`,
@@ -2652,7 +2655,7 @@ check(
 
 const orchFull = await runAiAnalysis(orchInput, {}, orchTransport({}))
 check(
-  'Orkestrasi AI: run penuh menggabungkan inti + semua batch secara utuh dan berurutan',
+  'Orkestrasi AI: run penuh menggabungkan inti + semua batch secara utuh dalam urutan prioritas',
   orchFull.perbaikanLengkap.length === 13 &&
     orchFull.perbaikanLengkap.map((f) => f.idPemeriksaan).join(',') ===
       ORCH_CHECKS.map((c) => c.id).join(',') &&
@@ -2666,9 +2669,82 @@ await runAiAnalysis(
   orchTransport({}),
 )
 check(
-  'Orkestrasi AI: kemajuan dilaporkan per batch (inti, lalu bagian 1..3)',
+  'Orkestrasi AI: kemajuan dilaporkan per penyelesaian batch (inti, lalu bagian 1..3)',
   orchProgressSeen.join(' ') === 'core:0/3 fixes:1/3 fixes:2/3 fixes:3/3',
-  orchProgressSeen.join(' '),
+  'batchIndex = batch selesai + 1 selama masih berjalan — urutan kejadian deterministik walau batch paralel',
+)
+
+// Konkurensi paralel: 19 pemeriksaan → 4 batch (6/6/6/1). Transport
+// menahan setiap batch sampai uji melepaskannya, agar terbukti:
+// (a) maksimal 3 batch berjalan bersamaan dan batch ke-4 TIDAK mulai
+// sebelum ada yang selesai; (b) hasil akhir tetap urutan prioritas
+// walau batch dilepas selesai dalam urutan acak.
+const ORCH_CHECKS_19: AiCheckContext[] = Array.from({ length: 19 }, (_, i) => ({
+  id: `cek-${i + 1}`,
+  judul: `Pemeriksaan ${i + 1}`,
+  pesan: '',
+  kutipan: '',
+}))
+interface PendingBatch {
+  firstId: string
+  release: () => void
+}
+const pendingBatches: PendingBatch[] = []
+const startedBatchIds: string[] = []
+let activeBatches = 0
+let maxActiveBatches = 0
+const concProgressSeen: string[] = []
+const concRun = runAiAnalysis(
+  { cvText: MEDIUM_CV, perbaikan: ORCH_CHECKS_19 },
+  { onProgress: (p) => concProgressSeen.push(`${p.phase}:${p.batchIndex}/${p.batchTotal}`) },
+  orchTransport({
+    fixBatch: (_input, batch) => {
+      activeBatches += 1
+      maxActiveBatches = Math.max(maxActiveBatches, activeBatches)
+      startedBatchIds.push(batch[0].id)
+      return new Promise<AiFix[]>((resolve) => {
+        pendingBatches.push({
+          firstId: batch[0].id,
+          release: () => {
+            activeBatches -= 1
+            resolve(batch.map(orchFixFor))
+          },
+        })
+      })
+    },
+  }),
+)
+const concTick = () => new Promise((r) => setTimeout(r, 10))
+await concTick()
+await concTick()
+const concStartedBeforeAnyDone = startedBatchIds.join(',')
+const releaseBatch = (firstId: string) => {
+  const idx = pendingBatches.findIndex((p) => p.firstId === firstId)
+  if (idx < 0) throw new Error(`batch ${firstId} tidak sedang menunggu`)
+  pendingBatches.splice(idx, 1)[0].release()
+}
+releaseBatch('cek-7')
+await concTick()
+await concTick()
+const concStartedAfterOneDone = startedBatchIds.join(',')
+releaseBatch('cek-19')
+releaseBatch('cek-1')
+releaseBatch('cek-13')
+const concResult = await concRun
+check(
+  'Orkestrasi AI: batch berjalan paralel maks 3 — batch ke-4 menunggu satu selesai',
+  FIX_BATCH_CONCURRENCY === 3 &&
+    maxActiveBatches === 3 &&
+    concStartedBeforeAnyDone === 'cek-1,cek-7,cek-13' &&
+    concStartedAfterOneDone === 'cek-1,cek-7,cek-13,cek-19',
+  `serentak terbanyak ${maxActiveBatches}; mulai awal: ${concStartedBeforeAnyDone}; setelah satu selesai: ${concStartedAfterOneDone}`,
+)
+check(
+  'Orkestrasi AI: penggabungan paralel tetap urutan prioritas walau selesai acak',
+  concResult.perbaikanLengkap.map((f) => f.idPemeriksaan).join(',') ===
+    ORCH_CHECKS_19.map((c) => c.id).join(',') &&
+    concProgressSeen.join(' ') === 'core:0/4 fixes:1/4 fixes:2/4 fixes:3/4 fixes:4/4',
+  `19/19 item dalam urutan prioritas; kemajuan per penyelesaian: ${concProgressSeen.join(' ')}`,
 )
 
 let flakyCalls = 0
@@ -2725,8 +2801,8 @@ try {
 }
 check(
   'Orkestrasi AI: batch gagal pada kedua percobaan → seluruh run gagal (token aman, parsial dibuang)',
-  orchDeadError instanceof Error && deadCalls === 2,
-  'run melempar setelah 1 percobaan + 1 ulang; tidak ada hasil parsial yang dinyatakan sukses',
+  orchDeadError instanceof Error && deadCalls === 6,
+  'ketiga batch dalam jendela konkurensi masing-masing mencoba 2× (6 panggilan) lalu run melempar; tidak ada hasil parsial yang dinyatakan sukses',
 )
 
 let badReqCalls = 0
@@ -2748,11 +2824,11 @@ try {
 check(
   'Orkestrasi AI: penolakan 4xx tidak diulang; error jaringan/5xx layak diulang',
   orchBadReqError instanceof Error &&
-    badReqCalls === 1 &&
+    badReqCalls === 3 &&
     isRetryableAiError(orchBadReqError) === false &&
     isRetryableAiError(new Error('jaringan putus')) === true &&
     isRetryableAiError(Object.assign(new Error('server'), { status: 502 })) === true,
-  'satu panggilan saja untuk 4xx; klasifikasi ulang sesuai status HTTP',
+  'ketiga batch dalam jendela konkurensi telanjur terpanggil 1× dan tidak satu pun diulang untuk 4xx; klasifikasi ulang sesuai status HTTP',
 )
 
 let plainUsed = false
@@ -2834,11 +2910,11 @@ check(
   'mode core membuang perbaikan; mode fixes hanya membawa perbaikanLengkap',
 )
 check(
-  'Panel AI: label tahap terakhir menyebut batch yang berjalan (bagian X dari Y)',
+  'Panel AI: label tahap terakhir menyebut bagian yang sedang dikerjakan (bagian X dari Y)',
   appTsxText.includes('runAiAnalysis(input, {') &&
     appTsxText.includes('(bagian ${aiFixBatch.current} dari ${aiFixBatch.total})') &&
     appTsxText.includes('setAiFixBatch({ current: progress.batchIndex, total: progress.batchTotal })'),
-  'kemajuan batch dari orkestrator menggerakkan label tahap "Menyusun perbaikan lengkap…"',
+  'kemajuan per penyelesaian batch dari orkestrator (batch selesai + 1) menggerakkan label tahap "Menyusun perbaikan lengkap…"',
 )
 
 // ---------- Rate limit endpoint AI (2026-11-26) ----------
