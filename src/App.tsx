@@ -1614,7 +1614,10 @@ export default function App() {
                   prioritas perbaikanmu</strong> — dalam bentuk jadi yang siap disalin
                   ke CV, bukan sekadar contoh umum. Bagian ini terpisah dan{' '}
                   <strong>tidak mengubah skor utama</strong>. Dan <strong>token hanya terpakai
-                  bila analisis berhasil — kalau AI gagal, tokenmu tidak hangus.</strong>
+                  bila analisis berhasil — kalau AI gagal, tokenmu tidak hangus.</strong>{' '}
+                  Bahasa hasil analisis mengikuti bahasa CV-mu: CV berbahasa Inggris
+                  dibahas dalam bahasa Inggris, CV berbahasa Indonesia dalam bahasa
+                  Indonesia.
                 </p>
 
                 {aiCredits > 0 ? (

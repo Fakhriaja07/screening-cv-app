@@ -113,10 +113,12 @@ import {
 import handler, {
   buildFixPrompt,
   buildPrompt,
+  detectCvLanguage,
   parseAiJson,
   parseFailedChecks,
   parseRoleContext,
   shapeResultForMode,
+  systemPromptFor,
   RATE_LIMIT_MAX,
   SPLIT_CALL_TIMEOUT_MS,
   FIX_BATCH_SIZE as SERVER_FIX_BATCH_SIZE,
@@ -3718,6 +3720,157 @@ check(
   'Inggris: deteksi bahasa dominan tidak menyala untuk CV Indonesia (contoh bawaan & lemah)',
   !isDominantEnglish(SAMPLE_CV) && !isDominantEnglish(WEAK_CV) && isDominantEnglish(EN_STRONG_CV),
   `kuat ID: ${isDominantEnglish(SAMPLE_CV)}, lemah ID: ${isDominantEnglish(WEAK_CV)}, kuat EN: ${isDominantEnglish(EN_STRONG_CV)}`,
+)
+
+// ---------- Bahasa keluaran AI mengikuti bahasa CV (2026-11-28) ----------
+// Permintaan pengguna: CV dominan bahasa Inggris → seluruh keluaran AI
+// berbahasa Inggris; selain itu tetap bahasa Indonesia seperti sekarang.
+// Deteksi tinggal di server (detectCvLanguage pada endpoint) dan
+// memakai ulang isDominantEnglish di atas — ambang konservatif yang
+// sama, jadi CV campuran/ambigu jatuh ke 'id'. Yang dikunci di sini:
+// keputusan detektor, konstruksi prompt per bahasa (standar Inggris
+// sejajar standar Indonesia yang dikunci di section prompt), prompt
+// bawaan Indonesia yang tidak berubah, dan handler sungguhan yang
+// meneruskan prompt + system prompt Inggris ke upstream untuk CV
+// Inggris (fetch distub — tanpa panggilan jaringan).
+const MIXED_LANG_CV = `Andi Pratama
+andi.pratama@gmail.com | 0812-1111-2222 | Jakarta
+
+Ringkasan
+Lulusan administrasi yang terbiasa bekerja dengan data dan dokumen untuk tim operasional di perusahaan distribusi, dan saya bertanggung jawab atas laporan yang rapi untuk atasan setiap minggu.
+
+Pengalaman
+Staf Administrasi — PT Karya Distribusi (2021 - 2023)
+- Mengelola arsip dokumen perusahaan dan membuat laporan untuk tim setiap hari.
+- Membantu proses data dengan teliti selama periode audit tahunan.
+
+Pendidikan
+SMK Negeri 2 Jakarta — Administrasi Perkantoran (2018 - 2021)
+
+Keahlian
+Microsoft Excel, Microsoft Word, Data Entry. Skills include data analysis and reporting for the team with dashboards.`
+check(
+  'Bahasa AI: detektor server — CV Inggris dominan → en; Indonesia & campuran ambigu → id',
+  detectCvLanguage(EN_STRONG_CV) === 'en' &&
+    detectCvLanguage(MEDIUM_CV) === 'id' &&
+    detectCvLanguage(SAMPLE_CV) === 'id' &&
+    detectCvLanguage(WEAK_CV) === 'id' &&
+    detectCvLanguage(MIXED_LANG_CV) === 'id' &&
+    !isDominantEnglish(MIXED_LANG_CV),
+  `kuat EN: ${detectCvLanguage(EN_STRONG_CV)}, menengah ID: ${detectCvLanguage(MEDIUM_CV)}, campuran: ${detectCvLanguage(MIXED_LANG_CV)}`,
+)
+const promptEnFull = buildPrompt(EN_STRONG_CV, 'Data Analyst', '', ORCH_CHECKS.slice(0, 2), roleCtx, 'full', 'en')
+const promptEnCore = buildPrompt(EN_STRONG_CV, 'Data Analyst', '', ORCH_CHECKS, roleCtx, 'core', 'en')
+const fixPromptEn = buildFixPrompt(EN_STRONG_CV, 'Data Analyst', ORCH_CHECKS.slice(0, 2), roleCtx, 'en')
+check(
+  'Bahasa AI: prompt Inggris mengunci keluaran Inggris penuh + standar kualitas yang sama',
+  promptEnFull.includes('Write the ENTIRE response in clear, supportive English') &&
+    promptEnFull.includes('strongest qualification first') &&
+    promptEnFull.includes('MANDATORY flow') &&
+    promptEnFull.includes('SPECIFIC') &&
+    promptEnFull.includes('REASON') &&
+    promptEnFull.includes('ACTION') &&
+    promptEnFull.includes('NO weak phrases/clichés') &&
+    promptEnFull.includes('hard worker') &&
+    promptEnFull.includes('[id: cek-1]') &&
+    !promptEnFull.includes('Seluruh jawaban dalam Bahasa Indonesia') &&
+    promptEnCore.includes('"perbaikanLengkap": []') &&
+    promptEnCore.includes('MANDATORY flow') &&
+    fixPromptEn.includes('Write the ENTIRE response in clear, supportive English') &&
+    fixPromptEn.includes('[id: cek-2]') &&
+    !fixPromptEn.includes('[id: cek-3]') &&
+    !fixPromptEn.includes('Seluruh jawaban dalam Bahasa Indonesia'),
+  'alur 4 langkah, pola kekurangan tiga unsur, anti-klise Inggris, dan perintah bahasa penuh ada di prompt inti maupun batch',
+)
+check(
+  'Bahasa AI: jalur bawaan tetap Indonesia persis seperti sebelumnya; system prompt mengikuti bahasa',
+  buildPrompt(MEDIUM_CV, 'Data Analyst', '', [], roleCtx).includes(
+    'Seluruh jawaban dalam Bahasa Indonesia yang jelas dan suportif.',
+  ) &&
+    buildFixPrompt(MEDIUM_CV, 'Data Analyst', ORCH_CHECKS.slice(0, 1), roleCtx).includes(
+      'Seluruh jawaban dalam Bahasa Indonesia yang jelas dan suportif.',
+    ) &&
+    buildPrompt(MEDIUM_CV, '', '', [], null, 'full', 'id') === buildPrompt(MEDIUM_CV, '', '', [], null) &&
+    systemPromptFor('id').includes('berbahasa Indonesia') &&
+    systemPromptFor('en').includes('Write every string value in English'),
+  'parameter bahasa bawaan id menghasilkan prompt yang identik dengan perilaku lama',
+)
+check(
+  'Bahasa AI: kartu AI menyebut bahasa hasil mengikuti bahasa CV',
+  appTsxText.includes('Bahasa hasil analisis mengikuti bahasa CV-mu'),
+  'satu baris jujur di paragraf kepala kartu Analisis AI',
+)
+// Handler sungguhan dengan fetch distub: CV Inggris harus mengirim
+// system prompt + prompt Inggris ke upstream, CV Indonesia sebaliknya.
+const langSavedKey = process.env.OPENROUTER_API_KEY
+process.env.OPENROUTER_API_KEY = 'kunci-uji-bahasa'
+const langCaptured: { system: string; user: string }[] = []
+const originalFetch = globalThis.fetch
+globalThis.fetch = (async (_url: unknown, init?: { body?: string }) => {
+  const body = JSON.parse(String(init?.body ?? '{}')) as {
+    messages?: { role: string; content: string }[]
+  }
+  langCaptured.push({
+    system: body.messages?.find((m) => m.role === 'system')?.content ?? '',
+    user: body.messages?.find((m) => m.role === 'user')?.content ?? '',
+  })
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [
+        {
+          finish_reason: 'stop',
+          message: {
+            content: JSON.stringify({
+              ringkasan: 'A solid CV with quantified achievements.',
+              saranPenulisanUlang: [],
+              kekurangan: [],
+              saranRingkasan: '',
+              perbaikanLengkap: [],
+              penilaianPosisi: '',
+            }),
+          },
+        },
+      ],
+    }),
+  }
+}) as typeof fetch
+async function callHandlerForLanguage(ip: string, cvText: string): Promise<number> {
+  let status = 0
+  const res = {
+    status(code: number) {
+      status = code
+      return this
+    },
+    json() {},
+    setHeader() {},
+    write() {
+      return true
+    },
+    end() {},
+  }
+  await handler(
+    { method: 'POST', headers: { 'x-real-ip': ip }, body: { cvText, mode: 'core' }, socket: {} } as never,
+    res as never,
+  )
+  return status
+}
+const langStatusEn = await callHandlerForLanguage('203.0.113.10', EN_STRONG_CV)
+const langStatusId = await callHandlerForLanguage('203.0.113.11', MEDIUM_CV)
+globalThis.fetch = originalFetch
+if (langSavedKey === undefined) delete process.env.OPENROUTER_API_KEY
+else process.env.OPENROUTER_API_KEY = langSavedKey
+check(
+  'Bahasa AI: handler meneruskan prompt Inggris untuk CV Inggris, Indonesia untuk CV Indonesia',
+  langStatusEn === 200 &&
+    langStatusId === 200 &&
+    langCaptured.length === 2 &&
+    langCaptured[0].system.includes('Write every string value in English') &&
+    langCaptured[0].user.includes('Write the ENTIRE response in clear, supportive English') &&
+    langCaptured[1].system.includes('berbahasa Indonesia') &&
+    langCaptured[1].user.includes('Seluruh jawaban dalam Bahasa Indonesia'),
+  `status EN ${langStatusEn}/ID ${langStatusId}; panggilan upstream tertangkap: ${langCaptured.length}`,
 )
 
 // ---------- Satuan & format Inggris pada hasil terukur (2026-11-25) ----------
