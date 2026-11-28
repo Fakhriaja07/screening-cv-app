@@ -1159,7 +1159,7 @@ export default function App() {
       {/* ===== HERO ===== */}
       <header className="hero">
         <div className="hero-inner">
-          <span className="badge"><Icon d={I.zap} size={14} /> Screening CV · Penilaian CV Bahasa Indonesia</span>
+          <span className="badge"><Icon d={I.zap} size={14} /> Screening CV · Skor Jujur, Saran Perbaikan Jelas</span>
           <h1>CV-mu sudah siap <span className="hero-accent">dikirim?</span></h1>
           <p className="hero-sub">
             Unggah atau tempel CV-mu di sini, lalu lihat skornya: 0–100 dari

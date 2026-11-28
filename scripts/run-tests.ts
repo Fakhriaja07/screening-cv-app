@@ -2261,7 +2261,7 @@ check(
 )
 check(
   'Penghapusan section lepas: bagian penting tetap terpasang',
-  appTsxText.includes('Penilaian CV Bahasa Indonesia') &&
+  appTsxText.includes('Skor Jujur, Saran Perbaikan Jelas') &&
     appTsxText.includes('berjalan 100% di browser') &&
     appTsxText.includes('Lihat Contoh Hasil') &&
     appTsxText.includes('Minta Kode Token via WhatsApp') &&
