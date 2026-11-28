@@ -682,6 +682,106 @@ img {
   font-size: 13.5px;
   line-height: 1.5;
 }
+/* Pemilih banyak posisi (2026-11-28): kotak bergaya kolom isian yang
+   sama, berisi chip posisi terpilih + kolom ketik bebas + tombol
+   dropdown. Tanpa chip, tampilannya sama seperti combobox lama. */
+.role-box {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid #cbd5e1;
+  border-radius: var(--radius-s);
+  padding: 5px 6px;
+  background: #f8fafc;
+}
+.role-box:focus-within {
+  outline: 2px solid var(--blue-600);
+  outline-offset: 0;
+  background: #fff;
+}
+/* Kolom ketik di dalam kotak: tanpa bingkai sendiri (kotaknya yang
+   berbingkai), mengisi sisa ruang. */
+.role-box input {
+  flex: 1 1 140px;
+  min-width: 120px;
+  width: auto;
+  border: none;
+  background: transparent;
+  padding: 8px 6px;
+  font-size: 16px;
+  color: var(--ink);
+  outline: none;
+  min-height: 38px;
+}
+.role-box .combo-toggle {
+  position: static;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  min-height: 44px;
+}
+.role-box .combo-list {
+  top: calc(100% + 6px);
+}
+.role-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  background: var(--blue-100);
+  color: var(--blue-800);
+  border: 1px solid var(--blue-200);
+  border-radius: 999px;
+  padding: 3px 4px 3px 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.role-chip-name {
+  overflow-wrap: anywhere;
+}
+.role-chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--blue-800);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.role-chip-x:hover {
+  background: var(--blue-200);
+}
+.role-notice {
+  margin: 6px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--amber-dark);
+}
+.role-hint {
+  display: block;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+/* Catatan kejujuran best-match di kartu hasil: posisi penentu skor
+   relevansi disebut apa adanya. */
+.winner-note {
+  margin: 10px 0 0;
+  font-size: 13.5px;
+  color: var(--blue-800);
+}
 .form-actions {
   display: flex;
   gap: 10px;

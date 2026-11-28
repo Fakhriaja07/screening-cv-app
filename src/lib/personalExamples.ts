@@ -925,6 +925,19 @@ function personalExperienceRelevance(
   }
 }
 
+// Posisi penentu per pemeriksaan untuk contoh personal (pemakaian
+// banyak posisi, 2026-11-28): teks contoh yang menyebut SATU posisi
+// memakai posisi yang menentukan skor pemeriksaan terkait — pemenang
+// relevansi ringkasan untuk contoh ringkasan & relevansi-ringkasan,
+// pemenang relevansi pengalaman untuk relevansi-pengalaman — bukan
+// posisi utama secara membabi buta. Bidang yang tidak diisi jatuh ke
+// posisi target tunggal seperti sebelumnya.
+export interface PersonalExampleRoles {
+  ringkasan?: string
+  relevansiRingkasan?: string
+  relevansiPengalaman?: string
+}
+
 // ---------- Pembangun utama ----------
 
 // Peta id pemeriksaan → contoh personal, hanya untuk pemeriksaan yang
@@ -936,6 +949,7 @@ export function buildPersonalExamples(
   cvText: string,
   targetRole: string,
   lang: Lang = 'id',
+  roleByCheck?: PersonalExampleRoles,
 ): Partial<Record<string, PersonalExample>> {
   const out: Partial<Record<string, PersonalExample>> = {}
   const put = (id: string, ex: PersonalExample | null) => {
@@ -947,14 +961,14 @@ export function buildPersonalExamples(
   put('kedalaman-entri', personalDepth(result, cvText, lang))
   put('kata-kerja-aksi', personalActionVerb(result, cvText, lang))
   put('kerapian-bahasa', personalNeatness(result, cvText, lang))
-  put('ringkasan', personalSummary(result, cvText, targetRole, lang))
-  put('relevansi-ringkasan', personalSummaryRelevance(result, cvText, targetRole, lang))
+  put('ringkasan', personalSummary(result, cvText, roleByCheck?.ringkasan ?? targetRole, lang))
+  put('relevansi-ringkasan', personalSummaryRelevance(result, cvText, roleByCheck?.relevansiRingkasan ?? targetRole, lang))
   put('linimasa', personalTimeline(result, cvText, lang))
   put('konsistensi-format', personalConsistency(result, cvText, lang))
   put('bullet', personalBullet(result, cvText, lang))
   put('panjang', personalLength(result, cvText, lang))
   put('keahlian', personalSkills(result, cvText, targetRole, lang))
   put('bahasa', personalLanguage(result, cvText, lang))
-  put('relevansi-pengalaman', personalExperienceRelevance(result, cvText, targetRole, lang))
+  put('relevansi-pengalaman', personalExperienceRelevance(result, cvText, roleByCheck?.relevansiPengalaman ?? targetRole, lang))
   return out
 }

@@ -18,7 +18,13 @@ export interface ScoreHistoryEntry {
   at: string // waktu analisis, format ISO 8601
   total: number
   label: string
-  role: string // posisi target; '' bila tidak diisi
+  role: string // posisi target utama (pertama); '' bila tidak diisi
+  // Seluruh daftar posisi yang dilamar pada analisis itu (maksimal 3,
+  // urutan pilihan pengguna). Opsional pada tipenya karena entri lama
+  // yang dibuat sebelum fitur banyak posisi tidak memiliki bidang ini;
+  // entryFromResult selalu mengisinya dan loadHistory menormalkannya —
+  // pembaca memakai entryRoles() agar selalu mendapat daftar efektif.
+  roles?: string[]
   aspects: AspectScore[]
 }
 
@@ -65,17 +71,34 @@ function isValidEntry(v: unknown): v is ScoreHistoryEntry {
     Number.isFinite(e.total) &&
     typeof e.label === 'string' &&
     (e.role === undefined || typeof e.role === 'string') &&
+    (e.roles === undefined ||
+      (Array.isArray(e.roles) && e.roles.every((r) => typeof r === 'string'))) &&
     Array.isArray(e.aspects) &&
     e.aspects.every(isValidAspect)
   )
 }
 
+// Daftar posisi bersih dari data tersimpan: string saja, spasi tepi
+// dipotong, kosong dibuang, duplikat persis dibuang. Entri tanpa daftar
+// (dibuat sebelum fitur banyak posisi) diturunkan dari posisi tunggal.
+function cleanRoles(e: ScoreHistoryEntry): string[] {
+  const fromList = Array.isArray(e.roles)
+    ? e.roles.map((r) => (typeof r === 'string' ? r.trim() : '')).filter(Boolean)
+    : []
+  const deduped = [...new Set(fromList)]
+  if (deduped.length > 0) return deduped
+  const single = typeof e.role === 'string' ? e.role.trim() : ''
+  return single ? [single] : []
+}
+
 function normalizeEntry(e: ScoreHistoryEntry): ScoreHistoryEntry {
+  const roles = cleanRoles(e)
   return {
     at: e.at,
     total: e.total,
     label: e.label,
-    role: typeof e.role === 'string' ? e.role : '',
+    role: typeof e.role === 'string' && e.role ? e.role : (roles[0] ?? ''),
+    roles,
     aspects: e.aspects.map((a) => ({ name: a.name, score: a.score, max: a.max })),
   }
 }
@@ -117,14 +140,30 @@ export function entryFromResult(
   result: AnalysisResult,
   role: string,
   at: Date = new Date(),
+  roles?: readonly string[],
 ): ScoreHistoryEntry {
+  // Daftar posisi penuh disimpan apa adanya (sudah dinormalisasi
+  // pemanggil lewat normalizeTargetRoles); tanpa daftar, diturunkan
+  // dari posisi tunggal — perilaku lama persis.
+  const list = roles
+    ? roles.map((r) => r.trim()).filter(Boolean)
+    : role.trim()
+      ? [role.trim()]
+      : []
   return {
     at: at.toISOString(),
     total: result.total,
     label: result.label,
     role: role.trim(),
+    roles: list,
     aspects: result.aspects.map((a) => ({ name: a.name, score: a.score, max: a.max })),
   }
+}
+
+// Daftar posisi efektif sebuah entri: bidang roles bila ada, selain
+// itu diturunkan dari posisi tunggal (entri lama / literal buatan).
+export function entryRoles(e: ScoreHistoryEntry): string[] {
+  return cleanRoles(e)
 }
 
 // Tambahkan entri baru (terbaru di depan), batasi HISTORY_MAX_ENTRIES,
@@ -282,6 +321,31 @@ export function historyRoleLabel(rawRole: string, lang: Lang = 'id'): string {
 // riwayat agar selisih skor hanya ditampilkan untuk posisi yang sama.
 export function historyRolesMatch(roleA: string, roleB: string): boolean {
   return historyRoleLabel(roleA).toLowerCase() === historyRoleLabel(roleB).toLowerCase()
+}
+
+// Dua HIMPUAN posisi dianggap sama bila label tampilannya sama sebagai
+// himpunan (urutan tidak penting, duplikat diabaikan): {Data Analyst,
+// Akuntansi} sama dengan {Akuntansi, data analyst}, tetapi berbeda
+// dari {Data Analyst} saja. Dipakai spanduk perbandingan riwayat pada
+// pemakaian banyak posisi — beda himpunan berarti "Beda posisi" dan
+// selisih skor tidak ditampilkan, sama seperti logika satu posisi.
+// Dua himpunan kosong dianggap sama (sama-sama tanpa posisi target).
+export function historyRoleSetsMatch(
+  rolesA: readonly string[],
+  rolesB: readonly string[],
+  lang: Lang = 'id',
+): boolean {
+  const setOf = (roles: readonly string[]) =>
+    new Set(
+      roles
+        .map((r) => historyRoleLabel(r, lang).toLowerCase())
+        .filter(Boolean),
+    )
+  const a = setOf(rolesA)
+  const b = setOf(rolesB)
+  if (a.size !== b.size) return false
+  for (const x of a) if (!b.has(x)) return false
+  return true
 }
 
 export function formatHistoryDate(iso: string, lang: Lang = 'id'): string {

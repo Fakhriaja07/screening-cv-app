@@ -305,6 +305,41 @@ export function parseRoleContext(value: unknown): RoleContext | null {
   }
 }
 
+// Plafon konteks posisi pada pemakaian banyak peran — sejajar plafon
+// posisi di klien/mesin penilaian (maksimal 3 posisi yang dilamar).
+const MAX_ROLE_CONTEXTS = 3
+
+// Validasi + sanitasi konteks posisi BANYAK peran (2026-11-28): klien
+// baru mengirim DAFTAR konteks (satu per posisi yang dilamar), klien
+// lama mengirim OBJEK TUNGGAL. Keduanya diterima — objek tunggal
+// dibungkus menjadi daftar berisi satu konteks — agar tab basi yang
+// belum memuat ulang tidak rusak. Tiap item dibersihkan dengan
+// parseRoleContext yang sama; item tak sah dibuang satu per satu dan
+// daftar dipotong ke MAX_ROLE_CONTEXTS. Hasil kosong = tanpa konteks
+// (perilaku lama persis).
+export function parseRoleContexts(value: unknown): RoleContext[] {
+  if (Array.isArray(value)) {
+    const out: RoleContext[] = []
+    for (const item of value) {
+      const parsed = parseRoleContext(item)
+      if (parsed) out.push(parsed)
+      if (out.length >= MAX_ROLE_CONTEXTS) break
+    }
+    return out
+  }
+  const single = parseRoleContext(value)
+  return single ? [single] : []
+}
+
+// Normalisasi argumen konteks posisi para pembangun prompt: bentuk
+// tunggal lama dan daftar baru sama-sama menjadi daftar. Satu konteks
+// menghasilkan prompt yang persis sama seperti sebelum fitur banyak
+// posisi ada.
+function asRoleList(roleCtx: RoleContext | RoleContext[] | null): RoleContext[] {
+  if (!roleCtx) return []
+  return Array.isArray(roleCtx) ? roleCtx : [roleCtx]
+}
+
 // Mode panggilan Analisis AI (2026-11-26): klien memecah satu analisis
 // menjadi panggilan "core" (bidang inti saja) + panggilan "fixes"
 // (perbaikanLengkap per batch ≤6 id). Mode "full" adalah perilaku lama
@@ -319,7 +354,7 @@ export function buildPrompt(
   targetRole: string,
   jobDesc: string,
   checks: FailedCheckContext[],
-  roleCtx: RoleContext | null,
+  roleCtx: RoleContext | RoleContext[] | null,
   variant: 'full' | 'core' = 'full',
   lang: CvLanguage = 'id',
 ): string {
@@ -352,34 +387,49 @@ export function buildPrompt(
           ].join('\n')
         : '\n(Tidak ada daftar pemeriksaan yang dikirim — "perbaikanLengkap" boleh berupa array kosong.)\n'
   // Blok konteks posisi: rujukan skill posisi SATU-SATUNYA bagi model,
-  // diturunkan dari kamus situs — bukan pengetahuan umum model.
-  const roleCtxPart = roleCtx
-    ? [
-        '',
-        `KONTEKS POSISI "${roleCtx.posisi}" (dari kamus skill situs — satu-satunya rujukan skill untuk posisi ini):`,
-        ...(roleCtx.skillDiharapkan.length
-          ? [`- Skill yang diharapkan posisi ini: ${roleCtx.skillDiharapkan.join(', ')}`]
-          : []),
-        ...(roleCtx.skillAda.length
-          ? [`- Skill posisi yang SUDAH terbukti ada di CV: ${roleCtx.skillAda.join(', ')}`]
-          : []),
-        ...(roleCtx.skillBelum.length
-          ? [`- Skill posisi yang BELUM muncul di CV: ${roleCtx.skillBelum.join(', ')}`]
-          : []),
-        '',
-      ].join('\n')
-    : ''
+  // diturunkan dari kamus situs — bukan pengetahuan umum model. Pada
+  // banyak posisi, blok yang sama dicetak sekali per posisi.
+  const roleCtxs = asRoleList(roleCtx)
+  const roleCtxBlock = (ctx: RoleContext): string =>
+    [
+      '',
+      `KONTEKS POSISI "${ctx.posisi}" (dari kamus skill situs — satu-satunya rujukan skill untuk posisi ini):`,
+      ...(ctx.skillDiharapkan.length
+        ? [`- Skill yang diharapkan posisi ini: ${ctx.skillDiharapkan.join(', ')}`]
+        : []),
+      ...(ctx.skillAda.length
+        ? [`- Skill posisi yang SUDAH terbukti ada di CV: ${ctx.skillAda.join(', ')}`]
+        : []),
+      ...(ctx.skillBelum.length
+        ? [`- Skill posisi yang BELUM muncul di CV: ${ctx.skillBelum.join(', ')}`]
+        : []),
+      '',
+    ].join('\n')
+  const roleCtxPart = roleCtxs.map(roleCtxBlock).join('\n')
   // Aturan tambahan penilaian berbasis posisi (hanya bila konteks ada).
-  const roleRules: string[] = roleCtx
-    ? [
-        `- PENILAIAN POSISI: nilai CV ini dari kacamata posisi "${roleCtx.posisi}". "ringkasan" dan "kekurangan" WAJIB menyebut secara spesifik bukti di CV yang relevan dengan posisi itu serta skill kunci posisi yang belum muncul di CV. Skill posisi yang boleh kamu sebut HANYA yang tercantum pada KONTEKS POSISI di bawah — jangan menyebut skill posisi lain di luar daftar itu dan jangan mengarang pengalaman atau angka di luar teks CV.`,
-        `- "penilaianPosisi" WAJIB diisi (2–4 kalimat): bukti terkuat yang sudah ada di CV untuk posisi "${roleCtx.posisi}" dan celah paling kritisnya untuk posisi itu.`,
-        `- saranPenulisanUlang: gunakan kosakata dan jenis bukti yang dicari posisi "${roleCtx.posisi}" (alat/metode dari daftar skill posisinya), tetap hanya menulis ulang isi CV yang benar-benar ada.`,
-        ...(jobDesc
-          ? ['- Deskripsi lowongan dan konteks posisi sama-sama tersedia: tuntutan deskripsi lowongan DIDAHULUKAN daripada gambaran peran umum.']
-          : []),
-      ]
-    : ['- "penilaianPosisi" kosongkan ("") — pengguna tidak mengisi posisi target.']
+  // Satu konteks memakai rumusan lama persis; banyak konteks mewajibkan
+  // penilaianPosisi berisi satu paragraf singkat PER POSISI.
+  const roleNames = roleCtxs.map((c) => `"${c.posisi}"`).join(', ')
+  const roleRules: string[] =
+    roleCtxs.length === 0
+      ? ['- "penilaianPosisi" kosongkan ("") — pengguna tidak mengisi posisi target.']
+      : roleCtxs.length === 1
+        ? [
+            `- PENILAIAN POSISI: nilai CV ini dari kacamata posisi "${roleCtxs[0].posisi}". "ringkasan" dan "kekurangan" WAJIB menyebut secara spesifik bukti di CV yang relevan dengan posisi itu serta skill kunci posisi yang belum muncul di CV. Skill posisi yang boleh kamu sebut HANYA yang tercantum pada KONTEKS POSISI di bawah — jangan menyebut skill posisi lain di luar daftar itu dan jangan mengarang pengalaman atau angka di luar teks CV.`,
+            `- "penilaianPosisi" WAJIB diisi (2–4 kalimat): bukti terkuat yang sudah ada di CV untuk posisi "${roleCtxs[0].posisi}" dan celah paling kritisnya untuk posisi itu.`,
+            `- saranPenulisanUlang: gunakan kosakata dan jenis bukti yang dicari posisi "${roleCtxs[0].posisi}" (alat/metode dari daftar skill posisinya), tetap hanya menulis ulang isi CV yang benar-benar ada.`,
+            ...(jobDesc
+              ? ['- Deskripsi lowongan dan konteks posisi sama-sama tersedia: tuntutan deskripsi lowongan DIDAHULUKAN daripada gambaran peran umum.']
+              : []),
+          ]
+        : [
+            `- PENILAIAN POSISI: nilai CV ini dari kacamata SETIAP posisi yang dilamar: ${roleNames}. "ringkasan" dan "kekurangan" WAJIB menyebut secara spesifik bukti di CV yang relevan dengan posisi-posisi itu serta skill kunci tiap posisi yang belum muncul di CV. Skill posisi yang boleh kamu sebut HANYA yang tercantum pada KONTEKS POSISI di bawah — jangan menyebut skill posisi lain di luar daftar itu dan jangan mengarang pengalaman atau angka di luar teks CV.`,
+            `- "penilaianPosisi" WAJIB diisi dengan SATU paragraf singkat (2–3 kalimat) untuk SETIAP posisi: ${roleNames} — awali tiap paragraf dengan nama posisinya dan pisahkan antarparagraf dengan baris baru. Tiap paragraf memuat bukti terkuat yang sudah ada di CV untuk posisi itu dan celah paling kritisnya untuk posisi itu.`,
+            `- saranPenulisanUlang: gunakan kosakata dan jenis bukti yang dicari posisi-posisi itu (alat/metode dari daftar skill posisinya), tetap hanya menulis ulang isi CV yang benar-benar ada.`,
+            ...(jobDesc
+              ? ['- Deskripsi lowongan dan konteks posisi sama-sama tersedia: tuntutan deskripsi lowongan DIDAHULUKAN daripada gambaran peran umum.']
+              : []),
+          ]
   return [
     'Kamu adalah konsultan karier berbahasa Indonesia yang membantu pencari kerja dan fresh graduate memperbaiki CV.',
     'Analisis CV berikut dan balas HANYA dengan JSON valid (tanpa markdown, tanpa teks lain) dengan skema persis ini:',
@@ -388,9 +438,11 @@ export function buildPrompt(
     '  "saranPenulisanUlang": [ { "asli": "kalimat/poin asli dari CV", "saran": "versi penulisan ulang", "alasan": "kenapa versi baru lebih baik" } ],',
     '  "kekurangan": [ "kekurangan CV: bukti konkret di CV + mengapa merugikan + tindakan perbaikan, maksimal 6 butir" ],',
     '  "saranRingkasan": "contoh ringkasan profil JADI 3-4 kalimat siap tempel, mengikuti struktur ringkasan wajib di bawah",',
-    roleCtx
+    roleCtxs.length === 1
       ? '  "penilaianPosisi": "penilaian kecocokan CV dengan posisi target dalam 2-4 kalimat: bukti terkuat yang sudah ada + celah paling kritis untuk posisi itu",'
-      : '  "penilaianPosisi": "",',
+      : roleCtxs.length > 1
+        ? '  "penilaianPosisi": "penilaian kecocokan CV untuk SETIAP posisi target, satu paragraf singkat per posisi yang diawali nama posisinya: bukti terkuat yang sudah ada + celah paling kritis untuk posisi itu",'
+        : '  "penilaianPosisi": "",',
     variant === 'core'
       ? '  "perbaikanLengkap": []'
       : '  "perbaikanLengkap": [ { "idPemeriksaan": "id pemeriksaan persis seperti pada daftar di bawah", "judul": "nama pemeriksaan", "sebelum": "kutipan asli dari CV yang diperbaiki — kosongkan bila masalahnya sesuatu yang belum ada di CV", "sesudah": "versi perbaikan JADI yang siap disalin pengguna", "catatan": "penjelasan singkat 1 kalimat" } ]',
@@ -409,7 +461,7 @@ export function buildPrompt(
         ]),
     '- JANGAN mengarang pengalaman, perusahaan, atau angka baru. Bila angka pencapaian tidak ada di CV, pakai placeholder seperti [X%], [jumlah], atau [angka] di dalam saran, dan jelaskan di alasan bahwa pengguna harus mengisi angka aslinya sendiri.',
     '- kekurangan: SETIAP butir wajib berpola tiga unsur: (1) SPESIFIK — tunjuk bagian/bukti konkret pada CV yang dimaksud (nama bagian, entri pengalaman, atau periode tertentu), bukan kalimat umum yang bisa menempel ke CV mana pun; (2) ALASAN — jelaskan mengapa hal itu merugikan di mata perekrut' +
-      (roleCtx ? ', terutama untuk posisi target' : '') +
+      (roleCtxs.length ? ', terutama untuk posisi target' : '') +
       '; (3) TINDAKAN — akhiri dengan arahan perbaikan konkret yang bisa langsung dilakukan pengguna.',
     jobDesc
       ? '- kekurangan menilai kesenjangan (gap) CV terhadap deskripsi lowongan secara MAKNA — skill/pengalaman yang dituntut lowongan tapi belum tampak di CV, bukan sekadar daftar kata kunci yang hilang.'
@@ -444,7 +496,7 @@ function buildPromptEn(
   targetRole: string,
   jobDesc: string,
   checks: FailedCheckContext[],
-  roleCtx: RoleContext | null,
+  roleCtx: RoleContext | RoleContext[] | null,
   variant: 'full' | 'core' = 'full',
 ): string {
   const rolePart = targetRole
@@ -471,33 +523,48 @@ function buildPromptEn(
         : '\n(No list of failed checks was provided — "perbaikanLengkap" may be an empty array.)\n'
   // Role context block: the model's ONLY skill reference for the role,
   // derived from the site's dictionary — not the model's general knowledge.
-  const roleCtxPart = roleCtx
-    ? [
-        '',
-        `ROLE CONTEXT "${roleCtx.posisi}" (from the site's skill dictionary — the only skill reference for this role):`,
-        ...(roleCtx.skillDiharapkan.length
-          ? [`- Skills expected for this role: ${roleCtx.skillDiharapkan.join(', ')}`]
-          : []),
-        ...(roleCtx.skillAda.length
-          ? [`- Role skills ALREADY evidenced in the CV: ${roleCtx.skillAda.join(', ')}`]
-          : []),
-        ...(roleCtx.skillBelum.length
-          ? [`- Role skills NOT yet appearing in the CV: ${roleCtx.skillBelum.join(', ')}`]
-          : []),
-        '',
-      ].join('\n')
-    : ''
+  // With several roles, the same block is printed once per role.
+  const roleCtxs = asRoleList(roleCtx)
+  const roleCtxBlock = (ctx: RoleContext): string =>
+    [
+      '',
+      `ROLE CONTEXT "${ctx.posisi}" (from the site's skill dictionary — the only skill reference for this role):`,
+      ...(ctx.skillDiharapkan.length
+        ? [`- Skills expected for this role: ${ctx.skillDiharapkan.join(', ')}`]
+        : []),
+      ...(ctx.skillAda.length
+        ? [`- Role skills ALREADY evidenced in the CV: ${ctx.skillAda.join(', ')}`]
+        : []),
+      ...(ctx.skillBelum.length
+        ? [`- Role skills NOT yet appearing in the CV: ${ctx.skillBelum.join(', ')}`]
+        : []),
+      '',
+    ].join('\n')
+  const roleCtxPart = roleCtxs.map(roleCtxBlock).join('\n')
   // Extra role-based assessment rules (only when role context exists).
-  const roleRules: string[] = roleCtx
-    ? [
-        `- ROLE ASSESSMENT: judge this CV through the lens of the "${roleCtx.posisi}" role. "ringkasan" and "kekurangan" MUST specifically name the CV evidence relevant to that role and the key role skills not yet appearing in the CV. The ONLY role skills you may name are those listed in the ROLE CONTEXT below — never name role skills outside that list and never invent experience or numbers beyond the CV text.`,
-        `- "penilaianPosisi" MUST be filled (2–4 sentences): the strongest evidence already in the CV for the "${roleCtx.posisi}" role and its most critical gap for that role.`,
-        `- saranPenulisanUlang: use the vocabulary and the kinds of evidence the "${roleCtx.posisi}" role looks for (tools/methods from its skill list), while only rewriting content that truly exists in the CV.`,
-        ...(jobDesc
-          ? ['- Both a job description and role context are available: the demands of the job description take PRECEDENCE over the general role picture.']
-          : []),
-      ]
-    : ['- Leave "penilaianPosisi" empty ("") — the user did not provide a target position.']
+  // One context keeps the exact previous wording; several contexts
+  // require penilaianPosisi to hold one short paragraph PER ROLE.
+  const roleNames = roleCtxs.map((c) => `"${c.posisi}"`).join(', ')
+  const roleRules: string[] =
+    roleCtxs.length === 0
+      ? ['- Leave "penilaianPosisi" empty ("") — the user did not provide a target position.']
+      : roleCtxs.length === 1
+        ? [
+            `- ROLE ASSESSMENT: judge this CV through the lens of the "${roleCtxs[0].posisi}" role. "ringkasan" and "kekurangan" MUST specifically name the CV evidence relevant to that role and the key role skills not yet appearing in the CV. The ONLY role skills you may name are those listed in the ROLE CONTEXT below — never name role skills outside that list and never invent experience or numbers beyond the CV text.`,
+            `- "penilaianPosisi" MUST be filled (2–4 sentences): the strongest evidence already in the CV for the "${roleCtxs[0].posisi}" role and its most critical gap for that role.`,
+            `- saranPenulisanUlang: use the vocabulary and the kinds of evidence the "${roleCtxs[0].posisi}" role looks for (tools/methods from its skill list), while only rewriting content that truly exists in the CV.`,
+            ...(jobDesc
+              ? ['- Both a job description and role context are available: the demands of the job description take PRECEDENCE over the general role picture.']
+              : []),
+          ]
+        : [
+            `- ROLE ASSESSMENT: judge this CV through the lens of EACH role applied for: ${roleNames}. "ringkasan" and "kekurangan" MUST specifically name the CV evidence relevant to those roles and the key skills of each role not yet appearing in the CV. The ONLY role skills you may name are those listed in the ROLE CONTEXT below — never name role skills outside that list and never invent experience or numbers beyond the CV text.`,
+            `- "penilaianPosisi" MUST be filled with ONE short paragraph (2–3 sentences) for EACH role: ${roleNames} — start each paragraph with the role's name and separate the paragraphs with a new line. Each paragraph gives the strongest evidence already in the CV for that role and its most critical gap for that role.`,
+            `- saranPenulisanUlang: use the vocabulary and the kinds of evidence those roles look for (tools/methods from their skill lists), while only rewriting content that truly exists in the CV.`,
+            ...(jobDesc
+              ? ['- Both a job description and role context are available: the demands of the job description take PRECEDENCE over the general role picture.']
+              : []),
+          ]
   return [
     'You are a career consultant who helps job seekers and fresh graduates improve their CVs.',
     'Analyze the following CV and reply ONLY with valid JSON (no markdown, no other text) with exactly this schema:',
@@ -506,9 +573,11 @@ function buildPromptEn(
     '  "saranPenulisanUlang": [ { "asli": "the original sentence/bullet from the CV", "saran": "the rewritten version", "alasan": "why the new version is better" } ],',
     '  "kekurangan": [ "a CV shortcoming: concrete evidence in the CV + why it hurts + a fix action, maximum 6 items" ],',
     '  "saranRingkasan": "a FINISHED sample profile summary of 3-4 sentences, ready to paste, following the mandatory summary structure below",',
-    roleCtx
+    roleCtxs.length === 1
       ? '  "penilaianPosisi": "an assessment of how the CV fits the target role in 2-4 sentences: the strongest evidence already present + the most critical gap for that role",'
-      : '  "penilaianPosisi": "",',
+      : roleCtxs.length > 1
+        ? '  "penilaianPosisi": "an assessment of how the CV fits EACH target role, one short paragraph per role starting with the role name: the strongest evidence already present + the most critical gap for that role",'
+        : '  "penilaianPosisi": "",',
     variant === 'core'
       ? '  "perbaikanLengkap": []'
       : '  "perbaikanLengkap": [ { "idPemeriksaan": "the exact check id from the list below", "judul": "the check name, written in English", "sebelum": "the original quote from the CV being fixed — leave empty when the problem is something missing from the CV", "sesudah": "the FINISHED fixed version, ready for the user to copy into their CV", "catatan": "a brief note of 1 sentence" } ]',
@@ -527,7 +596,7 @@ function buildPromptEn(
         ]),
     '- NEVER invent experience, companies, or new numbers. When an achievement figure is not in the CV, use a placeholder such as [X%], [number], or [figure] inside the suggestion, and explain in "alasan" that the user must fill in their own real number.',
     '- kekurangan: EVERY item must follow a three-part pattern: (1) SPECIFIC — point to the concrete part/evidence in the CV in question (a section name, an experience entry, or a specific period), not a generic sentence that could stick to any CV; (2) REASON — explain why it hurts in recruiters\' eyes' +
-      (roleCtx ? ', especially for the target role' : '') +
+      (roleCtxs.length ? ', especially for the target role' : '') +
       '; (3) ACTION — end with a concrete fix the user can carry out right away.',
     jobDesc
       ? '- kekurangan assesses the gap between the CV and the job description by MEANING — skills/experience the job demands but the CV does not yet show, not merely a list of missing keywords.'
@@ -558,7 +627,7 @@ export function buildFixPrompt(
   cvText: string,
   targetRole: string,
   checks: FailedCheckContext[],
-  roleCtx: RoleContext | null,
+  roleCtx: RoleContext | RoleContext[] | null,
   lang: CvLanguage = 'id',
 ): string {
   // CV dominan bahasa Inggris → prompt batch Inggris (buildFixPromptEn);
@@ -582,22 +651,25 @@ export function buildFixPrompt(
   ].join('\n')
   // Konteks posisi ikut serta agar kosakata perbaikan mengikuti posisi
   // yang dilamar — rujukan skillnya tetap HANYA daftar dari kamus ini.
-  const roleCtxPart = roleCtx
-    ? [
-        '',
-        `KONTEKS POSISI "${roleCtx.posisi}" (dari kamus skill situs — satu-satunya rujukan skill untuk posisi ini):`,
-        ...(roleCtx.skillDiharapkan.length
-          ? [`- Skill yang diharapkan posisi ini: ${roleCtx.skillDiharapkan.join(', ')}`]
-          : []),
-        ...(roleCtx.skillAda.length
-          ? [`- Skill posisi yang SUDAH terbukti ada di CV: ${roleCtx.skillAda.join(', ')}`]
-          : []),
-        ...(roleCtx.skillBelum.length
-          ? [`- Skill posisi yang BELUM muncul di CV: ${roleCtx.skillBelum.join(', ')}`]
-          : []),
-        '',
-      ].join('\n')
-    : ''
+  // Pada banyak posisi, blok yang sama dicetak sekali per posisi.
+  const roleCtxs = asRoleList(roleCtx)
+  const roleCtxBlock = (ctx: RoleContext): string =>
+    [
+      '',
+      `KONTEKS POSISI "${ctx.posisi}" (dari kamus skill situs — satu-satunya rujukan skill untuk posisi ini):`,
+      ...(ctx.skillDiharapkan.length
+        ? [`- Skill yang diharapkan posisi ini: ${ctx.skillDiharapkan.join(', ')}`]
+        : []),
+      ...(ctx.skillAda.length
+        ? [`- Skill posisi yang SUDAH terbukti ada di CV: ${ctx.skillAda.join(', ')}`]
+        : []),
+      ...(ctx.skillBelum.length
+        ? [`- Skill posisi yang BELUM muncul di CV: ${ctx.skillBelum.join(', ')}`]
+        : []),
+      '',
+    ].join('\n')
+  const roleCtxPart = roleCtxs.map(roleCtxBlock).join('\n')
+  const roleNames = roleCtxs.map((c) => `"${c.posisi}"`).join(', ')
   return [
     'Kamu adalah konsultan karier berbahasa Indonesia yang membantu pencari kerja dan fresh graduate memperbaiki CV.',
     'Tulis HANYA versi perbaikan jadi untuk daftar pemeriksaan di bawah, dan balas HANYA dengan JSON valid (tanpa markdown, tanpa teks lain) dengan skema persis ini:',
@@ -612,11 +684,15 @@ export function buildFixPrompt(
     '- "sebelum" pada perbaikanLengkap: pakai kutipan yang tercantum pada daftar pemeriksaan bila ada; bila tidak ada, ambil kalimat/bagian CV yang persis diperbaiki; kosongkan hanya untuk masalah ketiadaan.',
     '- Jaga setiap item perbaikanLengkap ringkas: "sesudah" maksimal sekitar 3 baris/kalimat, "catatan" 1 kalimat.',
     '- JANGAN mengarang pengalaman, perusahaan, atau angka baru. Bila angka pencapaian tidak ada di CV, pakai placeholder seperti [X%], [jumlah], atau [angka] di dalam "sesudah".',
-    ...(roleCtx
+    ...(roleCtxs.length === 1
       ? [
-          `- Kosakata dan jenis bukti pada perbaikan mengikuti posisi "${roleCtx.posisi}"; skill posisi yang boleh kamu sebut HANYA yang tercantum pada KONTEKS POSISI di bawah.`,
+          `- Kosakata dan jenis bukti pada perbaikan mengikuti posisi "${roleCtxs[0].posisi}"; skill posisi yang boleh kamu sebut HANYA yang tercantum pada KONTEKS POSISI di bawah.`,
         ]
-      : []),
+      : roleCtxs.length > 1
+        ? [
+            `- Kosakata dan jenis bukti pada perbaikan mengikuti posisi-posisi yang dilamar (${roleNames}); skill posisi yang boleh kamu sebut HANYA yang tercantum pada KONTEKS POSISI di bawah.`,
+          ]
+        : []),
     '- Seluruh jawaban dalam Bahasa Indonesia yang jelas dan suportif.',
     rolePart,
     roleCtxPart,
@@ -634,7 +710,7 @@ function buildFixPromptEn(
   cvText: string,
   targetRole: string,
   checks: FailedCheckContext[],
-  roleCtx: RoleContext | null,
+  roleCtx: RoleContext | RoleContext[] | null,
 ): string {
   const rolePart = targetRole
     ? `\nTARGET POSITION APPLIED FOR: ${targetRole}\n`
@@ -652,22 +728,25 @@ function buildFixPromptEn(
   ].join('\n')
   // Role context joins in so the fixes' vocabulary follows the applied
   // role — its skill reference remains ONLY this dictionary list.
-  const roleCtxPart = roleCtx
-    ? [
-        '',
-        `ROLE CONTEXT "${roleCtx.posisi}" (from the site's skill dictionary — the only skill reference for this role):`,
-        ...(roleCtx.skillDiharapkan.length
-          ? [`- Skills expected for this role: ${roleCtx.skillDiharapkan.join(', ')}`]
-          : []),
-        ...(roleCtx.skillAda.length
-          ? [`- Role skills ALREADY evidenced in the CV: ${roleCtx.skillAda.join(', ')}`]
-          : []),
-        ...(roleCtx.skillBelum.length
-          ? [`- Role skills NOT yet appearing in the CV: ${roleCtx.skillBelum.join(', ')}`]
-          : []),
-        '',
-      ].join('\n')
-    : ''
+  // With several roles, the same block is printed once per role.
+  const roleCtxs = asRoleList(roleCtx)
+  const roleCtxBlock = (ctx: RoleContext): string =>
+    [
+      '',
+      `ROLE CONTEXT "${ctx.posisi}" (from the site's skill dictionary — the only skill reference for this role):`,
+      ...(ctx.skillDiharapkan.length
+        ? [`- Skills expected for this role: ${ctx.skillDiharapkan.join(', ')}`]
+        : []),
+      ...(ctx.skillAda.length
+        ? [`- Role skills ALREADY evidenced in the CV: ${ctx.skillAda.join(', ')}`]
+        : []),
+      ...(ctx.skillBelum.length
+        ? [`- Role skills NOT yet appearing in the CV: ${ctx.skillBelum.join(', ')}`]
+        : []),
+      '',
+    ].join('\n')
+  const roleCtxPart = roleCtxs.map(roleCtxBlock).join('\n')
+  const roleNames = roleCtxs.map((c) => `"${c.posisi}"`).join(', ')
   return [
     'You are a career consultant who helps job seekers and fresh graduates improve their CVs.',
     'Write ONLY the finished fix versions for the checks below, and reply ONLY with valid JSON (no markdown, no other text) with exactly this schema:',
@@ -682,11 +761,15 @@ function buildFixPromptEn(
     '- "sebelum" in perbaikanLengkap: use the quote given in the check list when there is one; otherwise take the exact CV sentence/part being fixed; leave it empty only for absence problems.',
     '- Keep every perbaikanLengkap item concise: "sesudah" at most about 3 lines/sentences, "catatan" 1 sentence.',
     '- NEVER invent experience, companies, or new numbers. When an achievement figure is not in the CV, use a placeholder such as [X%], [number], or [figure] inside "sesudah".',
-    ...(roleCtx
+    ...(roleCtxs.length === 1
       ? [
-          `- The vocabulary and kinds of evidence in the fixes follow the "${roleCtx.posisi}" role; the ONLY role skills you may name are those listed in the ROLE CONTEXT below.`,
+          `- The vocabulary and kinds of evidence in the fixes follow the "${roleCtxs[0].posisi}" role; the ONLY role skills you may name are those listed in the ROLE CONTEXT below.`,
         ]
-      : []),
+      : roleCtxs.length > 1
+        ? [
+            `- The vocabulary and kinds of evidence in the fixes follow the roles applied for (${roleNames}); the ONLY role skills you may name are those listed in the ROLE CONTEXT below.`,
+          ]
+        : []),
     '- Write the ENTIRE response in clear, supportive English — every string value without exception, including "judul" and "catatan". Because the CV is in English, every fixed version ("sesudah") must be in English too, ready to paste. The context labels above may be in Indonesian; never answer in Indonesian and never mix languages.',
     rolePart,
     roleCtxPart,
@@ -1372,8 +1455,10 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
   const failedChecks = parseFailedChecks(payload.perbaikan)
   // Konteks posisi terstruktur (opsional): hanya ada bila pengguna
   // mengisi posisi target; AI menilai dari kacamata posisi itu dengan
-  // rujukan skill dari kamus situs, bukan pengetahuan umumnya.
-  const roleContext = parseRoleContext(payload.konteksPosisi)
+  // rujukan skill dari kamus situs, bukan pengetahuan umumnya. Kini
+  // berupa daftar (satu konteks per posisi yang dilamar); bentuk objek
+  // tunggal dari klien lama tetap diterima (lihat parseRoleContexts).
+  const roleContexts = parseRoleContexts(payload.konteksPosisi)
 
   // Mode panggilan (2026-11-26): klien memecah analisis menjadi
   // panggilan "core" (bidang inti, tanpa perbaikanLengkap) dan
@@ -1402,8 +1487,8 @@ export default async function handler(req: AiRequest, res: AiResponse): Promise<
   const systemPrompt = systemPromptFor(lang)
   const promptText =
     mode === 'fixes'
-      ? buildFixPrompt(cvText, targetRole, effectiveChecks, roleContext, lang)
-      : buildPrompt(cvText, targetRole, jobDesc, effectiveChecks, roleContext, mode === 'core' ? 'core' : 'full', lang)
+      ? buildFixPrompt(cvText, targetRole, effectiveChecks, roleContexts, lang)
+      : buildPrompt(cvText, targetRole, jobDesc, effectiveChecks, roleContexts, mode === 'core' ? 'core' : 'full', lang)
   const maxTokens =
     mode === 'core' ? CORE_MAX_TOKENS : mode === 'fixes' ? FIXES_MAX_TOKENS : NONSTREAM_MAX_TOKENS
   // Panggilan terpecah memakai batas upstream yang lebih longgar

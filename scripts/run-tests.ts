@@ -1,6 +1,7 @@
 // Uji logika penilaian: 3 CV (kuat/menengah/lemah) + deteksi HP.
 // Jalankan: npx tsx scripts/run-tests.ts
 import {
+  MAX_TARGET_ROLES,
   analyzeCv,
   countWords,
   detectPhone,
@@ -14,6 +15,7 @@ import {
   getSkillItems,
   getSummarySection,
   isDominantEnglish,
+  normalizeTargetRoles,
   priorityRanks,
   selectPriorities,
 } from '../src/lib/analyze'
@@ -28,8 +30,10 @@ import {
   clearHistory,
   compositionDiffers,
   entryFromResult,
+  entryRoles,
   formatHistoryDate,
   historyRoleLabel,
+  historyRoleSetsMatch,
   historyRolesMatch,
   loadHistory,
   scoreDelta,
@@ -104,6 +108,7 @@ import { buildReportPdf, buildReportPdfBytes, sanitizePdfText } from '../src/lib
 import {
   buildAiFixContext,
   buildAiRoleContext,
+  buildAiRoleContexts,
   isRetryableAiError,
   mergeAiFixes,
   runAiAnalysis,
@@ -123,6 +128,7 @@ import handler, {
   parseAiJson,
   parseFailedChecks,
   parseRoleContext,
+  parseRoleContexts,
   shapeResultForMode,
   systemPromptFor,
   RATE_LIMIT_MAX,
@@ -207,7 +213,11 @@ const storedRaw = store.getItem(HISTORY_STORAGE_KEY) ?? ''
 const storedKeys = storedRaw ? Object.keys(JSON.parse(storedRaw)[0]).sort() : []
 check(
   'Riwayat: hanya data skor yang disimpan (tanpa teks CV)',
-  JSON.stringify(storedKeys) === JSON.stringify(['aspects', 'at', 'label', 'role', 'total']) &&
+  // 2026-11-28: kunci "roles" ditambahkan oleh fitur banyak posisi —
+  // isinya daftar NAMA posisi (bukan teks CV), jadi maksud uji ini
+  // (tidak ada teks CV yang disimpan) tetap utuh.
+  JSON.stringify(storedKeys) ===
+    JSON.stringify(['aspects', 'at', 'label', 'role', 'roles', 'total']) &&
     !storedRaw.includes('Budi') &&
     !storedRaw.toLowerCase().includes('cvtext'),
   `kunci tersimpan: ${storedKeys.join(', ')}`,
@@ -2635,9 +2645,10 @@ check(
   'Posisi AI: kartu AI menampilkan label posisi + blok penilaian posisi, konteks dibangun dari snapshot',
   appTsxText.includes('Disesuaikan untuk posisi:') &&
     appTsxText.includes('Penilaian untuk Posisi') &&
-    appTsxText.includes('buildAiRoleContext(sourceText, sourceRole)') &&
+    // 2026-11-28: konteks kini banyak peran dari daftar snapshot.
+    appTsxText.includes('buildAiRoleContexts(sourceText, sourceRoles)') &&
     appTsxText.includes('aiResult.penilaianPosisi'),
-  'label memakai label snapshot analisis (aiRoleLabel), bukan isi kolom posisi saat ini',
+  'label memakai label snapshot analisis (aiRoleLabels), bukan isi kolom posisi saat ini',
 )
 check(
   'Kartu AI: harga & "bukan langganan" hanya di kotak pembayaran; paragraf kepala tanpa harga',
@@ -3093,11 +3104,15 @@ check(
 )
 check(
   'Riwayat: spanduk perbandingan sadar-posisi (label resolusi + cabang Beda posisi)',
-  appTsxText.includes('historyRolesMatch(prevEntry.role, analyzedRole)') &&
+  // 2026-11-28: perbandingan kini berbasis HIMPUNAN posisi
+  // (historyRoleSetsMatch atas entryRoles) — himpunan berbeda = Beda
+  // posisi, persis maksud uji ini sebelumnya untuk posisi tunggal.
+  appTsxText.includes('historyRoleSetsMatch(') &&
+    appTsxText.includes('entryRoles(prevEntry)') &&
     appTsxText.includes('Beda posisi') &&
     appTsxText.includes('historyRoleLabel(e.role)') &&
     appTsxText.includes('Posisi targetnya berbeda dari cek terakhir'),
-  'delta skor & per aspek hanya untuk posisi sama; baris riwayat memakai historyRoleLabel',
+  'delta skor & per aspek hanya untuk himpunan posisi sama; baris riwayat memakai historyRoleLabel',
 )
 
 // --- Audit 13: sanitasi teks PDF (encoding WinAnsi jsPDF) ---
@@ -4312,6 +4327,195 @@ check(
       appTsxText.includes('document.title') &&
       appTsxText.includes('setLang'),
     'saklar ID|EN persisten di localStorage screening-cv:ui-lang:v1',
+  )
+}
+
+// ---------- Banyak posisi (maks 3, skor best-match) — 2026-11-28 ----------
+// Keputusan pengguna: posisi yang dilamar bisa dipilih lebih dari satu;
+// skor relevansi mengikuti posisi yang PALING COCOK. Pembuktian memakai
+// CV menengah (Budi, administrasi): 'Administrasi' cocok kuat,
+// 'Data Analyst' tidak — jadi run dua posisi harus sama persis dengan
+// run posisi terbaiknya saja, dari urutan mana pun.
+{
+  const relScore = (r: typeof medium, id: string) =>
+    r.aspects.flatMap((a) => a.checks).find((c) => c.id === id)?.score
+
+  const adminOnly = analyzeCv(MEDIUM_CV, { targetRole: 'Administrasi' })
+  const daOnly = analyzeCv(MEDIUM_CV, { targetRole: 'Data Analyst' })
+  check(
+    'Banyak posisi: prasyarat pembuktian — Administrasi memang lebih cocok dari Data Analyst untuk CV ini',
+    (relScore(adminOnly, 'relevansi-pengalaman') ?? 0) >
+      (relScore(daOnly, 'relevansi-pengalaman') ?? 0),
+    `pengalaman: admin ${relScore(adminOnly, 'relevansi-pengalaman')} vs data analyst ${relScore(daOnly, 'relevansi-pengalaman')}`,
+  )
+
+  // (a) Posisi kedua lebih cocok → sama dengan run posisi kedua saja.
+  const multiSecondBest = analyzeCv(MEDIUM_CV, {
+    targetRoles: ['Data Analyst', 'Administrasi'],
+  })
+  check(
+    'Banyak posisi (a): posisi kedua terbaik → skor relevansi & total = run posisi kedua saja',
+    relScore(multiSecondBest, 'relevansi-ringkasan') ===
+      relScore(adminOnly, 'relevansi-ringkasan') &&
+      relScore(multiSecondBest, 'relevansi-pengalaman') ===
+        relScore(adminOnly, 'relevansi-pengalaman') &&
+      multiSecondBest.total === adminOnly.total &&
+      multiSecondBest.relevanceWinners.pengalaman === 'Administrasi',
+    `total multi ${multiSecondBest.total} vs admin-saja ${adminOnly.total}; pemenang pengalaman: ${multiSecondBest.relevanceWinners.pengalaman}`,
+  )
+
+  // (b) Posisi pertama yang terbaik → sama dengan run posisi pertama saja.
+  const multiFirstBest = analyzeCv(MEDIUM_CV, {
+    targetRoles: ['Administrasi', 'Data Analyst'],
+  })
+  check(
+    'Banyak posisi (b): posisi pertama terbaik → skor relevansi & total = run posisi pertama saja',
+    relScore(multiFirstBest, 'relevansi-ringkasan') ===
+      relScore(adminOnly, 'relevansi-ringkasan') &&
+      relScore(multiFirstBest, 'relevansi-pengalaman') ===
+        relScore(adminOnly, 'relevansi-pengalaman') &&
+      multiFirstBest.total === adminOnly.total &&
+      multiFirstBest.relevanceWinners.pengalaman === 'Administrasi' &&
+      multiFirstBest.relevanceWinners.ringkasan === 'Administrasi',
+    `total multi ${multiFirstBest.total} vs admin-saja ${adminOnly.total}; pemenang: ringkasan ${multiFirstBest.relevanceWinners.ringkasan}, pengalaman ${multiFirstBest.relevanceWinners.pengalaman}`,
+  )
+
+  // Daftar satu elemen lewat targetRoles === jalur targetRole lama,
+  // byte-identical (termasuk relevanceWinners).
+  check(
+    'Banyak posisi: targetRoles 1 elemen identik dengan targetRole lama',
+    JSON.stringify(analyzeCv(MEDIUM_CV, { targetRoles: ['Administrasi'] })) ===
+      JSON.stringify(adminOnly) &&
+      JSON.stringify(analyzeCv(MEDIUM_CV, { targetRoles: [] })) ===
+        JSON.stringify(analyzeCv(MEDIUM_CV)),
+    'jalur lama tidak berubah sedikit pun',
+  )
+
+  // Contoh personal mengikuti best-match: pemeriksaan yang lolos karena
+  // posisi kedua tidak lagi menghasilkan contoh perbaikan.
+  check(
+    'Banyak posisi: contoh personal mengikuti hasil best-match',
+    buildPersonalExamples(daOnly, MEDIUM_CV, 'Data Analyst')['relevansi-pengalaman'] !==
+      undefined &&
+      buildPersonalExamples(multiSecondBest, MEDIUM_CV, 'Data Analyst')[
+        'relevansi-pengalaman'
+      ] === undefined,
+    'relevansi-pengalaman gagal di run Data Analyst saja, lolos di run dua posisi',
+  )
+
+  // (c) Rincian skill per posisi hadir untuk kedua posisi.
+  const skillsAdmin = getRoleSkills('Administrasi')
+  const skillsDa = getRoleSkills('Data Analyst')
+  const statusAdmin = checkSkills(MEDIUM_CV, skillsAdmin.skills)
+  const statusDa = checkSkills(MEDIUM_CV, skillsDa.skills)
+  check(
+    'Banyak posisi (c): rincian skill per posisi tersedia untuk kedua posisi',
+    skillsAdmin.label !== skillsDa.label &&
+      statusAdmin.length === skillsAdmin.skills.length &&
+      statusDa.length === skillsDa.skills.length &&
+      statusAdmin.some((s) => s.present) &&
+      appTsxText.includes('effectiveRoles.length ? effectiveRoles : [\'\']'),
+    `label: "${skillsAdmin.label}" (${statusAdmin.filter((s) => s.present).length}/${statusAdmin.length}) vs "${skillsDa.label}" (${statusDa.filter((s) => s.present).length}/${statusDa.length}); kartu dirender per posisi efektif`,
+  )
+
+  // (d) Konteks AI banyak peran + parser server dua bentuk.
+  const ctxs = buildAiRoleContexts(MEDIUM_CV, ['Data Analyst', 'Administrasi'])
+  check(
+    'Banyak posisi (d): konteks AI banyak peran terbentuk benar',
+    ctxs.length === 2 &&
+      ctxs[0].posisi === 'Data Analyst' &&
+      ctxs[1].posisi === 'Administrasi / Admin Kantor' &&
+      ctxs.every(
+        (c) =>
+          c.skillDiharapkan.length > 0 &&
+          c.skillAda.length + c.skillBelum.length === c.skillDiharapkan.length,
+      ) &&
+      JSON.stringify(buildAiRoleContext(MEDIUM_CV, 'Data Analyst')) ===
+        JSON.stringify(ctxs[0]),
+    `label konteks: ${ctxs.map((c) => c.posisi).join(' | ')}; konteks tunggal lama utuh`,
+  )
+  check(
+    'Banyak posisi (d): parser server menerima bentuk daftar baru DAN bentuk tunggal lama',
+    parseRoleContexts(ctxs).length === 2 &&
+      parseRoleContexts(ctxs[0]).length === 1 &&
+      parseRoleContexts(ctxs[0])[0].posisi === 'Data Analyst' &&
+      parseRoleContexts(null).length === 0 &&
+      parseRoleContexts([ctxs[0], { posisi: '' }, ctxs[1], ctxs[0]]).length === 3 &&
+      parseRoleContext(ctxs[0])?.posisi === 'Data Analyst' &&
+      parseRoleContext(null) === null,
+    'bentuk tunggal lama (tab basi) tetap terbaca; entri tidak sah dibuang; daftar dibatasi 3',
+  )
+  check(
+    'Banyak posisi (d): prompt menilai SETIAP posisi; satu konteks byte-identical dengan bentuk lama',
+    buildPrompt(MEDIUM_CV, 'Data Analyst, Administrasi', '', [], ctxs, 'core').includes(
+      'SETIAP posisi',
+    ) &&
+      buildPrompt(MEDIUM_CV, 'Data Analyst, Administrasi', '', [], ctxs, 'core').includes(
+        'KONTEKS POSISI "Data Analyst"',
+      ) &&
+      buildPrompt(MEDIUM_CV, 'Data Analyst, Administrasi', '', [], ctxs, 'core').includes(
+        'KONTEKS POSISI "Administrasi / Admin Kantor"',
+      ) &&
+      buildPrompt(MEDIUM_CV, 'Data Analyst', '', [], ctxs[0], 'core') ===
+        buildPrompt(MEDIUM_CV, 'Data Analyst', '', [], [ctxs[0]], 'core') &&
+      buildFixPrompt(MEDIUM_CV, 'Data Analyst', [], ctxs[0]) ===
+        buildFixPrompt(MEDIUM_CV, 'Data Analyst', [], [ctxs[0]]) &&
+      buildPrompt(MEDIUM_CV, 'Data Analyst, Administrasi', '', [], ctxs, 'core', 'en').includes(
+        'EACH role',
+      ),
+    'penilaianPosisi wajib satu paragraf per posisi (ID & EN); jalur satu posisi tidak berubah',
+  )
+
+  // (e) Batas 3 & anti-duplikat pada logika pemilih.
+  check(
+    'Banyak posisi (e): normalizeTargetRoles menegakkan batas 3 + anti-duplikat',
+    MAX_TARGET_ROLES === 3 &&
+      normalizeTargetRoles(['A', 'B', 'C', 'D']).length === 3 &&
+      JSON.stringify(normalizeTargetRoles(['Data Analyst', 'data analyst', ' DATA  ANALYST '])) ===
+        JSON.stringify(['Data Analyst']) &&
+      JSON.stringify(normalizeTargetRoles(['', '  ', 'Admin'])) ===
+        JSON.stringify(['Admin']) &&
+      JSON.stringify(normalizeTargetRoles([])) === JSON.stringify([]),
+    'maks 3; duplikat (huruf/spasi berbeda) dibuang, ejaan pertama menang; kosong dibuang',
+  )
+  check(
+    'Banyak posisi (e): pemilih banyak terpasang di App (chip + pesan batas/duplikat dwibahasa)',
+    appTsxText.includes('RoleMultiCombobox') &&
+      appTsxText.includes('roleLimitMsg') &&
+      appTsxText.includes('roleDupMsg') &&
+      appTsxText.includes('roleMultiHint') &&
+      appTsxText.includes('targetRoles: roles') &&
+      appTsxText.includes('relevanceWinners.ringkasan') &&
+      appTsxText.includes('winnerNote'),
+    'chip terpilih + draf; catatan pemenang tampil di kartu hasil',
+  )
+
+  // Riwayat: entri menyimpan seluruh daftar; himpunan dibandingkan utuh.
+  const multiEntry = entryFromResult(
+    multiSecondBest,
+    'Data Analyst',
+    new Date('2026-11-28T10:00:00.000Z'),
+    ['Data Analyst', 'Administrasi'],
+  )
+  const legacyEntry: ScoreHistoryEntry = {
+    at: '2026-11-20T10:00:00.000Z',
+    total: 50,
+    label: 'Perlu Perbaikan',
+    role: 'Data Analyst',
+    aspects: [],
+  }
+  check(
+    'Banyak posisi: riwayat menyimpan seluruh daftar posisi; entri lama terbaca dari role',
+    JSON.stringify(multiEntry.roles) === JSON.stringify(['Data Analyst', 'Administrasi']) &&
+      multiEntry.role === 'Data Analyst' &&
+      JSON.stringify(entryRoles(multiEntry)) ===
+        JSON.stringify(['Data Analyst', 'Administrasi']) &&
+      JSON.stringify(entryRoles(legacyEntry)) === JSON.stringify(['Data Analyst']) &&
+      historyRoleSetsMatch(['Data Analyst', 'Administrasi'], ['Administrasi', 'Data Analyst']) &&
+      !historyRoleSetsMatch(['Data Analyst', 'Administrasi'], ['Data Analyst']) &&
+      historyRoleSetsMatch(['data analyst'], ['Data Analyst']) &&
+      historyRoleSetsMatch([], []),
+    'urutan tidak penting; beda himpunan = beda posisi; label glosarium disamakan',
   )
 }
 

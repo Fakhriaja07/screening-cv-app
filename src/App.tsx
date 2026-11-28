@@ -1,22 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
-import { analyzeCv, countWords, type AnalysisResult, type CheckItem } from './lib/analyze'
+import {
+  analyzeCv,
+  countWords,
+  normalizeTargetRoles,
+  type AnalysisResult,
+  type CheckItem,
+} from './lib/analyze'
 import {
   addHistoryEntry,
   aspectDeltas,
   clearHistory,
   compositionDiffers,
   entryFromResult,
+  entryRoles,
   formatHistoryDate,
   historyRoleLabel,
-  historyRolesMatch,
+  historyRoleSetsMatch,
   loadHistory,
   scoreDelta,
   type ScoreHistoryEntry,
 } from './lib/history'
 import {
   buildAiFixContext,
-  buildAiRoleContext,
+  buildAiRoleContexts,
   runAiAnalysis,
   type AiAnalysis,
 } from './lib/ai'
@@ -113,6 +120,15 @@ const UI_TEXT = {
     roleListLabel: 'Pilihan pekerjaan',
     roleEmpty:
       'Tidak ada pilihan yang cocok — posisi yang kamu ketik tetap bisa dipakai apa adanya.',
+    roleMultiHint:
+      'Bisa sampai 3 posisi. Skor relevansi mengikuti posisi yang paling cocok; posisi lain tetap dirinci di bawah.',
+    roleAddPlaceholder: 'Tambah posisi lain…',
+    roleLimitMsg: 'Maksimal 3 posisi — hapus salah satu posisi di atas untuk menggantinya.',
+    roleDupMsg: 'Posisi itu sudah ada di pilihanmu.',
+    winnerNote: (role: string) =>
+      `Skor relevansi mengikuti posisi: ${role} — posisi lain tetap dirinci di bawah.`,
+    winnerNoteTwo: (summaryRole: string, experienceRole: string) =>
+      `Skor relevansi ringkasan mengikuti posisi: ${summaryRole}; relevansi pengalaman mengikuti posisi: ${experienceRole} — posisi lain tetap dirinci di bawah.`,
     jobDescLabel: 'Deskripsi lowongan',
     jobDescPlaceholder:
       'Tempel deskripsi lowongan untuk mengecek kecocokan kata kunci dengan CV-mu.',
@@ -248,6 +264,15 @@ const UI_TEXT = {
     roleListLabel: 'Job options',
     roleEmpty:
       "No matching options — the position you typed can still be used exactly as written.",
+    roleMultiHint:
+      'You can pick up to 3 positions. The relevance score follows the best-matching one; the others are still broken down below.',
+    roleAddPlaceholder: 'Add another position…',
+    roleLimitMsg: 'Maximum of 3 positions — remove one above to replace it.',
+    roleDupMsg: 'That position is already in your selection.',
+    winnerNote: (role: string) =>
+      `The relevance score follows the position: ${role} — the other positions are still broken down below.`,
+    winnerNoteTwo: (summaryRole: string, experienceRole: string) =>
+      `Summary relevance follows the position: ${summaryRole}; experience relevance follows the position: ${experienceRole} — the other positions are still broken down below.`,
     jobDescLabel: 'Job description',
     jobDescPlaceholder:
       "Paste the job description to check how well its keywords match your CV.",
@@ -604,30 +629,38 @@ function DemoSection({ lang = 'id' }: { lang?: Lang }) {
   )
 }
 
-// ---------- Combobox posisi yang dilamar ----------
-// Kolom teks bebas dengan dropdown pilihan pekerjaan yang terfilter
-// mengikuti ketikan (permintaan pengguna 2026-11-25). Pilihan berasal
-// dari lib/roleOptions (turunan kamus skill + glosarium). Memilih
-// pilihan memasukkan NAMA LENGKAP pekerjaannya ke kolom; mengetik
-// posisi di luar daftar tetap sah dan diteruskan apa adanya — dropdown
-// tidak pernah memaksa pilihan. Nilai yang diteruskan ke analisis
-// selalu persis string di kolom ini.
-function RoleCombobox({
-  value,
-  onChange,
+// ---------- Pemilih banyak posisi yang dilamar ----------
+// Perkembangan combobox posisi (2026-11-25) menjadi pemilih BANYAK
+// (keputusan pengguna 2026-11-28: posisi bisa dipilih lebih dari satu,
+// maksimal 3, skor mengikuti posisi yang paling cocok). Posisi terpilih
+// tampil sebagai chip yang bisa dihapus; kolom ketik di sebelahnya
+// tetap teks bebas dengan dropdown terfilter dari lib/roleOptions —
+// memilih pilihan ATAU menekan Enter/koma memasukkan teks kolom
+// sebagai chip baru. Duplikat ditolak dan batas 3 ditegakkan lewat
+// normalizeTargetRoles (lib/analyze), dengan pesan kecil di bawah
+// kolom. Satu posisi tetap cara pakai utama: tanpa chip, tampilannya
+// sama seperti combobox lama.
+function RoleMultiCombobox({
+  values,
+  draft,
+  onValuesChange,
+  onDraftChange,
   lang = 'id',
 }: {
-  value: string
-  onChange: (v: string) => void
+  values: string[]
+  draft: string
+  onValuesChange: (v: string[]) => void
+  onDraftChange: (v: string) => void
   lang?: Lang
 }) {
   const t = UI_TEXT[lang]
   const [open, setOpen] = useState(false)
   const [highlight, setHighlight] = useState(-1)
+  const [notice, setNotice] = useState<'limit' | 'dup' | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
   const optionRefs = useRef<(HTMLLIElement | null)[]>([])
-  const options = useMemo(() => filterRoleOptions(value), [value])
+  const options = useMemo(() => filterRoleOptions(draft), [draft])
   const listId = 'role-combo-list'
 
   // Baris tersorot selalu terlihat: gulir daftar internal mengikuti
@@ -644,10 +677,39 @@ function RoleCombobox({
     }
   }, [highlight, open])
 
+  // Masukkan satu posisi sebagai chip. Mengembalikan true bila chip
+  // benar-benar bertambah; duplikat/batas penuh ditolak dengan pesan.
+  function tryAdd(raw: string): boolean {
+    const role = raw.trim()
+    if (!role) return false
+    const next = normalizeTargetRoles([...values, role])
+    if (next.length === values.length) {
+      const isDup = values.some(
+        (v) => v.replace(/\s+/g, ' ').toLowerCase() === role.replace(/\s+/g, ' ').toLowerCase(),
+      )
+      setNotice(isDup ? 'dup' : 'limit')
+      return false
+    }
+    setNotice(null)
+    onValuesChange(next)
+    return true
+  }
+
   function choose(opt: RoleOption) {
-    onChange(opt.value)
-    setOpen(false)
-    setHighlight(-1)
+    if (tryAdd(opt.value)) {
+      onDraftChange('')
+      setHighlight(-1)
+    }
+    inputRef.current?.focus()
+  }
+
+  function commitDraft() {
+    if (tryAdd(draft)) onDraftChange('')
+  }
+
+  function removeRole(role: string) {
+    setNotice(null)
+    onValuesChange(values.filter((v) => v !== role))
     inputRef.current?.focus()
   }
 
@@ -667,6 +729,10 @@ function RoleCombobox({
       if (open && highlight >= 0 && options[highlight]) {
         e.preventDefault()
         choose(options[highlight])
+      } else if (draft.trim()) {
+        // Enter tanpa sorotan: teks bebas di kolom menjadi chip.
+        e.preventDefault()
+        commitDraft()
       }
     } else if (e.key === 'Escape') {
       if (open) {
@@ -674,6 +740,9 @@ function RoleCombobox({
         setOpen(false)
         setHighlight(-1)
       }
+    } else if (e.key === 'Backspace' && draft === '' && values.length > 0) {
+      // Backspace pada kolom kosong menghapus chip terakhir.
+      removeRole(values[values.length - 1])
     }
   }
 
@@ -689,76 +758,103 @@ function RoleCombobox({
         }
       }}
     >
-      <input
-        ref={inputRef}
-        type="text"
-        role="combobox"
-        aria-label={t.roleComboLabel}
-        aria-expanded={open}
-        aria-controls={listId}
-        aria-activedescendant={
-          open && highlight >= 0 ? `${listId}-${highlight}` : undefined
-        }
-        aria-autocomplete="list"
-        autoComplete="off"
-        value={value}
-        onChange={(e) => {
-          onChange(e.target.value)
-          setOpen(true)
-          setHighlight(-1)
-        }}
-        onFocus={() => setOpen(true)}
-        onKeyDown={handleKeyDown}
-        placeholder={t.rolePlaceholder}
-      />
-      <button
-        type="button"
-        className={`combo-toggle${open ? ' open' : ''}`}
-        aria-label={t.roleToggleLabel}
-        tabIndex={-1}
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={() => {
-          setOpen((o) => !o)
-          inputRef.current?.focus()
-        }}
-      >
-        <Icon d={I.chev} size={18} />
-      </button>
-      {open && (
-        <ul
-          className="combo-list"
-          role="listbox"
-          id={listId}
-          ref={listRef}
-          aria-label={t.roleListLabel}
-        >
-          {options.map((opt, i) => (
-            <li
-              key={opt.value}
-              id={`${listId}-${i}`}
-              role="option"
-              aria-selected={i === highlight}
-              ref={(el) => {
-                optionRefs.current[i] = el
-              }}
-              className={`combo-option${i === highlight ? ' active' : ''}`}
-              onMouseDown={(e) => {
-                e.preventDefault()
-                choose(opt)
-              }}
-              onMouseEnter={() => setHighlight(i)}
+      <div className="role-box">
+        {values.map((role) => (
+          <span className="role-chip" key={role}>
+            <span className="role-chip-name">{role}</span>
+            <button
+              type="button"
+              className="role-chip-x"
+              aria-label={`${lang === 'en' ? 'Remove position' : 'Hapus posisi'}: ${role}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => removeRole(role)}
             >
-              <span className="combo-name">{opt.value}</span>
-              {opt.abbrs.length > 0 && (
-                <span className="combo-abbr">{opt.abbrs.join(' · ')}</span>
-              )}
-            </li>
-          ))}
-          {options.length === 0 && (
-            <li className="combo-empty">{t.roleEmpty}</li>
-          )}
-        </ul>
-      )}
+              ×
+            </button>
+          </span>
+        ))}
+        <input
+          ref={inputRef}
+          type="text"
+          role="combobox"
+          aria-label={t.roleComboLabel}
+          aria-expanded={open}
+          aria-controls={listId}
+          aria-activedescendant={
+            open && highlight >= 0 ? `${listId}-${highlight}` : undefined
+          }
+          aria-autocomplete="list"
+          autoComplete="off"
+          value={draft}
+          onChange={(e) => {
+            const v = e.target.value
+            if (v.includes(',')) {
+              // Koma menyelesaikan chip dari teks sebelum koma pertama.
+              const part = v.split(',')[0]
+              if (tryAdd(part)) onDraftChange('')
+              else onDraftChange(part)
+              return
+            }
+            onDraftChange(v)
+            setNotice(null)
+            setOpen(true)
+            setHighlight(-1)
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={handleKeyDown}
+          placeholder={values.length ? t.roleAddPlaceholder : t.rolePlaceholder}
+        />
+        <button
+          type="button"
+          className={`combo-toggle${open ? ' open' : ''}`}
+          aria-label={t.roleToggleLabel}
+          tabIndex={-1}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            setOpen((o) => !o)
+            inputRef.current?.focus()
+          }}
+        >
+          <Icon d={I.chev} size={18} />
+        </button>
+        {open && (
+          <ul
+            className="combo-list"
+            role="listbox"
+            id={listId}
+            ref={listRef}
+            aria-label={t.roleListLabel}
+          >
+            {options.map((opt, i) => (
+              <li
+                key={opt.value}
+                id={`${listId}-${i}`}
+                role="option"
+                aria-selected={i === highlight}
+                ref={(el) => {
+                  optionRefs.current[i] = el
+                }}
+                className={`combo-option${i === highlight ? ' active' : ''}`}
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  choose(opt)
+                }}
+                onMouseEnter={() => setHighlight(i)}
+              >
+                <span className="combo-name">{opt.value}</span>
+                {opt.abbrs.length > 0 && (
+                  <span className="combo-abbr">{opt.abbrs.join(' · ')}</span>
+                )}
+              </li>
+            ))}
+            {options.length === 0 && (
+              <li className="combo-empty">{t.roleEmpty}</li>
+            )}
+          </ul>
+        )}
+      </div>
+      {notice === 'limit' && <p className="role-notice">{t.roleLimitMsg}</p>}
+      {notice === 'dup' && <p className="role-notice">{t.roleDupMsg}</p>}
     </div>
   )
 }
@@ -789,7 +885,13 @@ export default function App() {
     document.documentElement.lang = lang
   }, [lang])
   const [cvText, setCvText] = useState('')
-  const [targetRole, setTargetRole] = useState('')
+  // Posisi yang dilamar kini bisa LEBIH DARI SATU (maks 3, keputusan
+  // pengguna 2026-11-28): chip terpilih di targetRoles, teks yang
+  // sedang diketik (belum menjadi chip) di roleDraft. Posisi efektif
+  // untuk analisis = gabungan keduanya lewat normalizeTargetRoles —
+  // teks bebas yang belum ter-chip tidak pernah hilang.
+  const [targetRoles, setTargetRoles] = useState<string[]>([])
+  const [roleDraft, setRoleDraft] = useState('')
   const [jobDesc, setJobDesc] = useState('')
   const [result, setResult] = useState<AnalysisResult | null>(null)
   // Snapshot teks CV + posisi target PERSIS saat analisis dijalankan —
@@ -797,7 +899,9 @@ export default function App() {
   // tetap cocok dengan hasil walau kotak teks diedit sesudahnya. Hanya
   // di memori halaman (state), tidak pernah disimpan ke localStorage.
   const [analyzedText, setAnalyzedText] = useState('')
-  const [analyzedRole, setAnalyzedRole] = useState('')
+  // Seluruh daftar posisi snapshot analisis (urutan pilihan pengguna);
+  // posisi utama = elemen pertama (analyzedRole di bawah).
+  const [analyzedRoles, setAnalyzedRoles] = useState<string[]>([])
   const [analyzedJobDesc, setAnalyzedJobDesc] = useState('')
   // Tanggal analisis terakhir — dipakai di kepala laporan PDF unduhan.
   const [analysisDate, setAnalysisDate] = useState<Date | null>(null)
@@ -817,8 +921,20 @@ export default function App() {
   // kartu Daftar Skill) yang dipakai analisis AI yang sedang tampil —
   // disimpan sebagai snapshot saat analisis berhasil, agar label
   // "Disesuaikan untuk posisi: …" tidak berubah bila kolom posisi
-  // diedit sesudahnya. Kosong bila analisis dijalankan tanpa posisi.
-  const [aiRoleLabel, setAiRoleLabel] = useState('')
+  // diedit sesudahnya. Satu label per posisi yang dikirim ke AI;
+  // kosong bila analisis dijalankan tanpa posisi.
+  const [aiRoleLabels, setAiRoleLabels] = useState<string[]>([])
+  // Daftar posisi efektif dari formulir saat ini (chip + draf teks
+  // bebas), dinormalkan (maks 3, tanpa duplikat) — dipakai kartu
+  // Daftar Skill dan jalur AI tanpa hasil.
+  const effectiveRoles = useMemo(
+    () => normalizeTargetRoles([...targetRoles, roleDraft]),
+    [targetRoles, roleDraft],
+  )
+  // Posisi utama dari snapshot analisis (elemen pertama daftar) —
+  // konsumen lama yang memang tunggal (template ringkasan, kepala
+  // laporan) memakai ini; daftar penuhnya di analyzedRoles.
+  const analyzedRole = analyzedRoles[0] ?? ''
   const [aiError, setAiError] = useState('')
   const [downloadError, setDownloadError] = useState('')
   // Sinyal aliran streaming: event pertama sudah tiba (pemicu tahapan
@@ -946,21 +1062,29 @@ export default function App() {
       )
       return
     }
+    // Posisi efektif: chip terpilih + draf teks bebas yang belum
+    // sempat menjadi chip — keduanya dinormalkan (maks 3, tanpa
+    // duplikat). Formulir lalu diselaraskan ke daftar ini agar yang
+    // tampil persis yang dianalisis.
+    const roles = normalizeTargetRoles([...targetRoles, roleDraft])
+    setTargetRoles(roles)
+    setRoleDraft('')
     const res = analyzeCv(cvText, {
-      targetRole,
+      targetRoles: roles,
       jobDesc,
       fileName: fileText !== '' && cvText === fileText ? fileName : undefined,
       lang,
     })
     setResult(res)
     setAnalyzedText(cvText)
-    setAnalyzedRole(targetRole)
+    setAnalyzedRoles(roles)
     setAnalyzedJobDesc(jobDesc)
     setAnalysisDate(new Date())
     // Fase 1: simpan skor ke riwayat perangkat (hanya skor — teks CV tidak
     // disimpan) dan ingat entri sebelumnya untuk perbandingan sebelum → sesudah.
+    // Entri kini menyimpan SELURUH daftar posisi (roles), bukan hanya utama.
     setPrevEntry(loadHistory()[0] ?? null)
-    setHistory(addHistoryEntry(entryFromResult(res, targetRole)))
+    setHistory(addHistoryEntry(entryFromResult(res, roles[0] ?? '', new Date(), roles)))
     requestAnimationFrame(() => {
       resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     })
@@ -984,11 +1108,12 @@ export default function App() {
     // hasilnya akan dibuang saat tiba (lihat handleAiAnalyze).
     aiRunRef.current += 1
     setCvText('')
-    setTargetRole('')
+    setTargetRoles([])
+    setRoleDraft('')
     setJobDesc('')
     setResult(null)
     setAnalyzedText('')
-    setAnalyzedRole('')
+    setAnalyzedRoles([])
     setAnalyzedJobDesc('')
     setAnalysisDate(null)
     setFileName('')
@@ -996,7 +1121,7 @@ export default function App() {
     setError('')
     setAiConsent(false)
     setAiResult(null)
-    setAiRoleLabel('')
+    setAiRoleLabels([])
     setAiError('')
     setAiConnected(false)
     setAiStageRole('')
@@ -1181,7 +1306,10 @@ export default function App() {
     // diedit pengguna sesudahnya. Tanpa ini, konteks perbaikan (dari hasil
     // tampil) bisa tidak cocok dengan teks yang dikirim ke AI.
     const sourceText = result ? analyzedText : cvText
-    const sourceRole = result ? analyzedRole : targetRole
+    // Daftar posisi dari snapshot yang sama (seluruhnya, bukan hanya
+    // posisi utama) — konteks AI kini banyak peran.
+    const sourceRoles = result ? analyzedRoles : effectiveRoles
+    const sourceRole = sourceRoles.join(', ')
     const sourceJobDesc = result ? analyzedJobDesc : jobDesc
     if (sourceText.trim().length < 50) {
       setAiError(
@@ -1204,21 +1332,37 @@ export default function App() {
     // Konteks pemeriksaan yang gagal dari hasil standar yang sedang
     // tampil: AI wajib memperbaiki semuanya satu per satu (bagian
     // "Perbaikan Lengkap dari AI"), bukan menebak ulang dari nol.
+    // Contoh personal untuk konteks perbaikan: teks yang menyebut satu
+    // posisi memakai POSISI PENENTU skor pemeriksaan terkait (dari
+    // result.relevanceWinners), bukan selalu posisi utama.
+    const winners = result?.relevanceWinners
+    const roleByCheck = winners
+      ? {
+          ringkasan: winners.ringkasan ?? undefined,
+          relevansiRingkasan: winners.ringkasan ?? undefined,
+          relevansiPengalaman: winners.pengalaman ?? undefined,
+        }
+      : undefined
     const perbaikan = result
-      ? buildAiFixContext(result, buildPersonalExamples(result, analyzedText, analyzedRole))
+      ? buildAiFixContext(
+          result,
+          buildPersonalExamples(result, analyzedText, analyzedRole, undefined, roleByCheck),
+        )
       : []
     // Konteks posisi terstruktur dari snapshot yang sama (teks + posisi
     // saat analisis standar dijalankan): AI menilai dari kacamata
-    // posisi itu dengan rujukan skill kamus situs. Null bila posisi
-    // kosong — permintaan lama terkirim persis seperti sebelumnya.
-    const konteksPosisi = buildAiRoleContext(sourceText, sourceRole)
-    setAiStageRole(konteksPosisi?.posisi ?? '')
+    // SETIAP posisi itu dengan rujukan skill kamus situs. Daftar kosong
+    // bila posisi kosong — permintaan terkirim tanpa konteks, persis
+    // seperti sebelumnya.
+    const konteksPosisi = buildAiRoleContexts(sourceText, sourceRoles)
+    const roleLabels = konteksPosisi.map((c) => c.posisi)
+    setAiStageRole(roleLabels.join(', '))
     const input = {
       cvText: sourceText,
       targetRole: sourceRole,
       jobDesc: sourceJobDesc,
       ...(perbaikan.length ? { perbaikan } : {}),
-      ...(konteksPosisi ? { konteksPosisi } : {}),
+      ...(konteksPosisi.length ? { konteksPosisi } : {}),
     }
     let succeeded = false
     try {
@@ -1243,7 +1387,7 @@ export default function App() {
       // Pengguna menekan reset selagi analisis berjalan → hasil dibuang.
       if (!isStale()) {
         setAiResult(data)
-        setAiRoleLabel(konteksPosisi?.posisi ?? '')
+        setAiRoleLabels(roleLabels)
         setAiRunDone(true)
         succeeded = true
       }
@@ -1315,7 +1459,8 @@ export default function App() {
         ai: aiResult,
         // Posisi pada laporan = posisi saat analisis dijalankan (snapshot),
         // bukan isi kolom posisi yang mungkin sudah diedit sesudahnya.
-        targetRole: analyzedRole,
+        // Banyak posisi ditulis berurutan dipisah koma.
+        targetRole: analyzedRoles.join(', '),
         date: analysisDate ?? new Date(),
         lang,
       })
@@ -1599,7 +1744,17 @@ export default function App() {
   // yang dianalisis (analyzedText), bukan dari kotak teks yang mungkin
   // sudah diedit sesudahnya.
   const personalExamples = useMemo(
-    () => (result ? buildPersonalExamples(result, analyzedText, analyzedRole, lang) : {}),
+    () =>
+      result
+        ? buildPersonalExamples(result, analyzedText, analyzedRole, lang, {
+            // Teks contoh yang menyebut satu posisi memakai posisi
+            // PENENTU skor pemeriksaan terkait (best-match), bukan
+            // selalu posisi utama.
+            ringkasan: result.relevanceWinners.ringkasan ?? undefined,
+            relevansiRingkasan: result.relevanceWinners.ringkasan ?? undefined,
+            relevansiPengalaman: result.relevanceWinners.pengalaman ?? undefined,
+          })
+        : {},
     [result, analyzedText, analyzedRole, lang],
   )
 
@@ -1748,7 +1903,14 @@ export default function App() {
 
           <div className="field">
             <span>{t.roleLabel}</span>
-            <RoleCombobox value={targetRole} onChange={setTargetRole} lang={lang} />
+            <RoleMultiCombobox
+              values={targetRoles}
+              draft={roleDraft}
+              onValuesChange={setTargetRoles}
+              onDraftChange={setRoleDraft}
+              lang={lang}
+            />
+            <small className="role-hint">{t.roleMultiHint}</small>
           </div>
 
           <label className="field">
@@ -1840,6 +2002,29 @@ export default function App() {
                 {result.roleWarning && (
                   <div className="alert alert-warn"><Icon d={I.alert} size={16} /> {result.roleWarning}</div>
                 )}
+
+                {/* Kejujuran best-match: bila >1 posisi dilamar, sebut
+                    posisi penentu skor relevansinya (per pemeriksaan
+                    bila pemenangnya berbeda). */}
+                {analyzedRoles.length > 1 &&
+                  (result.relevanceWinners.ringkasan || result.relevanceWinners.pengalaman) && (
+                    <p className="winner-note">
+                      {result.relevanceWinners.ringkasan &&
+                      result.relevanceWinners.pengalaman &&
+                      result.relevanceWinners.ringkasan !== result.relevanceWinners.pengalaman
+                        ? t.winnerNoteTwo(
+                            historyRoleLabel(result.relevanceWinners.ringkasan, lang),
+                            historyRoleLabel(result.relevanceWinners.pengalaman, lang),
+                          )
+                        : t.winnerNote(
+                            historyRoleLabel(
+                              (result.relevanceWinners.ringkasan ??
+                                result.relevanceWinners.pengalaman) as string,
+                              lang,
+                            ),
+                          )}
+                    </p>
+                  )}
               </div>
 
               {result.priorities.length > 0 && (
@@ -1862,17 +2047,24 @@ export default function App() {
 
                   {prevEntry && (() => {
                     const d = scoreDelta(prevEntry.total, result.total, lang)
-                    const currEntry = entryFromResult(result, analyzedRole)
+                    const currEntry = entryFromResult(result, analyzedRole, new Date(), analyzedRoles)
                     // Spanduk sadar-posisi: selisih skor & delta per aspek
-                    // hanya bermakna bila posisi targetnya sama (sesudah
-                    // resolusi label). Bila berbeda, kedua posisi disebut
-                    // eksplisit agar "turun" antar-posisi tidak terbaca
-                    // sebagai CV yang memburuk.
-                    const sameRole = historyRolesMatch(prevEntry.role, analyzedRole)
-                    const prevRoleLabel =
-                      lang === 'id' ? historyRoleLabel(prevEntry.role) : historyRoleLabel(prevEntry.role, lang)
-                    const currRoleLabel =
-                      lang === 'id' ? historyRoleLabel(analyzedRole) : historyRoleLabel(analyzedRole, lang)
+                    // hanya bermakna bila HIMPUNAN posisi targetnya sama
+                    // (sesudah resolusi label; urutan tidak penting). Bila
+                    // berbeda, kedua himpunan posisi disebut eksplisit
+                    // agar "turun" antar-posisi tidak terbaca sebagai CV
+                    // yang memburuk.
+                    const sameRole = historyRoleSetsMatch(
+                      entryRoles(prevEntry),
+                      analyzedRoles,
+                      lang,
+                    )
+                    const prevRoleLabel = entryRoles(prevEntry)
+                      .map((r) => (lang === 'id' ? historyRoleLabel(r) : historyRoleLabel(r, lang)))
+                      .join(', ')
+                    const currRoleLabel = analyzedRoles
+                      .map((r) => (lang === 'id' ? historyRoleLabel(r) : historyRoleLabel(r, lang)))
+                      .join(', ')
                     const changed = sameRole
                       ? aspectDeltas(prevEntry, currEntry)
                           .filter((a) => a.delta !== null && a.delta !== 0)
@@ -1959,7 +2151,12 @@ export default function App() {
                         <span className="history-date">{formatHistoryDate(e.at, lang)}</span>
                         <span className="history-score">{e.total}/100</span>
                         <span className="history-label">{e.label}</span>
-                        {e.role && <span className="history-role">{lang === 'id' ? historyRoleLabel(e.role) : historyRoleLabel(e.role, lang)}</span>}
+                        {e.role && (
+                          <span className="history-role">
+                            {lang === 'id' ? historyRoleLabel(e.role) : historyRoleLabel(e.role, lang)}
+                            {entryRoles(e).length > 1 ? ` +${entryRoles(e).length - 1}` : ''}
+                          </span>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -2008,14 +2205,17 @@ export default function App() {
 
                 <h4 className="subhead">{t.templateSub}</h4>
                 <p>{t.templateIntro}</p>
-                <div className="template-box">{buildSummaryTemplate(targetRole, lang)}</div>
+                <div className="template-box">{buildSummaryTemplate(effectiveRoles[0] ?? '', lang)}</div>
 
-                {(() => {
-                  const roleSkills = getRoleSkills(targetRole, lang)
+                {/* Daftar skill dirinci PER POSISI: satu blok untuk tiap
+                    posisi efektif (chip + draf). Tanpa posisi, satu blok
+                    fallback persis seperti sebelumnya. */}
+                {(effectiveRoles.length ? effectiveRoles : ['']).map((skillRole) => {
+                  const roleSkills = getRoleSkills(skillRole, lang)
                   const skillStatus = checkSkills(cvText, roleSkills.skills)
                   const presentCount = skillStatus.filter((s) => s.present).length
                   return (
-                    <>
+                    <div key={skillRole || '__umum'}>
                       <h4 className="subhead">
                         {lang === 'en' ? 'Skill Checklist' : 'Daftar Skill'} — {roleSkills.label}
                       </h4>
@@ -2054,10 +2254,10 @@ export default function App() {
                           </li>
                         ))}
                       </ul>
-                      <p className="ai-note">{t.skillNote}</p>
-                    </>
+                    </div>
                   )
-                })()}
+                })}
+                <p className="ai-note">{t.skillNote}</p>
               </div>
 
               {result.keywords && (
@@ -2279,10 +2479,14 @@ export default function App() {
 
                 {aiResult && (
                   <div className="ai-result">
-                    {aiRoleLabel && (
+                    {aiRoleLabels.length > 0 && (
                       <p className="ai-role-label">
-                        {lang === 'en' ? 'Tailored to the position:' : 'Disesuaikan untuk posisi:'}{' '}
-                        <strong>{aiRoleLabel}</strong>
+                        {lang === 'en'
+                          ? aiRoleLabels.length > 1
+                            ? 'Tailored to the positions:'
+                            : 'Tailored to the position:'
+                          : 'Disesuaikan untuk posisi:'}{' '}
+                        <strong>{aiRoleLabels.join(', ')}</strong>
                       </p>
                     )}
                     {aiResult.ringkasan && (
@@ -2296,10 +2500,14 @@ export default function App() {
                       <div className="ai-block">
                         <h4>
                           {lang === 'en'
-                            ? aiRoleLabel
-                              ? `Assessment for the ${aiRoleLabel} Position`
-                              : 'Position Assessment'
-                            : `Penilaian untuk Posisi${aiRoleLabel ? ` ${aiRoleLabel}` : ''}`}
+                            ? aiRoleLabels.length > 1
+                              ? 'Assessment by Position'
+                              : aiRoleLabels[0]
+                                ? `Assessment for the ${aiRoleLabels[0]} Position`
+                                : 'Position Assessment'
+                            : aiRoleLabels.length > 1
+                              ? 'Penilaian per Posisi'
+                              : `Penilaian untuk Posisi${aiRoleLabels[0] ? ` ${aiRoleLabels[0]}` : ''}`}
                         </h4>
                         <p>{aiResult.penilaianPosisi}</p>
                       </div>

@@ -1,6 +1,6 @@
 // Klien untuk backend Analisis AI (POST /api/analyze-ai → OpenRouter).
 // Dipakai hanya bila pengguna mencentang persetujuan pengiriman teks CV.
-import type { AnalysisResult } from './analyze'
+import { normalizeTargetRoles, type AnalysisResult } from './analyze'
 import type { PersonalExample } from './personalExamples'
 import { checkSkills, getRoleSkills } from './examples'
 
@@ -60,6 +60,23 @@ export function buildAiRoleContext(cvText: string, targetRole: string): AiRoleCo
   }
 }
 
+// Versi banyak posisi (2026-11-28): satu konteks per posisi yang
+// dilamar (daftar dinormalisasi lebih dulu — maksimal 3, tanpa
+// duplikat), masing-masing dibangun dengan pemilahan skill yang sama
+// persis seperti jalur tunggal di atas. Daftar kosong (tidak ada
+// posisi) menghasilkan array kosong = tanpa konteks, perilaku lama.
+export function buildAiRoleContexts(
+  cvText: string,
+  targetRoles: readonly string[],
+): AiRoleContext[] {
+  const out: AiRoleContext[] = []
+  for (const role of normalizeTargetRoles(targetRoles)) {
+    const ctx = buildAiRoleContext(cvText, role)
+    if (ctx) out.push(ctx)
+  }
+  return out
+}
+
 // Konteks satu pemeriksaan standar yang gagal, dikirim ke backend agar
 // AI memperbaiki temuan pemeriksa yang sedang tampil — bukan menebak
 // ulang. Kutipan diisi dari contoh personal (CV pengguna sendiri) bila ada.
@@ -75,7 +92,10 @@ export interface AiRequestInput {
   targetRole?: string
   jobDesc?: string
   perbaikan?: AiCheckContext[]
-  konteksPosisi?: AiRoleContext
+  // Konteks posisi: kini berupa DAFTAR (satu entri per posisi yang
+  // dilamar, maksimal 3). Server menerima daftar ini maupun bentuk
+  // objek tunggal lama, jadi tab basi tidak rusak.
+  konteksPosisi?: AiRoleContext[]
   // Mode panggilan (2026-11-26): server mendukung pemecahan analisis
   // menjadi panggilan "core" (bidang inti saja) dan "fixes"
   // (perbaikanLengkap per batch). Tanpa mode, server menjalankan

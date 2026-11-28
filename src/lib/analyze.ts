@@ -80,10 +80,28 @@ export interface AnalysisResult {
   roleWarning: string | null
   portfolioUrl: string | null
   wordCount: number
+  // Posisi penentu skor (winning role) untuk tiap pemeriksaan relevansi
+  // kondisional — posisi yang hasil penilaiannya dipakai sebagai skor
+  // pemeriksaan itu. Null bila pemeriksaan itu tidak ada (tidak ada
+  // posisi berkriteria). Pada pemakaian satu posisi, nilainya posisi
+  // itu sendiri; pada banyak posisi, inilah dasar tampilan jujur
+  // "skor relevansi mengikuti posisi: X" di UI.
+  relevanceWinners: {
+    ringkasan: string | null
+    pengalaman: string | null
+  }
 }
 
 export interface AnalyzeOptions {
   targetRole?: string
+  // Posisi yang dilamar bisa lebih dari satu (keputusan pengguna
+  // 2026-11-28, maksimal MAX_TARGET_ROLES): kedua pemeriksaan relevansi
+  // dinilai untuk SETIAP posisi dan skor yang dipakai adalah hasil
+  // TERBAIK di antaranya ("skor mengikuti posisi yang paling cocok").
+  // Bila bidang ini diisi, ia yang dipakai; targetRole tunggal hanya
+  // dipakai bila targetRoles tidak diberikan sama sekali. Daftar kosong
+  // atau satu posisi berperilaku persis seperti jalur lama.
+  targetRoles?: string[]
   jobDesc?: string
   // Nama berkas yang diunggah pengguna (mis. "CV_Budi.pdf"), diteruskan
   // lapisan baca-berkas/App agar nama file ikut dinilai. Kosong/tidak
@@ -1943,6 +1961,34 @@ export function getRoleWords(role: string): string[] {
   return [...new Set(words)]
 }
 
+// ---------- Daftar posisi banyak (maksimal 3) ----------
+
+// Plafon posisi yang dilamar dalam satu analisis (keputusan pengguna
+// 2026-11-28): cukup untuk posisi-posisi yang berdekatan, dan menjaga
+// rincian per posisi tetap terbaca. Penegakannya satu tempat di sini —
+// pemilih di UI dan mesin memakai normalisasi yang sama.
+export const MAX_TARGET_ROLES = 3
+
+// Normalisasi daftar posisi mentah (dari pemilih UI atau opsi analisis):
+// potong spasi tepi, buang yang kosong, buang duplikat (perbandingan
+// tidak peka huruf besar/kecil dan spasi ganda; ejaan PERTAMA yang
+// menang dan disimpan apa adanya), lalu potong ke MAX_TARGET_ROLES.
+// Urutan pengguna dipertahankan — posisi pertama adalah posisi utama.
+export function normalizeTargetRoles(input: readonly string[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const raw of input) {
+    const role = (raw ?? '').trim()
+    if (!role) continue
+    const key = role.replace(/\s+/g, ' ').toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(role)
+    if (out.length >= MAX_TARGET_ROLES) break
+  }
+  return out
+}
+
 // ---------- Prioritas perbaikan (sumber bersama) ----------
 
 // Memilih & mengurutkan prioritas perbaikan dari semua pemeriksaan:
@@ -1993,7 +2039,18 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
 
   const summarySection = getSummarySection(text)
   const experienceSection = getExperienceSection(text)
-  const role = options.targetRole?.trim() ?? ''
+  // Daftar posisi efektif: targetRoles (bila diberikan) dinormalisasi;
+  // tanpa itu, targetRole tunggal diperlakukan sebagai daftar berisi
+  // satu posisi — jalur lama persis. `role` = posisi utama (pertama),
+  // dipakai bagian-bagian yang memang menyebut satu posisi.
+  const roles = normalizeTargetRoles(options.targetRoles ?? [options.targetRole ?? ''])
+  const role = roles[0] ?? ''
+  // Pasangan posisi → kata bermaknanya, hanya untuk posisi yang punya
+  // kata bermakna (posisi tanpa kata tidak bisa dinilai relevansinya
+  // dan tidak ikut menentukan ada/tidaknya pemeriksaan kondisional).
+  const scoredRoles = roles
+    .map((r) => ({ role: r, words: getRoleWords(r) }))
+    .filter((s) => s.words.length > 0)
 
   // ===== KONTAK (maks 20) =====
   // Kandidat email pertama yang BENAR-BENAR valid strukturnya: regex saja
@@ -2107,8 +2164,7 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   // Bila posisi target diisi DAN punya kata bermakna, aspek ini dipecah:
   // ringkasan (maks 7) + relevansi ringkasan terhadap posisi target (maks 3).
   const summaryWords = summarySection ? countWords(summarySection) : 0
-  const roleWords = getRoleWords(role)
-  const hasRole = roleWords.length > 0
+  const hasRole = scoredRoles.length > 0
 
   const summaryScoreFull =
     summaryWords >= 40 ? 10 : summaryWords >= 20 ? 7 : summaryWords >= 8 ? 4 : summaryWords >= 1 ? 2 : 0
@@ -2131,37 +2187,59 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
     ),
   ]
 
-  if (hasRole) {
+  // Penilaian relevansi ringkasan untuk SATU posisi — logika skor dan
+  // teks pesannya persis jalur lama. Pemakaian banyak posisi menilai
+  // tiap posisi dengan penilai ini lalu memakai hasil TERBAIKNYA
+  // (seri dimenangkan posisi yang lebih dulu dipilih pengguna), dan
+  // posisi pemenangnya dicatat sebagai peran penentu pemeriksaan ini.
+  const evalSummaryRelevance = (
+    r: string,
+    words: string[],
+  ): { score: number; message: string } => {
     const summaryLower = summarySection.toLowerCase()
-    const headWord = roleWords[0]
-    const relevanceScore = !summarySection
+    const headWord = words[0]
+    const score = !summarySection
       ? 0
       : summaryLower.includes(headWord)
         ? 3
-        : roleWords.some((w) => summaryLower.includes(w))
+        : words.some((w) => summaryLower.includes(w))
           ? 2
           : 0
-    ringkasanChecks.push(
-      makeCheck(
-        'relevansi-ringkasan', ASPECT.summary, lang === 'en' ? 'Summary relevance to the target role' : 'Relevansi ringkasan dengan posisi target',
-        relevanceScore, 3,
-        !summarySection
+    const message = !summarySection
+      ? lang === 'en'
+        ? `The target role "${r}" cannot be assessed from your summary because there is no summary section yet. Write a summary that mentions the field/role you are aiming for.`
+        : `Posisi target "${r}" belum bisa dinilai dari ringkasan karena bagian ringkasan belum ada. Tulis ringkasan yang menyebut bidang/posisi yang kamu tuju.`
+      : score === 3
+        ? lang === 'en'
+          ? `Your summary mentions the field/role you are aiming for ("${headWord}"), matching the target role "${r}".`
+          : `Ringkasan menyebut bidang/posisi yang dituju ("${headWord}") sesuai posisi target "${r}".`
+        : score === 2
           ? lang === 'en'
-            ? `The target role "${role}" cannot be assessed from your summary because there is no summary section yet. Write a summary that mentions the field/role you are aiming for.`
-            : `Posisi target "${role}" belum bisa dinilai dari ringkasan karena bagian ringkasan belum ada. Tulis ringkasan yang menyebut bidang/posisi yang kamu tuju.`
-          : relevanceScore === 3
-            ? lang === 'en'
-              ? `Your summary mentions the field/role you are aiming for ("${headWord}"), matching the target role "${role}".`
-              : `Ringkasan menyebut bidang/posisi yang dituju ("${headWord}") sesuai posisi target "${role}".`
-            : relevanceScore === 2
-              ? lang === 'en'
-                ? `Your summary mentions some words from the target role "${role}", but its main word ("${headWord}") has not appeared yet. Mention the role/field you are aiming for explicitly in your summary.`
-                : `Ringkasan menyebut sebagian kata dari posisi target "${role}", tetapi kata utamanya ("${headWord}") belum muncul. Sebutkan posisi/bidang yang dituju secara eksplisit di ringkasan.`
-              : lang === 'en'
-                ? `Your summary does not mention the role/field "${role}" you are aiming for at all. Adjust the first sentence of your summary to the target role so recruiters see the relevance right away.`
-                : `Ringkasan sama sekali tidak menyebut posisi/bidang "${role}" yang kamu tuju. Sesuaikan kalimat pertama ringkasan dengan posisi target agar rekruter langsung melihat relevansinya.`,
-      ),
-    )
+            ? `Your summary mentions some words from the target role "${r}", but its main word ("${headWord}") has not appeared yet. Mention the role/field you are aiming for explicitly in your summary.`
+            : `Ringkasan menyebut sebagian kata dari posisi target "${r}", tetapi kata utamanya ("${headWord}") belum muncul. Sebutkan posisi/bidang yang dituju secara eksplisit di ringkasan.`
+          : lang === 'en'
+            ? `Your summary does not mention the role/field "${r}" you are aiming for at all. Adjust the first sentence of your summary to the target role so recruiters see the relevance right away.`
+            : `Ringkasan sama sekali tidak menyebut posisi/bidang "${r}" yang kamu tuju. Sesuaikan kalimat pertama ringkasan dengan posisi target agar rekruter langsung melihat relevansinya.`
+    return { score, message }
+  }
+
+  let summaryWinner: { role: string; score: number; message: string } | null = null
+  if (hasRole) {
+    for (const s of scoredRoles) {
+      const ev = evalSummaryRelevance(s.role, s.words)
+      if (!summaryWinner || ev.score > summaryWinner.score) {
+        summaryWinner = { role: s.role, score: ev.score, message: ev.message }
+      }
+    }
+    if (summaryWinner) {
+      ringkasanChecks.push(
+        makeCheck(
+          'relevansi-ringkasan', ASPECT.summary, lang === 'en' ? 'Summary relevance to the target role' : 'Relevansi ringkasan dengan posisi target',
+          summaryWinner.score, 3,
+          summaryWinner.message,
+        ),
+      )
+    }
   }
 
   // ===== PENGALAMAN (maks 28) =====
@@ -2338,50 +2416,73 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   // Relevansi pengalaman terhadap posisi target (kondisional): jabatan
   // dan isi pengalaman dinilai keterkaitannya dengan bidang posisi yang
   // dituju — bukan hanya ringkasannya.
-  if (hasRole) {
-    const expLower = experienceSection.toLowerCase()
-    const titleText = experienceSection
-      .split('\n')
-      .filter((l) => !BULLET_LINE.test(l))
-      .join(' ')
-      .toLowerCase()
-    const titleHits = roleWords.filter((w) => titleText.includes(w))
-    const sectionHits = roleWords.filter((w) => expLower.includes(w))
-    const missingWords = roleWords.filter((w) => !expLower.includes(w))
-    const relevanceExpScore = !experienceSection
+  // Penilaian relevansi pengalaman untuk SATU posisi — logika skor
+  // dan teks pesannya persis jalur lama; teks bagian & judul dihitung
+  // sekali di luar penilai karena tidak bergantung posisi. Pemakaian
+  // banyak posisi memakai hasil TERBAIK di antara posisi-posisi itu
+  // (seri dimenangkan posisi yang lebih dulu dipilih), dan posisi
+  // pemenangnya dicatat sebagai peran penentu pemeriksaan ini.
+  const expLower = experienceSection.toLowerCase()
+  const titleText = experienceSection
+    .split('\n')
+    .filter((l) => !BULLET_LINE.test(l))
+    .join(' ')
+    .toLowerCase()
+  const evalExperienceRelevance = (
+    r: string,
+    words: string[],
+  ): { score: number; message: string } => {
+    const titleHits = words.filter((w) => titleText.includes(w))
+    const sectionHits = words.filter((w) => expLower.includes(w))
+    const missingWords = words.filter((w) => !expLower.includes(w))
+    const score = !experienceSection
       ? 0
       : titleHits.length > 0
         ? 3
-        : sectionHits.length === roleWords.length && roleWords.length > 0
+        : sectionHits.length === words.length && words.length > 0
           ? 2
           : sectionHits.length > 0
             ? 1
             : 0
-    pengalamanChecks.push(
-      makeCheck(
-        'relevansi-pengalaman', ASPECT.experience, lang === 'en' ? 'Experience relevance to the target role' : 'Relevansi pengalaman dengan posisi target',
-        relevanceExpScore, 3,
-        !experienceSection
+    const message = !experienceSection
+      ? lang === 'en'
+        ? `The relevance of the target role "${r}" cannot be assessed because there is no experience section yet. Experience (including internships and projects) related to the field of the role you are aiming for is the strongest evidence for recruiters.`
+        : `Posisi target "${r}" belum bisa dinilai relevansinya karena bagian pengalaman belum ada. Pengalaman (termasuk magang dan proyek) yang berkaitan dengan bidang posisi yang dituju adalah bukti terkuat bagi rekruter.`
+      : score === 3
+        ? lang === 'en'
+          ? `Job titles in your experience mention keywords from the target role "${r}" (${titleHits.map((w) => `"${w}"`).join(', ')}) — the relevance is immediately visible to recruiters.`
+          : `Jabatan di pengalamanmu menyebut kata kunci posisi target "${r}" (${titleHits.map((w) => `"${w}"`).join(', ')}) — relevansinya langsung terlihat oleh rekruter.`
+        : score === 2
           ? lang === 'en'
-            ? `The relevance of the target role "${role}" cannot be assessed because there is no experience section yet. Experience (including internships and projects) related to the field of the role you are aiming for is the strongest evidence for recruiters.`
-            : `Posisi target "${role}" belum bisa dinilai relevansinya karena bagian pengalaman belum ada. Pengalaman (termasuk magang dan proyek) yang berkaitan dengan bidang posisi yang dituju adalah bukti terkuat bagi rekruter.`
-          : relevanceExpScore === 3
+            ? `The content of your experience mentions all the keywords from the target role "${r}" (${sectionHits.map((w) => `"${w}"`).join(', ')}), but they have not appeared in a job title yet. If it fits, mention that field in the title of your experience entry.`
+            : `Isi pengalamanmu menyebut semua kata kunci posisi target "${r}" (${sectionHits.map((w) => `"${w}"`).join(', ')}), tetapi belum muncul di judul jabatan. Bila memang sesuai, sebutkan bidang itu di judul entri pengalamanmu.`
+          : score === 1
             ? lang === 'en'
-              ? `Job titles in your experience mention keywords from the target role "${role}" (${titleHits.map((w) => `"${w}"`).join(', ')}) — the relevance is immediately visible to recruiters.`
-              : `Jabatan di pengalamanmu menyebut kata kunci posisi target "${role}" (${titleHits.map((w) => `"${w}"`).join(', ')}) — relevansinya langsung terlihat oleh rekruter.`
-            : relevanceExpScore === 2
-              ? lang === 'en'
-                ? `The content of your experience mentions all the keywords from the target role "${role}" (${sectionHits.map((w) => `"${w}"`).join(', ')}), but they have not appeared in a job title yet. If it fits, mention that field in the title of your experience entry.`
-                : `Isi pengalamanmu menyebut semua kata kunci posisi target "${role}" (${sectionHits.map((w) => `"${w}"`).join(', ')}), tetapi belum muncul di judul jabatan. Bila memang sesuai, sebutkan bidang itu di judul entri pengalamanmu.`
-              : relevanceExpScore === 1
-                ? lang === 'en'
-                  ? `Your experience only mentions some keywords from the target role "${role}" (${sectionHits.map((w) => `"${w}"`).join(', ')}); not yet found: ${missingWords.map((w) => `"${w}"`).join(', ')}. Highlight the tasks and results most related to the field you are aiming for.`
-                  : `Pengalamanmu baru menyebut sebagian kata kunci posisi target "${role}" (${sectionHits.map((w) => `"${w}"`).join(', ')}); yang belum terbaca: ${missingWords.map((w) => `"${w}"`).join(', ')}. Tonjolkan tugas dan hasil yang paling berkaitan dengan bidang yang dituju.`
-                : lang === 'en'
-                  ? `Your experience does not mention any keywords from the target role "${role}" (${roleWords.map((w) => `"${w}"`).join(', ')}). If you have related tasks or projects, highlight them; if you are changing fields, explain the bridge in your summary (courses, personal projects, internships).`
-                  : `Pengalamanmu tidak menyebut satu pun kata kunci posisi target "${role}" (${roleWords.map((w) => `"${w}"`).join(', ')}). Bila ada tugas/proyek yang berkaitan, tonjolkan; bila memang berpindah bidang, jelaskan jembatannya di ringkasan (kursus, proyek pribadi, magang).`,
-      ),
-    )
+              ? `Your experience only mentions some keywords from the target role "${r}" (${sectionHits.map((w) => `"${w}"`).join(', ')}); not yet found: ${missingWords.map((w) => `"${w}"`).join(', ')}. Highlight the tasks and results most related to the field you are aiming for.`
+              : `Pengalamanmu baru menyebut sebagian kata kunci posisi target "${r}" (${sectionHits.map((w) => `"${w}"`).join(', ')}); yang belum terbaca: ${missingWords.map((w) => `"${w}"`).join(', ')}. Tonjolkan tugas dan hasil yang paling berkaitan dengan bidang yang dituju.`
+            : lang === 'en'
+              ? `Your experience does not mention any keywords from the target role "${r}" (${words.map((w) => `"${w}"`).join(', ')}). If you have related tasks or projects, highlight them; if you are changing fields, explain the bridge in your summary (courses, personal projects, internships).`
+              : `Pengalamanmu tidak menyebut satu pun kata kunci posisi target "${r}" (${words.map((w) => `"${w}"`).join(', ')}). Bila ada tugas/proyek yang berkaitan, tonjolkan; bila memang berpindah bidang, jelaskan jembatannya di ringkasan (kursus, proyek pribadi, magang).`
+    return { score, message }
+  }
+
+  let experienceWinner: { role: string; score: number; message: string } | null = null
+  if (hasRole) {
+    for (const s of scoredRoles) {
+      const ev = evalExperienceRelevance(s.role, s.words)
+      if (!experienceWinner || ev.score > experienceWinner.score) {
+        experienceWinner = { role: s.role, score: ev.score, message: ev.message }
+      }
+    }
+    if (experienceWinner) {
+      pengalamanChecks.push(
+        makeCheck(
+          'relevansi-pengalaman', ASPECT.experience, lang === 'en' ? 'Experience relevance to the target role' : 'Relevansi pengalaman dengan posisi target',
+          experienceWinner.score, 3,
+          experienceWinner.message,
+        ),
+      )
+    }
   }
 
   // ===== PENDIDIKAN (maks 12) =====
@@ -2792,14 +2893,19 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   const priorities = selectPriorities(allChecks, aspects)
 
   // ===== Peringatan posisi (tidak mengubah skor) =====
+  // Peringatan mengikuti peran PENENTU skor: pemenang relevansi
+  // pengalaman lebih dulu, lalu pemenang relevansi ringkasan, lalu
+  // posisi utama — pada pemakaian satu posisi ketiganya posisi yang
+  // sama, jadi perilakunya persis seperti sebelumnya.
+  const warningRole = experienceWinner?.role ?? summaryWinner?.role ?? role
   let roleWarning: string | null = null
-  if (role) {
-    const firstWord = role.toLowerCase().match(/[a-z]+/)?.[0] ?? ''
+  if (warningRole) {
+    const firstWord = warningRole.toLowerCase().match(/[a-z]+/)?.[0] ?? ''
     if (firstWord && !lower.includes(firstWord)) {
       roleWarning =
         lang === 'en'
-          ? `The target role "${role}" is not mentioned in your CV. Mention this role or field in your summary or experience so your CV looks relevant.`
-          : `Posisi target "${role}" tidak disebut di dalam CV. Sebutkan posisi atau bidang ini di ringkasan atau pengalamanmu agar CV terlihat relevan.`
+          ? `The target role "${warningRole}" is not mentioned in your CV. Mention this role or field in your summary or experience so your CV looks relevant.`
+          : `Posisi target "${warningRole}" tidak disebut di dalam CV. Sebutkan posisi atau bidang ini di ringkasan atau pengalamanmu agar CV terlihat relevan.`
     }
   }
 
@@ -2814,5 +2920,9 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
     roleWarning,
     portfolioUrl,
     wordCount: totalWords,
+    relevanceWinners: {
+      ringkasan: summaryWinner?.role ?? null,
+      pengalaman: experienceWinner?.role ?? null,
+    },
   }
 }
