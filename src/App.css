@@ -1,25 +1,31 @@
 /* ===== Sistem desain (token) =====
-   Palet: biru profesional yang sama seperti sebelumnya (#155eef + sky),
-   kini dinyatakan sebagai variabel agar konsisten di semua komponen.
+   Palet ARAH A — Indigo + Amber (pilihan pengguna 2026-11-28, menggantikan
+   biru royal + sky yang dinilai terlalu korporat untuk usia 18–30): nama
+   variabel lama DIPERTAHANKAN agar semua komponen ikut bergeser sekaligus,
+   tetapi nilainya kini keluarga indigo (dengan violet sebagai ujung terang)
+   dan amber menjadi aksen resmi sistem. Warna semantik level skor
+   (hijau/amber/merah) tidak berubah makna.
    Tipografi memakai tumpukan font sistem: tanpa unduh font eksternal,
    halaman tetap ringan di data seluler dan tampil native di Android/iOS. */
 :root {
-  --blue-700: #1d4ed8;
-  --blue-600: #155eef;
-  --blue-800: #0f4fd6;
-  --sky-600: #0284c7;
-  --sky-500: #0ea5e9;
-  --navy-900: #0f2a5c;
+  --blue-700: #4338ca;
+  --blue-600: #4f46e5;
+  --blue-800: #3730a3;
+  --sky-600: #6d28d9;
+  --sky-500: #8b5cf6;
+  --navy-900: #1e1b4b;
   --ink: #0f172a;
   --muted: #475569;
   --faint: #94a3b8;
   --line: #e2e8f0;
   --line-soft: #eef2f6;
-  --bg: #eef3f9;
+  --bg: #edeef9;
   --surface: #ffffff;
-  --blue-50: #eff6ff;
-  --blue-100: #dbeafe;
-  --blue-200: #bfdbfe;
+  --blue-50: #eef2ff;
+  --blue-100: #e0e7ff;
+  --blue-200: #c7d2fe;
+  --amber-300: #fcd34d;
+  --amber-ink: #451a03;
   --green: #16a34a;
   --green-dark: #15803d;
   --green-bg: #dcfce7;
@@ -125,18 +131,18 @@ img {
 }
 
 /* ===== Hero =====
-   Latar berlapis: gradien navy→biru→sky sebagai dasar, cahaya radial
-   lembut di tiga sudut, pola titik halus yang memudar ke bawah
-   (::before), dan satu cincin cahaya dekoratif di kanan atas (::after).
-   Semua CSS murni — tanpa gambar/font eksternal — dan teks putih tetap
-   kontras di atasnya. */
+   Latar berlapis: gradien navy→indigo→violet sebagai dasar (arah A),
+   cahaya radial lembut di tiga sudut, pola titik halus yang memudar
+   ke bawah (::before), dan satu cincin cahaya dekoratif di kanan atas
+   (::after). Semua CSS murni — tanpa gambar/font eksternal — dan teks
+   putih tetap kontras di atasnya. */
 .hero {
   position: relative;
   overflow: hidden;
   background:
-    radial-gradient(720px 360px at 85% -10%, rgba(125, 211, 252, 0.45), transparent 62%),
-    radial-gradient(560px 320px at 8% 115%, rgba(56, 189, 248, 0.32), transparent 60%),
-    radial-gradient(900px 520px at 50% 135%, rgba(29, 78, 216, 0.38), transparent 65%),
+    radial-gradient(720px 360px at 85% -10%, rgba(167, 139, 250, 0.45), transparent 62%),
+    radial-gradient(560px 320px at 8% 115%, rgba(129, 140, 248, 0.32), transparent 60%),
+    radial-gradient(900px 520px at 50% 135%, rgba(67, 56, 202, 0.38), transparent 65%),
     linear-gradient(135deg, var(--navy-900) 0%, var(--blue-700) 48%, var(--blue-600) 74%, var(--sky-500) 100%);
   color: #fff;
   padding: 56px var(--page-pad) 48px;
@@ -193,12 +199,15 @@ img {
   letter-spacing: -1.2px;
   line-height: 1.08;
   margin: 20px 0 14px;
-  text-shadow: 0 2px 18px rgba(2, 32, 84, 0.35);
+  text-shadow: 0 2px 18px rgba(30, 27, 75, 0.35);
 }
+/* Kata sorotan judul kini AMBER (aksen resmi arah A, menggantikan biru
+   muda lama): kata amber-300 di atas gradien indigo tetap terbaca untuk
+   teks judul besar dan tebal, garis bawahnya amber penuh. */
 .hero-accent {
-  color: #bae6fd;
+  color: var(--amber-300);
   text-decoration: underline;
-  text-decoration-color: rgba(125, 211, 252, 0.65);
+  text-decoration-color: var(--amber);
   text-decoration-thickness: 5px;
   text-underline-offset: 7px;
   white-space: nowrap;
@@ -231,7 +240,7 @@ img {
   border-color: rgba(255, 255, 255, 0.4);
   padding: 6px 14px;
   letter-spacing: 0.2px;
-  box-shadow: 0 2px 10px rgba(2, 32, 84, 0.18);
+  box-shadow: 0 2px 10px rgba(30, 27, 75, 0.18);
   backdrop-filter: blur(6px);
 }
 .badge {
@@ -277,11 +286,14 @@ img {
   backdrop-filter: blur(8px);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.25),
-    0 10px 24px -14px rgba(2, 32, 84, 0.5);
+    0 10px 24px -14px rgba(30, 27, 75, 0.5);
 }
+/* Angka statistik hero berwarna amber-300: titik amber kedua di hero
+   setelah kata sorotan judul. */
 .hero-stats strong {
   font-size: 28px;
   letter-spacing: -0.5px;
+  color: var(--amber-300);
 }
 .hero-stats span {
   font-size: 12.5px;
@@ -325,10 +337,10 @@ img {
 .btn-primary {
   background: linear-gradient(135deg, var(--blue-600) 0%, var(--sky-600) 130%);
   color: #fff;
-  box-shadow: 0 6px 18px rgba(21, 94, 239, 0.38);
+  box-shadow: 0 6px 18px rgba(79, 70, 229, 0.38);
 }
 .btn-primary:hover {
-  background: linear-gradient(135deg, var(--blue-800) 0%, #0369a1 130%);
+  background: linear-gradient(135deg, var(--blue-800) 0%, #5b21b6 130%);
 }
 .btn:focus-visible, a:focus-visible, button:focus-visible {
   outline: 2px solid var(--sky-500);
@@ -337,11 +349,11 @@ img {
 .hero .btn-primary {
   background: #fff;
   color: var(--blue-600);
-  box-shadow: 0 8px 22px rgba(2, 32, 84, 0.35);
+  box-shadow: 0 8px 22px rgba(30, 27, 75, 0.35);
 }
 .hero .btn-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 12px 26px rgba(2, 32, 84, 0.4);
+  box-shadow: 0 12px 26px rgba(30, 27, 75, 0.4);
 }
 .hero .btn-ghost {
   background: rgba(255, 255, 255, 0.06);
@@ -549,13 +561,17 @@ img {
   outline-offset: 0;
   background: #fff;
 }
+/* Pil penghitung kata/karakter: kontras dinaikkan satu tingkat (arah A)
+   — latar indigo-100 + bingkai indigo-200 + teks slate-700, tidak lagi
+   abu-abu di atas abu-abu yang nyaris menyatu dengan latar formulir. */
 .counter {
   display: inline-block;
   margin-top: 8px;
-  background: #f1f5f9;
+  background: var(--blue-100);
+  border: 1px solid var(--blue-200);
   border-radius: 999px;
   padding: 3px 11px;
-  color: var(--muted);
+  color: #334155;
   font-size: 12.5px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -923,16 +939,19 @@ img {
   border: 1.5px solid transparent;
   background:
     linear-gradient(180deg, #fbfdff, #ffffff 140px) padding-box,
-    linear-gradient(135deg, rgba(21, 94, 239, 0.55), rgba(14, 165, 233, 0.55)) border-box;
+    linear-gradient(135deg, rgba(79, 70, 229, 0.55), rgba(139, 92, 246, 0.55)) border-box;
 }
+/* Chip "Berbayar" kini AMBER (aksen resmi arah A): teks gelap di atas
+   gradien amber agar kontrasnya kuat — teks putih di atas amber cerah
+   tidak akan terbaca. */
 .paid-chip {
   margin-left: auto;
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.4px;
   text-transform: uppercase;
-  color: #fff;
-  background: linear-gradient(135deg, var(--blue-600), var(--sky-500));
+  color: var(--amber-ink);
+  background: linear-gradient(135deg, var(--amber), #fbbf24);
   border-radius: 999px;
   padding: 4px 11px;
   white-space: nowrap;
@@ -1426,7 +1445,7 @@ img {
   border: 1px solid var(--blue-200);
   border-radius: var(--radius-s);
   padding: 12px 14px;
-  color: #1e3a8a;
+  color: #312e81;
 }
 
 /* ===== Riwayat skor (Fase 1) ===== */
@@ -1622,7 +1641,7 @@ img {
   border: 1px solid var(--blue-200);
   border-radius: var(--radius-s);
   padding: 12px 14px;
-  color: #1e3a8a;
+  color: #312e81;
   font-size: 14.5px;
   line-height: 1.6;
   margin: 10px 0 12px;
@@ -1685,25 +1704,49 @@ img {
   color: var(--green-dark);
 }
 
-/* ===== Footer ===== */
+/* ===== Footer =====
+   Blok penutup NAVY lebar penuh (arah A): halaman tidak lagi berakhir
+   di latar pucat. Isi/teks tautan sama seperti sebelumnya — yang berubah
+   hanya wadahnya: gradien navy keluarga hero, garis amber tipis di tepi
+   atas sebagai aksen, teks indigo-200 yang kontras di atasnya. */
 .footer {
   text-align: center;
-  padding: 24px var(--page-pad) 34px;
-  color: #64748b;
+  padding: 36px var(--page-pad) 42px;
+  margin-top: 26px;
+  color: var(--blue-200);
   font-size: 13.5px;
   line-height: 1.6;
+  background:
+    radial-gradient(560px 240px at 88% -30%, rgba(139, 92, 246, 0.35), transparent 60%),
+    linear-gradient(160deg, #2a2370 0%, var(--navy-900) 55%, #17123d 100%);
+  border-top: 3px solid var(--amber);
+}
+.footer-inner {
   max-width: 760px;
-  margin: 8px auto 0;
-  border-top: 1px solid var(--line);
+  margin: 0 auto;
+}
+.footer .footer-links a {
+  color: #a5b4fc;
+}
+.footer .footer-links a:hover {
+  color: var(--amber-300);
+  text-decoration: underline;
 }
 
 /* ===== Contoh hasil (beranda) ===== */
+/* Pita latar indigo sangat muda (indigo-100 → indigo-50) sebagai
+   selingan yang mematahkan hamparan pucat area formulir (arah A);
+   kartu contoh yang putih kini menonjol di atasnya. Lebar penuh —
+   konten di dalamnya yang dibatasi --content-w. */
 .demo-section {
-  max-width: var(--content-w);
   width: 100%;
-  margin: 0 auto;
   padding: 34px var(--page-pad) 6px;
   scroll-margin-top: calc(var(--topbar-h) + 12px);
+  background: linear-gradient(180deg, var(--blue-100) 0%, var(--blue-50) 100%);
+}
+.demo-inner {
+  max-width: var(--content-w);
+  margin: 0 auto;
 }
 .demo-head {
   text-align: center;
@@ -1856,6 +1899,11 @@ img {
   gap: 14px;
   flex-wrap: wrap;
   margin-top: 24px;
+}
+/* Petunjuk kecil di CTA contoh duduk di atas pita indigo — pakai warna
+   teks sekunder penuh agar tidak sepudar --faint di atas latar terang. */
+.demo-cta .ai-hint {
+  color: var(--muted);
 }
 
 /* ===== Responsif ===== */

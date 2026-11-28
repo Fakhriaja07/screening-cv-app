@@ -236,78 +236,80 @@ function DemoSection() {
   const delta = DEMO_AFTER.total - DEMO_BEFORE.total
   return (
     <section className="demo-section" id="contoh" aria-label="Contoh hasil analisis">
-      <div className="demo-head">
-        <span className="badge badge-soft"><Icon d={I.chart} size={14} /> Contoh hasil analisis</span>
-        <h2>Lihat Contoh Hasil</h2>
-        <p>
-          Ini dua CV contoh yang dinilai mesin yang sama persis dengan yang
-          akan menilai CV-mu.
-        </p>
-      </div>
-      <div className="demo-grid">
-        <div className="card demo-card">
-          <div className="demo-card-head">
-            <span className="demo-tag demo-tag-before">Sebelum</span>
-            <span className="demo-cv-name">CV contoh — seadanya</span>
-          </div>
-          <div className="demo-score-row">
-            <ScoreRing score={DEMO_BEFORE.total} size={108} />
-            <div className="demo-score-side">
-              <p className="demo-verdict">{DEMO_BEFORE.label}</p>
-              <p className="demo-note">3 prioritas perbaikan teratas dari CV ini:</p>
-              <ol className="demo-priorities">
-                {DEMO_BEFORE.priorities.slice(0, 3).map((c) => (
-                  <li key={c.id}>
-                    <strong>{c.title}</strong> — {c.score}/{c.max} poin
-                  </li>
-                ))}
-              </ol>
-            </div>
-          </div>
+      <div className="demo-inner">
+        <div className="demo-head">
+          <span className="badge badge-soft"><Icon d={I.chart} size={14} /> Contoh hasil analisis</span>
+          <h2>Lihat Contoh Hasil</h2>
+          <p>
+            Ini dua CV contoh yang dinilai mesin yang sama persis dengan yang
+            akan menilai CV-mu.
+          </p>
         </div>
-        <div className="demo-arrow" aria-hidden="true">→</div>
-        <div className="card demo-card demo-card-after">
-          <div className="demo-card-head">
-            <span className="demo-tag demo-tag-after">Sesudah</span>
-            <span className="demo-cv-name">CV contoh — dengan bukti hasil</span>
-          </div>
-          <div className="demo-score-row">
-            <ScoreRing score={DEMO_AFTER.total} size={108} />
-            <div className="demo-score-side">
-              <p className="demo-verdict">{DEMO_AFTER.label}</p>
-              <p className="demo-delta">
-                <Icon d={I.trendUp} size={16} /> Naik {delta} poin dari contoh “Sebelum”
-              </p>
-              <p className="demo-note">Pemeriksaan yang sama pada CV ini:</p>
-              <ol className="demo-priorities demo-priorities-after">
-                {DEMO_BEFORE.priorities.slice(0, 3).map((c) => {
-                  const a = DEMO_AFTER_BY_ID.get(c.id)
-                  return (
+        <div className="demo-grid">
+          <div className="card demo-card">
+            <div className="demo-card-head">
+              <span className="demo-tag demo-tag-before">Sebelum</span>
+              <span className="demo-cv-name">CV contoh — seadanya</span>
+            </div>
+            <div className="demo-score-row">
+              <ScoreRing score={DEMO_BEFORE.total} size={108} />
+              <div className="demo-score-side">
+                <p className="demo-verdict">{DEMO_BEFORE.label}</p>
+                <p className="demo-note">3 prioritas perbaikan teratas dari CV ini:</p>
+                <ol className="demo-priorities">
+                  {DEMO_BEFORE.priorities.slice(0, 3).map((c) => (
                     <li key={c.id}>
-                      <strong>{c.title}</strong> — {a ? `${a.score}/${a.max}` : '–'} poin
+                      <strong>{c.title}</strong> — {c.score}/{c.max} poin
                     </li>
-                  )
-                })}
-              </ol>
+                  ))}
+                </ol>
+              </div>
+            </div>
+          </div>
+          <div className="demo-arrow" aria-hidden="true">→</div>
+          <div className="card demo-card demo-card-after">
+            <div className="demo-card-head">
+              <span className="demo-tag demo-tag-after">Sesudah</span>
+              <span className="demo-cv-name">CV contoh — dengan bukti hasil</span>
+            </div>
+            <div className="demo-score-row">
+              <ScoreRing score={DEMO_AFTER.total} size={108} />
+              <div className="demo-score-side">
+                <p className="demo-verdict">{DEMO_AFTER.label}</p>
+                <p className="demo-delta">
+                  <Icon d={I.trendUp} size={16} /> Naik {delta} poin dari contoh “Sebelum”
+                </p>
+                <p className="demo-note">Pemeriksaan yang sama pada CV ini:</p>
+                <ol className="demo-priorities demo-priorities-after">
+                  {DEMO_BEFORE.priorities.slice(0, 3).map((c) => {
+                    const a = DEMO_AFTER_BY_ID.get(c.id)
+                    return (
+                      <li key={c.id}>
+                        <strong>{c.title}</strong> — {a ? `${a.score}/${a.max}` : '–'} poin
+                      </li>
+                    )
+                  })}
+                </ol>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-      <div className="demo-caption">
-        <p>
-          Selisihnya datang dari hal yang bisa kamu perbaiki juga: angka hasil
-          kerja, kata kerja aksi, skill yang spesifik, dan kontak yang lengkap.
-        </p>
-        <p className="demo-disclaimer">
-          Contoh bawaan situs, skornya dihitung langsung oleh mesin penilaian
-          — bukan testimoni pengguna.
-        </p>
-      </div>
-      <div className="demo-cta">
-        <a className="btn btn-primary" href="#analisis">
-          <Icon d={I.chart} size={18} /> Analisis CV-mu
-        </a>
-        <span className="ai-hint">Analisis standar gratis — tanpa daftar, dan CV tidak diunggah ke server.</span>
+        <div className="demo-caption">
+          <p>
+            Selisihnya datang dari hal yang bisa kamu perbaiki juga: angka hasil
+            kerja, kata kerja aksi, skill yang spesifik, dan kontak yang lengkap.
+          </p>
+          <p className="demo-disclaimer">
+            Contoh bawaan situs, skornya dihitung langsung oleh mesin penilaian
+            — bukan testimoni pengguna.
+          </p>
+        </div>
+        <div className="demo-cta">
+          <a className="btn btn-primary" href="#analisis">
+            <Icon d={I.chart} size={18} /> Analisis CV-mu
+          </a>
+          <span className="ai-hint">Analisis standar gratis — tanpa daftar, dan CV tidak diunggah ke server.</span>
+        </div>
       </div>
     </section>
   )
@@ -1826,21 +1828,23 @@ export default function App() {
       </main>
 
       <footer className="footer">
-        <p>
-          Penilaian standar berbasis aturan (rule-based) dan berjalan sepenuhnya di
-          browser kamu — bukan keputusan rekruter, dan tidak ada data yang diunggah
-          atau disimpan. Satu-satunya pengecualian: fitur Analisis AI (opsional,
-          berbayar) mengirim teks CV ke OpenRouter hanya bila kamu mencentang
-          persetujuan, dan teks itu tidak disimpan oleh Screening CV.
-        </p>
-        <p className="footer-links">
-          <a href="/privacy.html">Kebijakan Privasi</a>
-          <span aria-hidden="true"> • </span>
-          <a href="/terms.html">Syarat &amp; Ketentuan</a>
-        </p>
-        <p className="footer-links">
-          <a href="/artikel/kesalahan-cv-fresh-graduate.html">Artikel: Kesalahan CV Fresh Graduate</a>
-        </p>
+        <div className="footer-inner">
+          <p>
+            Penilaian standar berbasis aturan (rule-based) dan berjalan sepenuhnya di
+            browser kamu — bukan keputusan rekruter, dan tidak ada data yang diunggah
+            atau disimpan. Satu-satunya pengecualian: fitur Analisis AI (opsional,
+            berbayar) mengirim teks CV ke OpenRouter hanya bila kamu mencentang
+            persetujuan, dan teks itu tidak disimpan oleh Screening CV.
+          </p>
+          <p className="footer-links">
+            <a href="/privacy.html">Kebijakan Privasi</a>
+            <span aria-hidden="true"> • </span>
+            <a href="/terms.html">Syarat &amp; Ketentuan</a>
+          </p>
+          <p className="footer-links">
+            <a href="/artikel/kesalahan-cv-fresh-graduate.html">Artikel: Kesalahan CV Fresh Graduate</a>
+          </p>
+        </div>
       </footer>
     </div>
   )
