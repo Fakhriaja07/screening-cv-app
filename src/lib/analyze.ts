@@ -38,7 +38,7 @@
 // (total tetap 20). Patokan memang bergerak karena dimensi yang dinilai
 // bertambah — pergerakannya diukur & dicatat di ROADMAP.md.
 
-import { expandJobTitle } from './jobGlossary'
+import { expandJobTitle } from './jobGlossary.js'
 
 export type CheckStatus = 'baik' | 'kurang' | 'buruk'
 
