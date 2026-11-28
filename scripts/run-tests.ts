@@ -11,6 +11,7 @@ import {
   getExperienceEntryDetails,
   getPeriodExprs,
   getRoleWords,
+  getSkillItems,
   getSummarySection,
   isDominantEnglish,
   priorityRanks,
@@ -1242,6 +1243,88 @@ check(
     checkOf(analyzeCv(PROYEK_KULIAH_CV.replace('Proyek Kuliah', 'Proyek Pribadi')), 'proyek')?.score === 2 &&
     checkOf(analyzeCv(PROYEK_KULIAH_CV.replace('Dashboard Harga Bahan Pokok — Proyek Kuliah (2025)', 'Tugas Akhir (2025)')), 'proyek')?.score === 2,
   `"Proyek Kuliah" ${checkOf(proyekKuliah, 'proyek')?.score}/2, "Proyek Akhir" ${checkOf(analyzeCv(PROYEK_KULIAH_CV.replace('Proyek Kuliah', 'Proyek Akhir')), 'proyek')?.score}/2, "Proyek Pribadi" ${checkOf(analyzeCv(PROYEK_KULIAH_CV.replace('Proyek Kuliah', 'Proyek Pribadi')), 'proyek')?.score}/2, "Tugas Akhir" ${checkOf(analyzeCv(PROYEK_KULIAH_CV.replace('Dashboard Harga Bahan Pokok — Proyek Kuliah (2025)', 'Tugas Akhir (2025)')), 'proyek')?.score}/2`,
+)
+
+// --- Regresi ulasan eksternal 2026-11-28: pesan pengalaman bertentangan.
+// CV yang hanya MENYEBUT kata "pengalaman" di ringkasan (tanpa bagian
+// Pengalaman terstruktur) dulu tampil sebagai "Bagian pengalaman kerja
+// ditemukan" di Kekuatan (regex longgar seluruh teks) SEKALIGUS "Bagian
+// pengalaman tidak ditemukan" di Prioritas kedalaman entri (ekstraktor
+// terstruktur). Kini keduanya membaca sumber yang sama.
+const KONTRADIKSI_CV = `Budi Hartono
+budi.hartono@gmail.com | 0812-3456-7890 | Jakarta | linkedin.com/in/budihartono
+
+Ringkasan
+Saya memiliki pengalaman sebagai kasir selama dua tahun dan terbiasa melayani pelanggan dengan ramah.
+
+Pendidikan
+SMA Negeri 3 Jakarta (2018 - 2021)
+
+Keahlian
+Microsoft Excel, Microsoft Word, Kasir, Pelayanan Pelanggan, Komunikasi, Kerja Tim, Ketelitian, Manajemen Waktu`
+const kontradiksi = analyzeCv(KONTRADIKSI_CV)
+check(
+  'Regresi 2026-11-28: sebutan "pengalaman" tanpa bagian terstruktur → heading & kedalaman sepakat tidak ditemukan',
+  checkOf(kontradiksi, 'pengalaman-heading')?.score === 0 &&
+    !kontradiksi.strengths.some((c) => c.message.includes('Bagian pengalaman kerja ditemukan')) &&
+    kontradiksi.priorities.some(
+      (c) => c.id === 'kedalaman-entri' && c.message.includes('Bagian pengalaman tidak ditemukan'),
+    ),
+  `heading ${checkOf(kontradiksi, 'pengalaman-heading')?.score}/4 "${checkOf(kontradiksi, 'pengalaman-heading')?.message}", kedalaman ${checkOf(kontradiksi, 'kedalaman-entri')?.score}/3`,
+)
+check(
+  'Penjaga kontradiksi 2026-11-28: tidak ada hasil fixture yang menyatakan bagian pengalaman dua arah berlawanan',
+  [strong, medium, weak, fresh, proyekKuliah, kontradiksi].every(
+    (r) =>
+      !(
+        r.strengths.some((c) => c.message.includes('Bagian pengalaman kerja ditemukan')) &&
+        r.priorities.some((c) => c.message.includes('Bagian pengalaman tidak ditemukan'))
+      ),
+  ),
+  'semua fixture konsisten satu arah',
+)
+
+// --- Regresi ulasan eksternal 2026-11-28: label bagian inline.
+// Baris "Keahlian: Python, SQL, Microsoft Excel" dulu tidak terbaca
+// sebagai bagian sama sekali (aspek Keahlian 0/10) karena ekstraktor
+// hanya mengenali judul terstruktur. Kini getSection punya fallback
+// label inline (label persis dari daftar target; heading terstruktur
+// selalu menang).
+const INLINE_SKILL_CV = `Andi Pratama
+andi.pratama@gmail.com | 0813-2222-3333 | Surabaya | linkedin.com/in/andipratama
+
+Ringkasan
+Lulusan S1 Teknik Informatika yang teliti dan terbiasa bekerja dengan data.
+
+Pengalaman Kerja
+Data Entry — PT Maju Bersama (2022 - 2024)
+- Memasukkan 500 data pelanggan per hari ke sistem dengan akurasi 99%.
+- Mengurangi waktu rekap laporan sebesar 25% dengan template Excel baru.
+
+Pendidikan
+S1 Teknik Informatika — Universitas Airlangga (2018 - 2022), IPK 3.55
+
+Keahlian: Python, SQL, Microsoft Excel`
+const inlineSkill = analyzeCv(INLINE_SKILL_CV)
+check(
+  'Regresi 2026-11-28: label inline "Keahlian: …" terbaca → 3 item, pemeriksaan keahlian 3/8 (dulu 0)',
+  getSkillItems(INLINE_SKILL_CV).join('|') === 'Python|SQL|Microsoft Excel' &&
+    checkOf(inlineSkill, 'keahlian')?.score === 3,
+  `item: ${getSkillItems(INLINE_SKILL_CV).join(', ')}; keahlian ${checkOf(inlineSkill, 'keahlian')?.score}/8`,
+)
+check(
+  'Penjaga inline 2026-11-28: kalimat narasi bertitik dua ("Tujuan: …") tidak menjadi bagian',
+  getSummarySection(
+    'Nama Orang\nnama@gmail.com | 0812-0000-0000\n\nTujuan: menjadi staf administrasi yang handal dan berkembang bersama perusahaan.',
+  ) === '',
+  'bagian ringkasan tetap kosong',
+)
+check(
+  'Penjaga inline 2026-11-28: heading terstruktur tetap menang atas label inline',
+  getSkillItems(
+    'Nama Orang\nnama@gmail.com\n\nKeahlian: Python\n\nKeahlian\nMicrosoft Excel, Microsoft Word, Google Workspace, Canva, Input Data, Pengarsipan, Komunikasi, Kerja Tim',
+  ).length === 8,
+  'item diambil dari bagian terstruktur (8), bukan baris inline (1)',
 )
 
 // --- Relevansi pengalaman terhadap posisi target ---
@@ -3048,7 +3131,7 @@ check(
   !privacyHtmlText.includes('Midtrans') &&
     privacyHtmlText.includes('QRIS merchant GoPay pemilik situs') &&
     privacyHtmlText.includes('kode sekali pakai') &&
-    privacyHtmlText.includes('24 November 2026'),
+    privacyHtmlText.includes('28 November 2026'),
   'halaman privasi publik harus cocok dengan alur pembayaran yang benar-benar berjalan',
 )
 

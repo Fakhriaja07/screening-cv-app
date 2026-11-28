@@ -288,6 +288,38 @@ export function getSummarySection(text: string): string {
   return getSection(text, SUMMARY_HEADINGS)
 }
 
+// Label inline "Label: isi" pada satu baris, mis. "Keahlian: Python,
+// SQL, Excel". Banyak CV nyata (terutama hasil ketik manual/ekspor
+// sederhana) menulis bagian sebagai baris berlabel begini, bukan judul
+// terstruktur — ekstraktor lama tidak membacanya sama sekali sehingga
+// aspeknya jatuh 0 (ulasan eksternal 2026-11-28). Label harus PERSIS
+// salah satu target pemanggil (kata/frasa utuh, case-insensitive) dan
+// barisnya bukan bullet; kalimat narasi bertitik dua ("Tujuan: menjadi
+// …") tidak pernah cocok karena labelnya bukan label yang dikenal.
+function matchInlineLabel(line: string): { label: string; content: string } | null {
+  if (BULLET_LINE.test(line)) return null
+  const m = /^\s*([^:：]{1,40})\s*[:：]\s*(\S[\s\S]*)$/.exec(line)
+  if (!m) return null
+  const label = m[1].trim().toLowerCase().replace(/^#+\s*/, '')
+  if (!label) return null
+  return { label, content: m[2].trim() }
+}
+
+// Semua label bagian yang dikenal + label kontak umum — dipakai hanya
+// sebagai penanda BERHENTI saat mengumpulkan isi bagian inline (baris
+// berlabel berikutnya memulai bagian lain), bukan sebagai target.
+const INLINE_STOP_LABELS = new Set([
+  ...SUMMARY_HEADINGS,
+  'keahlian', 'skill', 'kemampuan', 'kompetensi', 'tools', 'teknologi',
+  'bahasa', 'language', 'languages',
+  'pendidikan', 'education',
+  'sertifikasi', 'pelatihan', 'kursus', 'sertifikat', 'certification', 'training', 'diklat',
+  'pengalaman', 'experience', 'pekerjaan', 'work history', 'riwayat kerja',
+  'proyek', 'project', 'magang',
+  'email', 'telepon', 'hp', 'phone', 'alamat', 'lokasi', 'nama', 'name',
+  'kontak', 'contact', 'portofolio', 'portfolio', 'linkedin', 'website',
+])
+
 function getSection(text: string, targets: string[]): string {
   const lines = text.split('\n')
   let start = -1
@@ -297,13 +329,31 @@ function getSection(text: string, targets: string[]): string {
       break
     }
   }
-  if (start === -1) return ''
-  const collected: string[] = []
-  for (let i = start + 1; i < lines.length; i++) {
-    if (isHeadingLine(lines[i], ALL_HEADING_WORDS)) break
-    collected.push(lines[i])
+  if (start !== -1) {
+    const collected: string[] = []
+    for (let i = start + 1; i < lines.length; i++) {
+      if (isHeadingLine(lines[i], ALL_HEADING_WORDS)) break
+      collected.push(lines[i])
+    }
+    return collected.join('\n').trim()
   }
-  return collected.join('\n').trim()
+  // Fallback label inline: hanya menyala bila TIDAK ada heading
+  // terstruktur untuk target ini (heading selalu menang), jadi jalur
+  // kode CV terstruktur — termasuk semua CV patokan — tidak berubah.
+  const targetSet = new Set(targets.map((t) => t.toLowerCase()))
+  for (let i = 0; i < lines.length; i++) {
+    const hit = matchInlineLabel(lines[i])
+    if (!hit || !targetSet.has(hit.label)) continue
+    const collected: string[] = [hit.content]
+    for (let j = i + 1; j < lines.length; j++) {
+      if (isHeadingLine(lines[j], ALL_HEADING_WORDS)) break
+      const next = matchInlineLabel(lines[j])
+      if (next && INLINE_STOP_LABELS.has(next.label)) break
+      collected.push(lines[j])
+    }
+    return collected.join('\n').trim()
+  }
+  return ''
 }
 
 // Kata heading bagian keahlian — satu-satunya daftar yang dipakai
@@ -1995,8 +2045,15 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   const measurableMax = hasRole ? 4 : 5
   const linimasaMax = hasRole ? 2 : 3
 
-  const hasExperienceHeading =
-    /(pengalaman|experience|pekerjaan|work history|riwayat kerja)/i.test(lower)
+  // Sumber tunggal keberadaan bagian pengalaman: ekstraktor bagian
+  // terstruktur yang sama yang dipakai kedalaman entri, linimasa,
+  // kestabilan, dan relevansi. Versi lama memakai regex kata longgar
+  // atas seluruh teks, sehingga CV yang hanya MENYEBUT kata
+  // "pengalaman" (mis. di ringkasan) tanpa bagian terstruktur tampil
+  // sebagai "Bagian pengalaman kerja ditemukan" di Kekuatan sekaligus
+  // "Bagian pengalaman tidak ditemukan" di Prioritas — dua pesan
+  // bertentangan untuk fakta yang sama (ulasan eksternal 2026-11-28).
+  const hasExperienceHeading = experienceSection.trim() !== ''
   const experienceHeadingScore = hasExperienceHeading ? 4 : 0
 
   const verbCount = countActionVerbs(lower)
