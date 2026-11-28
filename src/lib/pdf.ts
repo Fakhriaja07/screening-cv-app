@@ -24,7 +24,7 @@ type LineStyle = 'title' | 'meta' | 'score' | 'section' | 'sub' | 'body'
 // Klasifikasikan satu baris teks laporan menjadi gaya tampilan PDF.
 function styleOf(line: string, isFirst: boolean): LineStyle {
   if (isFirst) return 'title'
-  if (line.startsWith('Skor: ')) return 'score'
+  if (line.startsWith('Skor: ') || line.startsWith('Score: ')) return 'score'
   // Kepala bagian ditulis HURUF BESAR dan diakhiri ":" di teks laporan
   // ("SKOR PER ASPEK:", "KEKUATAN:", "ANALISIS AI:", …).
   if (line.endsWith(':') && line === line.toUpperCase()) return 'section'
@@ -34,7 +34,10 @@ function styleOf(line: string, isFirst: boolean): LineStyle {
   if (
     line.startsWith('Tanggal analisis: ') ||
     line.startsWith('Posisi target: ') ||
-    line.startsWith('Total kata: ')
+    line.startsWith('Total kata: ') ||
+    line.startsWith('Analysis date: ') ||
+    line.startsWith('Target position: ') ||
+    line.startsWith('Total words: ')
   ) {
     return 'meta'
   }
@@ -149,12 +152,12 @@ export function buildReportPdfDoc(result: AnalysisResult, opts: ReportOptions = 
     if (style === 'title') y += 1.5
   })
 
-  addPdfFooters(doc)
+  addPdfFooters(doc, opts.lang)
   return doc
 }
 
 // Kaki halaman di setiap halaman: sumber dokumen + nomor halaman.
-function addPdfFooters(doc: jsPDF) {
+function addPdfFooters(doc: jsPDF, lang?: ReportOptions['lang']) {
   const total = doc.getNumberOfPages()
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8.5)
@@ -162,7 +165,7 @@ function addPdfFooters(doc: jsPDF) {
   for (let p = 1; p <= total; p++) {
     doc.setPage(p)
     doc.text('Screening CV — screening-cv-app.vercel.app', MARGIN, PAGE_H - 8)
-    const label = `Halaman ${p} dari ${total}`
+    const label = lang === 'en' ? `Page ${p} of ${total}` : `Halaman ${p} dari ${total}`
     doc.text(label, PAGE_W - MARGIN - doc.getTextWidth(label), PAGE_H - 8)
   }
   doc.setTextColor(0)

@@ -8,6 +8,7 @@
 // teks CV pengguna, dan tidak disimpan ke localStorage/server mana pun.
 import type { AnalysisResult } from './analyze'
 import type { AiAnalysis } from './ai'
+import type { Lang } from './lang'
 
 export interface ReportOptions {
   // Hasil Analisis AI — disertakan sebagai bagian terakhir bila ada.
@@ -16,11 +17,14 @@ export interface ReportOptions {
   targetRole?: string
   // Tanggal analisis. Bila diberikan, dicantumkan di kepala laporan.
   date?: Date
+  // Bahasa label/heading laporan. Isi hasil analisis sendiri sudah
+  // terlokalisasi dari mesin analisis/AI; di sini hanya label tetap.
+  lang?: Lang
 }
 
 // Format tanggal gaya riwayat skor: "21 Nov 2026, 21.47".
-export function formatReportDate(date: Date): string {
-  return new Intl.DateTimeFormat('id-ID', {
+export function formatReportDate(date: Date, lang: Lang = 'id'): string {
+  return new Intl.DateTimeFormat(lang === 'en' ? 'en-US' : 'id-ID', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -36,62 +40,67 @@ export function reportFileName(date: Date): string {
 }
 
 export function buildReportText(result: AnalysisResult, opts: ReportOptions = {}): string {
-  const lines: string[] = ['HASIL SCREENING CV']
-  if (opts.date) lines.push(`Tanggal analisis: ${formatReportDate(opts.date)}`)
+  const en = opts.lang === 'en'
+  const lines: string[] = [en ? 'CV SCREENING RESULTS' : 'HASIL SCREENING CV']
+  if (opts.date) lines.push(`${en ? 'Analysis date' : 'Tanggal analisis'}: ${formatReportDate(opts.date, opts.lang)}`)
   const role = opts.targetRole?.trim()
-  if (role) lines.push(`Posisi target: ${role}`)
+  if (role) lines.push(`${en ? 'Target position' : 'Posisi target'}: ${role}`)
   lines.push(
-    `Skor: ${result.total}/100 — ${result.label}`,
-    `Total kata: ${result.wordCount}`,
+    `${en ? 'Score' : 'Skor'}: ${result.total}/100 — ${result.label}`,
+    `${en ? 'Total words' : 'Total kata'}: ${result.wordCount}`,
     '',
-    'SKOR PER ASPEK:',
+    en ? 'SCORES BY ASPECT:' : 'SKOR PER ASPEK:',
     ...result.aspects.map((a) => `- ${a.name}: ${a.score}/${a.max}`),
     '',
-    'KEKUATAN:',
+    en ? 'STRENGTHS:' : 'KEKUATAN:',
     ...(result.strengths.length
       ? result.strengths.map((c) => `- ${c.title}: ${c.message}`)
-      : ['- (belum ada)']),
+      : [en ? '- (none yet)' : '- (belum ada)']),
     '',
-    'PRIORITAS PERBAIKAN:',
+    en ? 'TOP FIXES TO MAKE:' : 'PRIORITAS PERBAIKAN:',
     ...(result.priorities.length
       ? result.priorities.map((c) => `- ${c.title} (${c.score}/${c.max}): ${c.message}`)
-      : ['- Tidak ada, semua pemeriksaan lolos.']),
+      : [en ? '- None — every check passed.' : '- Tidak ada, semua pemeriksaan lolos.']),
   )
   if (result.keywords) {
-    lines.push('', `KECOCOKAN KATA KUNCI LOWONGAN: ${result.keywords.percent}%`)
-    lines.push(`Ketemu: ${result.keywords.found.join(', ') || '-'}`)
-    lines.push(`Belum ada: ${result.keywords.missing.join(', ') || '-'}`)
+    lines.push('', `${en ? 'JOB KEYWORD MATCH' : 'KECOCOKAN KATA KUNCI LOWONGAN'}: ${result.keywords.percent}%`)
+    lines.push(`${en ? 'Found' : 'Ketemu'}: ${result.keywords.found.join(', ') || '-'}`)
+    lines.push(`${en ? 'Missing' : 'Belum ada'}: ${result.keywords.missing.join(', ') || '-'}`)
     if (result.jobMatchApplied) {
-      lines.push('Catatan: skor total di atas sudah mencakup aspek Kecocokan dengan Lowongan (20 poin), karena deskripsi lowongan diisi.')
+      lines.push(
+        en
+          ? 'Note: the total score above already includes the Job Match aspect (20 points), because a job description was provided.'
+          : 'Catatan: skor total di atas sudah mencakup aspek Kecocokan dengan Lowongan (20 poin), karena deskripsi lowongan diisi.',
+      )
     }
   }
-  if (result.roleWarning) lines.push('', `CATATAN POSISI: ${result.roleWarning}`)
+  if (result.roleWarning) lines.push('', `${en ? 'POSITION NOTE' : 'CATATAN POSISI'}: ${result.roleWarning}`)
 
   const ai = opts.ai
   if (ai) {
     lines.push('', 'ANALISIS AI:')
-    if (ai.ringkasan) lines.push('', `Ringkasan: ${ai.ringkasan}`)
-    if (ai.penilaianPosisi) lines.push('', `Penilaian Posisi: ${ai.penilaianPosisi}`)
+    if (ai.ringkasan) lines.push('', `${en ? 'Summary' : 'Ringkasan'}: ${ai.ringkasan}`)
+    if (ai.penilaianPosisi) lines.push('', `${en ? 'Position Assessment' : 'Penilaian Posisi'}: ${ai.penilaianPosisi}`)
     if (ai.saranPenulisanUlang.length > 0) {
-      lines.push('', 'Saran Penulisan Ulang:')
+      lines.push('', en ? 'Rewrite Suggestions:' : 'Saran Penulisan Ulang:')
       ai.saranPenulisanUlang.forEach((r, i) => {
-        lines.push(`${i + 1}. Asli: ${r.asli}`)
-        lines.push(`   Saran: ${r.saran}`)
-        if (r.alasan) lines.push(`   Alasan: ${r.alasan}`)
+        lines.push(`${i + 1}. ${en ? 'Original' : 'Asli'}: ${r.asli}`)
+        lines.push(`   ${en ? 'Suggestion' : 'Saran'}: ${r.saran}`)
+        if (r.alasan) lines.push(`   ${en ? 'Why' : 'Alasan'}: ${r.alasan}`)
       })
     }
     if (ai.kekurangan.length > 0) {
-      lines.push('', 'Kekurangan:')
+      lines.push('', en ? 'Shortcomings:' : 'Kekurangan:')
       ai.kekurangan.forEach((k) => lines.push(`- ${k}`))
     }
-    if (ai.saranRingkasan) lines.push('', `Contoh Ringkasan Profil: ${ai.saranRingkasan}`)
+    if (ai.saranRingkasan) lines.push('', `${en ? 'Sample Profile Summary' : 'Contoh Ringkasan Profil'}: ${ai.saranRingkasan}`)
     if (ai.perbaikanLengkap && ai.perbaikanLengkap.length > 0) {
-      lines.push('', 'PERBAIKAN LENGKAP DARI AI:')
+      lines.push('', en ? 'FULL FIXES FROM THE AI:' : 'PERBAIKAN LENGKAP DARI AI:')
       ai.perbaikanLengkap.forEach((f, i) => {
         lines.push(`${i + 1}. ${f.judul}`)
-        if (f.sebelum) lines.push(`   Sebelum: ${f.sebelum}`)
-        lines.push(`   Sesudah: ${f.sesudah}`)
-        if (f.catatan) lines.push(`   Catatan: ${f.catatan}`)
+        if (f.sebelum) lines.push(`   ${en ? 'Before' : 'Sebelum'}: ${f.sebelum}`)
+        lines.push(`   ${en ? 'After' : 'Sesudah'}: ${f.sesudah}`)
+        if (f.catatan) lines.push(`   ${en ? 'Note' : 'Catatan'}: ${f.catatan}`)
       })
     }
   }

@@ -24,6 +24,7 @@
 // semua fungsi menerima storage opsional (mock di Node).
 
 import type { StorageLike } from './history'
+import type { Lang } from './lang'
 import { TOKEN_CODE_HASHES } from './tokenCodes'
 
 // Harga satu Analisis AI dalam Rupiah. Satu konstanta tunggal agar mudah
@@ -42,12 +43,17 @@ export const ADMIN_CONTACT_URL = 'https://wa.me/62895613048006'
 // riwayat merchant) + permintaan kode token. Bila kode unik tidak
 // tersedia, teksnya umum tanpa nominal. Mengembalikan '' bila kontak
 // admin belum diisi.
-export function adminContactHref(code?: number | null): string {
+export function adminContactHref(code?: number | null, lang: Lang = 'id'): string {
   if (!ADMIN_CONTACT_URL) return ''
+  const validCode = typeof code === 'number' && Number.isFinite(code) ? code : null
   const text =
-    typeof code === 'number' && Number.isFinite(code)
-      ? `Halo, saya sudah membayar Analisis AI sebesar ${formatRupiah(amountForCode(code))} di situs Screening CV. Mohon kode token saya.`
-      : 'Halo, saya sudah membayar Analisis AI di situs Screening CV. Mohon kode token saya.'
+    lang === 'en'
+      ? validCode !== null
+        ? `Hello, I have paid ${formatRupiah(amountForCode(validCode))} for the AI Analysis on the Screening CV website. Please send me my token code.`
+        : 'Hello, I have paid for the AI Analysis on the Screening CV website. Please send me my token code.'
+      : validCode !== null
+        ? `Halo, saya sudah membayar Analisis AI sebesar ${formatRupiah(amountForCode(validCode))} di situs Screening CV. Mohon kode token saya.`
+        : 'Halo, saya sudah membayar Analisis AI di situs Screening CV. Mohon kode token saya.'
   const sep = ADMIN_CONTACT_URL.includes('?') ? '&' : '?'
   return `${ADMIN_CONTACT_URL}${sep}text=${encodeURIComponent(text)}`
 }

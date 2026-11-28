@@ -31,6 +31,20 @@
 export interface JobGlossaryEntry {
   abbr: string
   fullName: string
+  /** Padanan bahasa Inggris dari fullName, hanya untuk entri yang
+   *  fullName-nya berbahasa Indonesia (atau tidak natural dalam bahasa
+   *  Inggris). Entri tanpa field ini memakai fullName apa adanya saat
+   *  mode bahasa Inggris, karena fullName-nya sudah berbahasa Inggris. */
+  fullNameEn?: string
+}
+
+import type { Lang } from './lang'
+
+// Nama lengkap entri menurut bahasa tampilan: mode 'id' selalu memakai
+// fullName persis seperti sebelumnya; mode 'en' memakai fullNameEn bila
+// ada, selain itu fullName (yang sudah berbahasa Inggris).
+function entryFullName(entry: JobGlossaryEntry, lang: Lang): string {
+  return lang === 'en' ? (entry.fullNameEn ?? entry.fullName) : entry.fullName
 }
 
 export const JOB_GLOSSARY: JobGlossaryEntry[] = [
@@ -42,22 +56,22 @@ export const JOB_GLOSSARY: JobGlossaryEntry[] = [
   { abbr: 'R&D', fullName: 'Research and Development' },
   { abbr: 'RND', fullName: 'Research and Development' },
   { abbr: 'HSE', fullName: 'Health Safety Environment' },
-  { abbr: 'K3', fullName: 'Keselamatan dan Kesehatan Kerja' },
-  { abbr: 'K3LH', fullName: 'K3 dan Lingkungan Hidup' },
+  { abbr: 'K3', fullName: 'Keselamatan dan Kesehatan Kerja', fullNameEn: 'Occupational Health and Safety' },
+  { abbr: 'K3LH', fullName: 'K3 dan Lingkungan Hidup', fullNameEn: 'Occupational Health, Safety and Environment' },
   { abbr: 'SPV', fullName: 'Supervisor' },
-  { abbr: 'WH', fullName: 'Staf Gudang' },
+  { abbr: 'WH', fullName: 'Staf Gudang', fullNameEn: 'Warehouse Staff' },
   { abbr: 'IE', fullName: 'Industrial Engineer' },
   // -- Kantor & administrasi --
   { abbr: 'HRD', fullName: 'Human Resource Development' },
   { abbr: 'HR', fullName: 'Human Resources' },
-  { abbr: 'GA', fullName: 'General Affair' },
-  { abbr: 'ADM', fullName: 'Administrasi' },
+  { abbr: 'GA', fullName: 'General Affair', fullNameEn: 'General Affairs' },
+  { abbr: 'ADM', fullName: 'Administrasi', fullNameEn: 'Administration' },
   { abbr: 'BO', fullName: 'Back Office' },
   { abbr: 'OB', fullName: 'Office Boy' },
   { abbr: 'OG', fullName: 'Office Girl' },
   { abbr: 'CS', fullName: 'Customer Service' },
   { abbr: 'PA', fullName: 'Personal Assistant' },
-  { abbr: 'TU', fullName: 'Tata Usaha' },
+  { abbr: 'TU', fullName: 'Tata Usaha', fullNameEn: 'Office Administration' },
   // -- Penjualan & marketing --
   { abbr: 'SPG', fullName: 'Sales Promotion Girl' },
   { abbr: 'SPB', fullName: 'Sales Promotion Boy' },
@@ -98,19 +112,19 @@ export const JOB_GLOSSARY: JobGlossaryEntry[] = [
   { abbr: 'FNB', fullName: 'Food and Beverage Service' },
   { abbr: 'FO', fullName: 'Front Office' },
   { abbr: 'HK', fullName: 'Housekeeping' },
-  { abbr: 'GRO', fullName: 'Guest Relation Officer' },
+  { abbr: 'GRO', fullName: 'Guest Relation Officer', fullNameEn: 'Guest Relations Officer' },
   { abbr: 'CDP', fullName: 'Chef de Partie' },
   { abbr: 'DW', fullName: 'Daily Worker' },
   // -- Kesehatan & pendidikan --
-  { abbr: 'ATLM', fullName: 'Analis Kesehatan' },
-  { abbr: 'NAKES', fullName: 'Tenaga Kesehatan' },
-  { abbr: 'AA', fullName: 'Asisten Apoteker' },
-  { abbr: 'TTK', fullName: 'Tenaga Teknis Kefarmasian' },
-  { abbr: 'BK', fullName: 'Guru Bimbingan Konseling' },
+  { abbr: 'ATLM', fullName: 'Analis Kesehatan', fullNameEn: 'Health Analyst' },
+  { abbr: 'NAKES', fullName: 'Tenaga Kesehatan', fullNameEn: 'Healthcare Worker' },
+  { abbr: 'AA', fullName: 'Asisten Apoteker', fullNameEn: 'Pharmacy Assistant' },
+  { abbr: 'TTK', fullName: 'Tenaga Teknis Kefarmasian', fullNameEn: 'Pharmacy Technician' },
+  { abbr: 'BK', fullName: 'Guru Bimbingan Konseling', fullNameEn: 'Guidance and Counseling Teacher' },
   // -- Teknik, konstruksi & logistik --
-  { abbr: 'ME', fullName: 'Teknisi Mechanical Electrical' },
+  { abbr: 'ME', fullName: 'Teknisi Mechanical Electrical', fullNameEn: 'Mechanical Electrical Technician' },
   { abbr: 'MEP', fullName: 'Mechanical Electrical Plumbing' },
-  { abbr: 'HVAC', fullName: 'Teknisi HVAC' },
+  { abbr: 'HVAC', fullName: 'Teknisi HVAC', fullNameEn: 'HVAC Technician' },
   { abbr: 'QS', fullName: 'Quantity Surveyor' },
   { abbr: 'SCM', fullName: 'Supply Chain' },
   { abbr: 'EXIM', fullName: 'Export Import' },
@@ -143,9 +157,9 @@ for (const entry of JOB_GLOSSARY) {
 // tidak pernah ter-expand.
 const TOKEN_PATTERN = /[A-Za-z][A-Za-z0-9&./]*/g
 
-function expandToken(token: string): string {
+function expandToken(token: string, lang: Lang = 'id'): string {
   const direct = GLOSSARY_BY_KEY.get(normalizeAbbrKey(token))
-  if (direct) return direct.fullName
+  if (direct) return entryFullName(direct, lang)
   // Gabungan garis miring yang bukan satu entri utuh (mis. "QA/QC"):
   // perluas tiap sisinya secara terpisah.
   if (token.includes('/')) {
@@ -154,7 +168,7 @@ function expandToken(token: string): string {
       const hit = GLOSSARY_BY_KEY.get(normalizeAbbrKey(part))
       if (hit) {
         changed = true
-        return hit.fullName
+        return entryFullName(hit, lang)
       }
       return part
     })
@@ -202,11 +216,11 @@ type TitleSegment =
  * yang bermuatan dipertahankan. Teks tanpa singkatan yang dikenal
  * dikembalikan apa adanya.
  */
-export function expandJobTitle(input: string): string {
+export function expandJobTitle(input: string, lang: Lang = 'id'): string {
   const raw = input.trim()
   if (!raw) return input
   const whole = GLOSSARY_BY_KEY.get(normalizeAbbrKey(raw))
-  if (whole) return whole.fullName
+  if (whole) return entryFullName(whole, lang)
 
   // Pecah input menjadi segmen token & pemisah, perluas per token sambil
   // mengingat mana bagian yang berasal dari glosarium dan mana kata
@@ -221,7 +235,7 @@ export function expandJobTitle(input: string): string {
     if (match.index > lastIndex) {
       segments.push({ kind: 'sep', text: raw.slice(lastIndex, match.index) })
     }
-    const expandedToken = expandToken(token)
+    const expandedToken = expandToken(token, lang)
     if (expandedToken !== token) {
       anyExpanded = true
       segments.push({ kind: 'glossary', text: expandedToken })
@@ -291,22 +305,22 @@ export interface JobAbbreviationMatch {
  * tengah kata lain (mis. "QCA", "Backend") tidak pernah dianggap
  * singkatan.
  */
-export function findJobAbbreviation(input: string): JobAbbreviationMatch | null {
+export function findJobAbbreviation(input: string, lang: Lang = 'id'): JobAbbreviationMatch | null {
   const raw = input.trim()
   if (!raw) return null
   const whole = GLOSSARY_BY_KEY.get(normalizeAbbrKey(raw))
-  if (whole) return { abbr: whole.abbr, fullName: whole.fullName, expanded: whole.fullName }
+  if (whole) return { abbr: whole.abbr, fullName: entryFullName(whole, lang), expanded: entryFullName(whole, lang) }
   const tokens = raw.match(TOKEN_PATTERN) ?? []
   for (const token of tokens) {
     const direct = GLOSSARY_BY_KEY.get(normalizeAbbrKey(token))
     if (direct) {
-      return { abbr: direct.abbr, fullName: direct.fullName, expanded: expandJobTitle(raw) }
+      return { abbr: direct.abbr, fullName: entryFullName(direct, lang), expanded: expandJobTitle(raw, lang) }
     }
     if (token.includes('/')) {
       for (const part of token.split('/')) {
         const hit = GLOSSARY_BY_KEY.get(normalizeAbbrKey(part))
         if (hit) {
-          return { abbr: hit.abbr, fullName: hit.fullName, expanded: expandJobTitle(raw) }
+          return { abbr: hit.abbr, fullName: entryFullName(hit, lang), expanded: expandJobTitle(raw, lang) }
         }
       }
     }

@@ -39,6 +39,7 @@
 // bertambah — pergerakannya diukur & dicatat di ROADMAP.md.
 
 import { expandJobTitle } from './jobGlossary.js'
+import type { Lang } from './lang.js'
 
 export type CheckStatus = 'baik' | 'kurang' | 'buruk'
 
@@ -88,6 +89,7 @@ export interface AnalyzeOptions {
   // lapisan baca-berkas/App agar nama file ikut dinilai. Kosong/tidak
   // diisi (teks ditempel manual) → pemeriksaan nama file netral penuh.
   fileName?: string
+  lang?: Lang
 }
 
 export function countWords(text: string): number {
@@ -940,6 +942,12 @@ export const PERIOD_FAMILY_LABEL: Record<PeriodFamily, string> = {
   angka: 'angka (mis. 01/2022)',
 }
 
+export const PERIOD_FAMILY_LABEL_EN: Record<PeriodFamily, string> = {
+  tahun: 'year range (e.g. 2021–2024)',
+  bulan: 'month–year (e.g. Jan 2022)',
+  angka: 'numeric (e.g. 01/2022)',
+}
+
 function extractPeriodExprs(text: string): PeriodExpr[] {
   const exprs: PeriodExpr[] = []
   const rangeRe =
@@ -1286,51 +1294,78 @@ export function getTimelineFacts(rawText: string): TimelineFacts | null {
 // Bila tidak ada entri berperiode yang terbaca, pemeriksaan tidak
 // mengarang nilai: skor 0 dengan pesan bahwa linimasa belum bisa
 // dinilai.
-function assessTimeline(blocks: ExperienceBlock[], currentYear: number): TimelineAssessment {
+function assessTimeline(blocks: ExperienceBlock[], currentYear: number, lang: Lang = 'id'): TimelineAssessment {
   const facts = computeTimelineFacts(blocks, currentYear)
   if (!facts) {
     return {
       score3: 0,
       message:
-        'Periode tiap entri pengalaman tidak terbaca tahunnya, sehingga linimasa (kesenjangan antarpekerjaan dan kebaruan peran terakhir) belum bisa dinilai. Tulis periode yang jelas pada tiap entri, misalnya (2022–2024) atau (2022–Sekarang).',
+        lang === 'en'
+          ? 'The period of each experience entry has no readable year, so the timeline (gaps between jobs and how recent your latest role is) cannot be assessed yet. Write a clear period on each entry, for example (2022–2024) or (2022–Present).'
+          : 'Periode tiap entri pengalaman tidak terbaca tahunnya, sehingga linimasa (kesenjangan antarpekerjaan dan kebaruan peran terakhir) belum bisa dinilai. Tulis periode yang jelas pada tiap entri, misalnya (2022–2024) atau (2022–Sekarang).',
     }
   }
   const invalidIssues = facts.invalidPeriods.map((p) =>
-    p.kind === 'terbalik'
-      ? `periode ${p.startYear}–${p.endYear} terbalik (tahun selesai lebih awal dari tahun mulai)`
-      : `periode ${p.startYear}–${p.endYear ?? 'Sekarang'} berada di masa depan (tahun mulai melewati tahun berjalan ${currentYear})`,
+    lang === 'en'
+      ? p.kind === 'terbalik'
+        ? `the period ${p.startYear}–${p.endYear} is reversed (the end year is earlier than the start year)`
+        : `the period ${p.startYear}–${p.endYear ?? 'Present'} is in the future (the start year is after the current year ${currentYear})`
+      : p.kind === 'terbalik'
+        ? `periode ${p.startYear}–${p.endYear} terbalik (tahun selesai lebih awal dari tahun mulai)`
+        : `periode ${p.startYear}–${p.endYear ?? 'Sekarang'} berada di masa depan (tahun mulai melewati tahun berjalan ${currentYear})`,
   )
-  const gapIssues = facts.gaps.map(
-    (g) =>
-      `ada kesenjangan sekitar ${g.years} tahun (antara ±${g.fromYear} dan ±${g.toYear}) tanpa penjelasan di CV`,
+  const gapIssues = facts.gaps.map((g) =>
+    lang === 'en'
+      ? `there is a gap of about ${g.years} years (between around ${g.fromYear} and around ${g.toYear}) with no explanation in the CV`
+      : `ada kesenjangan sekitar ${g.years} tahun (antara ±${g.fromYear} dan ±${g.toYear}) tanpa penjelasan di CV`,
   )
   const gapScore = gapIssues.length > 0 || invalidIssues.length > 0 ? 0 : 2
   const recencyScore = facts.datedCount === 0 || facts.stale ? 0 : 1
   const parts: string[] = []
   if (invalidIssues.length > 0) {
-    parts.push(`Ditemukan periode yang tidak masuk akal: ${invalidIssues.join('; ')}.`)
     parts.push(
-      'Tanggal yang mustahil membuat rekruter meragukan seluruh riwayatmu — perbaiki penulisan periode itu sebelum melamar.',
+      lang === 'en'
+        ? `Found periods that don't make sense: ${invalidIssues.join('; ')}.`
+        : `Ditemukan periode yang tidak masuk akal: ${invalidIssues.join('; ')}.`,
+    )
+    parts.push(
+      lang === 'en'
+        ? 'Impossible dates make recruiters doubt your whole history — fix how those periods are written before you apply.'
+        : 'Tanggal yang mustahil membuat rekruter meragukan seluruh riwayatmu — perbaiki penulisan periode itu sebelum melamar.',
     )
   }
   if (gapIssues.length > 0) {
-    parts.push(`Linimasa terbaca: ${gapIssues.join('; ')}.`)
     parts.push(
-      'Kesenjangan bukan otomatis buruk (kuliah, keluarga, wirausaha, merawat orang tua), tetapi tanpa penjelasan rekruter akan bertanya-tanya — tambahkan satu baris aktivitas pengisi pada periode itu.',
+      lang === 'en'
+        ? `Timeline as read: ${gapIssues.join('; ')}.`
+        : `Linimasa terbaca: ${gapIssues.join('; ')}.`,
+    )
+    parts.push(
+      lang === 'en'
+        ? 'A gap is not automatically bad (study, family, running a business, caring for parents), but without an explanation recruiters will wonder — add one line about what you did during that period.'
+        : 'Kesenjangan bukan otomatis buruk (kuliah, keluarga, wirausaha, merawat orang tua), tetapi tanpa penjelasan rekruter akan bertanya-tanya — tambahkan satu baris aktivitas pengisi pada periode itu.',
     )
   }
   if (facts.stale) {
     parts.push(
-      `Pengalaman terakhir yang terbaca berakhir sekitar ${facts.latestEnd} (${facts.yearsSinceEnd} tahun lalu) dan tidak ada peran saat ini yang tercantum. Bila kamu masih bekerja/berkegiatan, cantumkan peran terkinimu; bila memang ada jeda, jelaskan singkat aktivitasmu pada periode itu.`,
+      lang === 'en'
+        ? `Your most recent readable experience ended around ${facts.latestEnd} (${facts.yearsSinceEnd} years ago) and no current role is listed. If you are still working or active, include your latest role; if there was a break, briefly explain what you did during that time.`
+        : `Pengalaman terakhir yang terbaca berakhir sekitar ${facts.latestEnd} (${facts.yearsSinceEnd} tahun lalu) dan tidak ada peran saat ini yang tercantum. Bila kamu masih bekerja/berkegiatan, cantumkan peran terkinimu; bila memang ada jeda, jelaskan singkat aktivitasmu pada periode itu.`,
     )
   }
   if (parts.length === 0) {
     parts.push(
-      `Linimasa pengalaman terbaca rapi dari ${facts.datedCount} entri berperiode: tidak ada kesenjangan panjang antar-entri${
-        facts.hasCurrent
-          ? ', dan ada peran yang masih berjalan saat ini.'
-          : `, dan peran terakhir berakhir sekitar ${facts.latestEnd} (belum lama).`
-      }`,
+      lang === 'en'
+        ? `Your experience timeline reads cleanly from ${facts.datedCount} dated entries: no long gaps between entries${
+            facts.hasCurrent
+              ? ', and there is a role still ongoing.'
+              : `, and your latest role ended around ${facts.latestEnd} (not long ago).`
+          }`
+        : `Linimasa pengalaman terbaca rapi dari ${facts.datedCount} entri berperiode: tidak ada kesenjangan panjang antar-entri${
+            facts.hasCurrent
+              ? ', dan ada peran yang masih berjalan saat ini.'
+              : `, dan peran terakhir berakhir sekitar ${facts.latestEnd} (belum lama).`
+          }`,
     )
   }
   return { score3: gapScore + recencyScore, message: parts.join(' ') }
@@ -1387,13 +1422,16 @@ interface CareerStabilityAssessment {
 function assessCareerStability(
   blocks: ExperienceBlock[],
   currentYear: number,
+  lang: Lang = 'id',
 ): CareerStabilityAssessment {
   const valid = validDatedBlocks(blocks, currentYear)
   if (valid.length === 0) {
     return {
       score2: 0,
       message:
-        'Belum ada entri pengalaman berperiode yang sah untuk dinilai kestabilan kariernya (pola pindah-pindah kerja dan tumpang tindih antarperan). Tulis periode yang jelas pada tiap entri pengalaman agar linimasa kariermu bisa dinilai.',
+        lang === 'en'
+          ? 'There are no valid dated experience entries yet to assess career stability (patterns of job hopping and overlapping roles). Write a clear period on each experience entry so your career timeline can be assessed.'
+          : 'Belum ada entri pengalaman berperiode yang sah untuk dinilai kestabilan kariernya (pola pindah-pindah kerja dan tumpang tindih antarperan). Tulis periode yang jelas pada tiap entri pengalaman agar linimasa kariermu bisa dinilai.',
     }
   }
   const formal = valid.filter((b) => !isNonFormalEntry(b.headingText))
@@ -1401,7 +1439,9 @@ function assessCareerStability(
     return {
       score2: 2,
       message:
-        'Entri berperiode yang terbaca baru berupa magang/proyek/freelance — pola-pola itu memang lazim berpindah-pindah dan tidak dihitung sebagai job hopping. Kestabilan karier formal dinilai begitu ada riwayat pekerjaan formal berperiode.',
+        lang === 'en'
+          ? 'The dated entries found so far are internships, projects, or freelance work — those patterns naturally involve moving around and are not counted as job hopping. Formal career stability will be assessed once you have dated formal work history.'
+          : 'Entri berperiode yang terbaca baru berupa magang/proyek/freelance — pola-pola itu memang lazim berpindah-pindah dan tidak dihitung sebagai job hopping. Kestabilan karier formal dinilai begitu ada riwayat pekerjaan formal berperiode.',
     }
   }
   const shortRoles = formal.filter(
@@ -1427,17 +1467,23 @@ function assessCareerStability(
   const parts: string[] = []
   if (hopping) {
     parts.push(
-      `${shortRoles.length} dari ${formal.length} peran formalmu berdurasi singkat (kurang dari 12 bulan — mulai dan selesai di tahun yang sama). Pola berpindah-pindah secepat ini membuat rekruter khawatir kamu akan keluar lagi sebelum balik modal melatihmu. Bila peran-peran singkat itu memang kontrak, proyek, atau freelance, tulis eksplisit — mis. "(kontrak 6 bulan)" atau "Freelance" — agar tidak terbaca sebagai job hopping.`,
+      lang === 'en'
+        ? `${shortRoles.length} of your ${formal.length} formal roles were short (less than 12 months — starting and ending in the same year). Moving this quickly makes recruiters worry you will leave again before they recoup the cost of training you. If those short roles were actually contracts, projects, or freelance work, say so explicitly — e.g. "(6-month contract)" or "Freelance" — so they don't read as job hopping.`
+        : `${shortRoles.length} dari ${formal.length} peran formalmu berdurasi singkat (kurang dari 12 bulan — mulai dan selesai di tahun yang sama). Pola berpindah-pindah secepat ini membuat rekruter khawatir kamu akan keluar lagi sebelum balik modal melatihmu. Bila peran-peran singkat itu memang kontrak, proyek, atau freelance, tulis eksplisit — mis. "(kontrak 6 bulan)" atau "Freelance" — agar tidak terbaca sebagai job hopping.`,
     )
   }
   if (overlapPair) {
     parts.push(
-      `Periode "${overlapPair[0].headingText}" dan "${overlapPair[1].headingText}" tumpang tindih cukup lama. Dua pekerjaan formal yang berjalan bersamaan terbaca janggal — periksa kembali tanggal mulai/selesaimu; bila salah satunya memang paruh waktu atau freelance di sela pekerjaan utama, tulis eksplisit agar tidak terbaca sebagai kesalahan tanggal.`,
+      lang === 'en'
+        ? `The periods "${overlapPair[0].headingText}" and "${overlapPair[1].headingText}" overlap for quite a while. Two formal jobs running at the same time looks odd — check your start and end dates again; if one was actually part-time or freelance alongside your main job, say so explicitly so it doesn't read as a date error.`
+        : `Periode "${overlapPair[0].headingText}" dan "${overlapPair[1].headingText}" tumpang tindih cukup lama. Dua pekerjaan formal yang berjalan bersamaan terbaca janggal — periksa kembali tanggal mulai/selesaimu; bila salah satunya memang paruh waktu atau freelance di sela pekerjaan utama, tulis eksplisit agar tidak terbaca sebagai kesalahan tanggal.`,
     )
   }
   if (parts.length === 0) {
     parts.push(
-      `Dari ${formal.length} peran formal berperiode: tidak ditemukan pola job hopping (peran singkat yang berulang) dan tidak ada periode antarperan yang tumpang tindih — linimasa kariermu terbaca stabil.`,
+      lang === 'en'
+        ? `From ${formal.length} dated formal roles: no pattern of job hopping (repeated short roles) and no overlapping periods between roles — your career timeline reads as stable.`
+        : `Dari ${formal.length} peran formal berperiode: tidak ditemukan pola job hopping (peran singkat yang berulang) dan tidak ada periode antarperan yang tumpang tindih — linimasa kariermu terbaca stabil.`,
     )
   }
   return { score2: 2 - issues, message: parts.join(' ') }
@@ -1518,8 +1564,9 @@ function totalExperienceYears(blocks: ExperienceBlock[], currentYear: number): n
   return total
 }
 
-function formatYears(n: number): string {
-  return Number.isInteger(n) ? String(n) : String(n).replace('.', ',')
+function formatYears(n: number, lang: Lang = 'id'): string {
+  if (Number.isInteger(n)) return String(n)
+  return lang === 'en' ? String(n) : String(n).replace('.', ',')
 }
 
 interface ClaimConsistencyAssessment {
@@ -1538,31 +1585,43 @@ function assessClaimConsistency(
   text: string,
   blocks: ExperienceBlock[],
   currentYear: number,
+  lang: Lang = 'id',
 ): ClaimConsistencyAssessment {
   const claim = findExperienceClaimYears(text)
   if (claim === null) {
     return {
       score2: 2,
       message:
-        'Tidak ditemukan klaim lama pengalaman berbentuk angka (mis. "5 tahun pengalaman") di teks CV, jadi tidak ada klaim yang perlu dicocokkan dengan linimasa. Bila kamu menulis klaim seperti itu di ringkasan, pastikan sesuai dengan total periode pengalamanmu yang sebenarnya.',
+        lang === 'en'
+          ? 'No numeric claim about years of experience (e.g. "5 years of experience") was found in your CV text, so there is no claim to check against your timeline. If you make a claim like that in your summary, make sure it matches your actual total experience period.'
+          : 'Tidak ditemukan klaim lama pengalaman berbentuk angka (mis. "5 tahun pengalaman") di teks CV, jadi tidak ada klaim yang perlu dicocokkan dengan linimasa. Bila kamu menulis klaim seperti itu di ringkasan, pastikan sesuai dengan total periode pengalamanmu yang sebenarnya.',
     }
   }
   if (validDatedBlocks(blocks, currentYear).length === 0) {
     return {
       score2: 2,
-      message: `Kamu mengklaim ${formatYears(claim)} tahun pengalaman, tetapi periode entri pengalamanmu tidak terbaca tahunnya sehingga klaim itu belum bisa dicocokkan. Tulis periode yang jelas pada tiap entri (mis. 2021–2024) agar rekruter — dan pemeriksaan ini — bisa memverifikasi klaimmu.`,
+      message:
+        lang === 'en'
+          ? `You claim ${formatYears(claim, lang)} years of experience, but the periods on your experience entries have no readable years, so the claim cannot be checked yet. Write a clear period on each entry (e.g. 2021–2024) so recruiters — and this check — can verify your claim.`
+          : `Kamu mengklaim ${formatYears(claim)} tahun pengalaman, tetapi periode entri pengalamanmu tidak terbaca tahunnya sehingga klaim itu belum bisa dicocokkan. Tulis periode yang jelas pada tiap entri (mis. 2021–2024) agar rekruter — dan pemeriksaan ini — bisa memverifikasi klaimmu.`,
     }
   }
   const actual = totalExperienceYears(blocks, currentYear)
   if (claim - actual > 1) {
     return {
       score2: 0,
-      message: `Ada ketidaksesuaian klaim pengalaman: teks CV-mu mengklaim ${formatYears(claim)} tahun pengalaman, tetapi total durasi yang terhitung dari periode entri pengalamanmu hanya sekitar ${formatYears(actual)} tahun. Klaim yang lebih besar dari linimasa mudah terbongkar saat rekruter menjumlahkan tanggalmu dan merusak kepercayaan pada seluruh CV — sesuaikan klaimnya dengan kenyataan, atau lengkapi entri pengalaman yang belum tertulis periodenya.`,
+      message:
+        lang === 'en'
+          ? `There is a mismatch in your experience claim: your CV text claims ${formatYears(claim, lang)} years of experience, but the total duration calculated from your experience entry periods is only about ${formatYears(actual, lang)} years. A claim larger than your timeline is easy to spot when recruiters add up your dates, and it damages trust in the whole CV — adjust the claim to match reality, or complete the periods for experience entries that are missing them.`
+          : `Ada ketidaksesuaian klaim pengalaman: teks CV-mu mengklaim ${formatYears(claim)} tahun pengalaman, tetapi total durasi yang terhitung dari periode entri pengalamanmu hanya sekitar ${formatYears(actual)} tahun. Klaim yang lebih besar dari linimasa mudah terbongkar saat rekruter menjumlahkan tanggalmu dan merusak kepercayaan pada seluruh CV — sesuaikan klaimnya dengan kenyataan, atau lengkapi entri pengalaman yang belum tertulis periodenya.`,
     }
   }
   return {
     score2: 2,
-    message: `Klaim ${formatYears(claim)} tahun pengalaman sejalan dengan linimasa yang terbaca (total durasi entri pengalamanmu terhitung sekitar ${formatYears(actual)} tahun) — klaimmu bisa diverifikasi rekruter dari tanggal-tanggalmu sendiri.`,
+    message:
+      lang === 'en'
+        ? `Your claim of ${formatYears(claim, lang)} years of experience lines up with the timeline as read (the total duration of your experience entries comes to about ${formatYears(actual, lang)} years) — recruiters can verify your claim from your own dates.`
+        : `Klaim ${formatYears(claim)} tahun pengalaman sejalan dengan linimasa yang terbaca (total durasi entri pengalamanmu terhitung sekitar ${formatYears(actual)} tahun) — klaimmu bisa diverifikasi rekruter dari tanggal-tanggalmu sendiri.`,
   }
 }
 
@@ -1585,13 +1644,16 @@ export interface EmailProfessionalAssessment {
   reason: string | null
 }
 
-export function assessEmailProfessional(email: string): EmailProfessionalAssessment {
+export function assessEmailProfessional(email: string, lang: Lang = 'id'): EmailProfessionalAssessment {
   const local = email.split('@')[0]?.toLowerCase() ?? ''
   const digitCount = (local.match(/\d/g) ?? []).length
   if (digitCount >= 5) {
     return {
       ok: false,
-      reason: `deretan angka yang panjang (${digitCount} digit) pada nama email`,
+      reason:
+        lang === 'en'
+          ? `a long run of numbers (${digitCount} digits) in the email name`
+          : `deretan angka yang panjang (${digitCount} digit) pada nama email`,
     }
   }
   const tokens = local.split(/[._\-+]+/).filter(Boolean)
@@ -1599,7 +1661,13 @@ export function assessEmailProfessional(email: string): EmailProfessionalAssessm
     const noDigits = token.replace(/\d+$/, '')
     const core = noDigits.replace(/[zsx]{1,2}$/, '')
     if (UNPROFESSIONAL_EMAIL_WORDS.has(core) || UNPROFESSIONAL_EMAIL_WORDS.has(noDigits)) {
-      return { ok: false, reason: `kata "${core}" yang terkesan panggilan/alay pada nama email` }
+      return {
+        ok: false,
+        reason:
+          lang === 'en'
+            ? `the word "${core}", which sounds like a nickname or slang, in the email name`
+            : `kata "${core}" yang terkesan panggilan/alay pada nama email`,
+      }
     }
   }
   return { ok: true, reason: null }
@@ -1624,13 +1692,15 @@ export interface FileNameAssessment {
 // pengguna mengunggah berkas; teks yang ditempel manual membuat
 // pemeriksaan ini netral penuh (tidak tampil sebagai kegagalan).
 // Nama wajar = memuat kata yang menyerupai nama pelamar/posisi.
-export function assessFileName(fileName: string): FileNameAssessment {
+export function assessFileName(fileName: string, lang: Lang = 'id'): FileNameAssessment {
   const trimmed = fileName.trim()
   if (!trimmed) {
     return {
       score2: 2,
       message:
-        'Kamu menempel teks CV (bukan mengunggah file), jadi nama file tidak dinilai dan pemeriksaan ini netral. Bila nanti kamu mengirim CV sebagai file, pakai nama file yang memuat namamu — mis. "CV_Nama_Posisi.pdf" — karena rekruter dan sistem ATS melihat nama file sebelum membuka CV-mu.',
+        lang === 'en'
+          ? 'You pasted your CV text (rather than uploading a file), so the file name is not assessed and this check is neutral. When you later send your CV as a file, use a file name that includes your name — e.g. "CV_Name_Role.pdf" — because recruiters and ATS systems see the file name before opening your CV.'
+          : 'Kamu menempel teks CV (bukan mengunggah file), jadi nama file tidak dinilai dan pemeriksaan ini netral. Bila nanti kamu mengirim CV sebagai file, pakai nama file yang memuat namamu — mis. "CV_Nama_Posisi.pdf" — karena rekruter dan sistem ATS melihat nama file sebelum membuka CV-mu.',
     }
   }
   const base = trimmed.split(/[\\/]/).pop() ?? trimmed
@@ -1653,7 +1723,10 @@ export function assessFileName(fileName: string): FileNameAssessment {
   if (severeJunk || nameLike.length === 0) {
     return {
       score2: 0,
-      message: `Nama file "${base}" terlalu generik atau terkesan asal unduh/scan — tidak ada nama pelamar atau posisi di dalamnya. Rekruter menerima puluhan file; nama seperti ini mudah tertukar dan terkesan tidak disiapkan. Ganti menjadi pola "CV_Nama_Posisi.pdf", mis. "CV_Budi_Santoso.pdf" atau "BudiSantoso_DataAnalyst.pdf".`,
+      message:
+        lang === 'en'
+          ? `The file name "${base}" is too generic or looks like a random download or scan — it contains no applicant name or role. Recruiters receive dozens of files; a name like this is easy to mix up and looks unprepared. Change it to the pattern "CV_Name_Role.pdf", e.g. "CV_Budi_Santoso.pdf" or "BudiSantoso_DataAnalyst.pdf".`
+          : `Nama file "${base}" terlalu generik atau terkesan asal unduh/scan — tidak ada nama pelamar atau posisi di dalamnya. Rekruter menerima puluhan file; nama seperti ini mudah tertukar dan terkesan tidak disiapkan. Ganti menjadi pola "CV_Nama_Posisi.pdf", mis. "CV_Budi_Santoso.pdf" atau "BudiSantoso_DataAnalyst.pdf".`,
     }
   }
   const filler = tokens.filter((t) =>
@@ -1663,12 +1736,18 @@ export function assessFileName(fileName: string): FileNameAssessment {
   if (filler.length > 0 || repeatedLetter) {
     return {
       score2: 1,
-      message: `Nama file "${base}" sudah memuat nama/posisimu, tetapi masih menyisakan kesan draf (${filler.length > 0 ? `kata "${filler[0]}"` : 'huruf berulang pada salah satu kata'}). Untuk berkas yang dikirim ke rekruter, buang penanda drafnya — mis. cukup "CV_Nama_Posisi.pdf" tanpa "final/revisi/fix".`,
+      message:
+        lang === 'en'
+          ? `The file name "${base}" already includes your name/role, but it still looks like a draft (${filler.length > 0 ? `the word "${filler[0]}"` : 'repeated letters in one of the words'}). For a file sent to recruiters, remove the draft markers — e.g. just "CV_Name_Role.pdf" without "final/revision/fix".`
+          : `Nama file "${base}" sudah memuat nama/posisimu, tetapi masih menyisakan kesan draf (${filler.length > 0 ? `kata "${filler[0]}"` : 'huruf berulang pada salah satu kata'}). Untuk berkas yang dikirim ke rekruter, buang penanda drafnya — mis. cukup "CV_Nama_Posisi.pdf" tanpa "final/revisi/fix".`,
     }
   }
   return {
     score2: 2,
-    message: `Nama file "${base}" sudah profesional: memuat nama/posisi yang jelas, mudah dikenali rekruter di antara tumpukan berkas pelamar lain.`,
+    message:
+      lang === 'en'
+        ? `The file name "${base}" is already professional: it includes a clear name/role and is easy for recruiters to recognise among stacks of other applicants' files.`
+        : `Nama file "${base}" sudah profesional: memuat nama/posisi yang jelas, mudah dikenali rekruter di antara tumpukan berkas pelamar lain.`,
   }
 }
 
@@ -1720,7 +1799,7 @@ interface ProjectAssessment {
 // PKL, dan pengalaman organisasi yang DIURAIKAN isinya adalah bukti
 // pengalaman yang sah. Bila pengalaman kerja formal sudah ada, bagian
 // proyek hanya penguat — ketiadaannya netral, tidak menghukum.
-function assessProjects(text: string, formalEntryCount: number): ProjectAssessment {
+function assessProjects(text: string, formalEntryCount: number, lang: Lang = 'id'): ProjectAssessment {
   const section = getProjectSection(text)
   const lines = section ? section.split('\n').filter((l) => l.trim() !== '') : []
   const words = section ? countWords(section) : 0
@@ -1728,27 +1807,36 @@ function assessProjects(text: string, formalEntryCount: number): ProjectAssessme
   if (section && substantive) {
     return {
       score: 2,
-      message: `Bagian proyek/magang/organisasi ditemukan dengan uraian isi (${lines.length} baris). Bagi perekrut, proyek dan magang yang diuraikan tugas serta hasilnya adalah bukti pengalaman yang sah — terutama bagi fresh graduate yang belum punya pekerjaan formal.`,
+      message:
+        lang === 'en'
+          ? `A project/internship/organisation section was found with its content described (${lines.length} lines). For recruiters, projects and internships with tasks and results described count as valid proof of experience — especially for fresh graduates who don't yet have formal jobs.`
+          : `Bagian proyek/magang/organisasi ditemukan dengan uraian isi (${lines.length} baris). Bagi perekrut, proyek dan magang yang diuraikan tugas serta hasilnya adalah bukti pengalaman yang sah — terutama bagi fresh graduate yang belum punya pekerjaan formal.`,
     }
   }
   if (section) {
     return {
       score: 1,
       message:
-        'Bagian proyek/magang/organisasi ditemukan, tetapi isinya sangat singkat (baru judul). Uraikan tugas, tools, dan hasilmu di dalamnya agar terbaca sebagai pengalaman betulan, bukan sekadar daftar nama kegiatan.',
+        lang === 'en'
+          ? 'A project/internship/organisation section was found, but its content is very brief (just titles). Describe your tasks, tools, and results in it so it reads as real experience, not just a list of activity names.'
+          : 'Bagian proyek/magang/organisasi ditemukan, tetapi isinya sangat singkat (baru judul). Uraikan tugas, tools, dan hasilmu di dalamnya agar terbaca sebagai pengalaman betulan, bukan sekadar daftar nama kegiatan.',
     }
   }
   if (formalEntryCount >= 1) {
     return {
       score: 2,
       message:
-        'Tidak ada bagian proyek/magang/organisasi terpisah, tetapi pengalaman kerja formalmu sudah tercantum sebagai bukti pengalaman utama — pemeriksaan ini netral untukmu; proyek hanya menjadi penguat tambahan bila ada.',
+        lang === 'en'
+          ? 'There is no separate project/internship/organisation section, but your formal work experience is already listed as your main proof of experience — this check is neutral for you; projects would only be extra support if you have them.'
+          : 'Tidak ada bagian proyek/magang/organisasi terpisah, tetapi pengalaman kerja formalmu sudah tercantum sebagai bukti pengalaman utama — pemeriksaan ini netral untukmu; proyek hanya menjadi penguat tambahan bila ada.',
     }
   }
   return {
     score: 0,
     message:
-      'Tidak ditemukan pengalaman kerja formal maupun bagian proyek/magang/organisasi. Bagi fresh graduate, proyek kuliah/sekolah, magang, PKL, kepanitiaan, atau kegiatan organisasi yang diuraikan isinya adalah bukti pengalaman utama — tambahkan bagian "Proyek" atau "Magang" berisi tugas dan hasilmu.',
+      lang === 'en'
+        ? 'No formal work experience or project/internship/organisation section was found. For fresh graduates, coursework or school projects, internships, work placements, committee work, or organisation activities with their content described are your main proof of experience — add a "Projects" or "Internship" section covering your tasks and results.'
+        : 'Tidak ditemukan pengalaman kerja formal maupun bagian proyek/magang/organisasi. Bagi fresh graduate, proyek kuliah/sekolah, magang, PKL, kepanitiaan, atau kegiatan organisasi yang diuraikan isinya adalah bukti pengalaman utama — tambahkan bagian "Proyek" atau "Magang" berisi tugas dan hasilmu.',
   }
 }
 
@@ -1889,6 +1977,16 @@ export function priorityRanks(priorities: CheckItem[]): Map<string, number> {
 // ---------- Fungsi analisis utama ----------
 
 export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): AnalysisResult {
+  const lang: Lang = options.lang ?? 'id'
+  const ASPECT = {
+    contact: lang === 'en' ? 'Contact' : 'Kontak',
+    summary: lang === 'en' ? 'Summary' : 'Ringkasan',
+    experience: lang === 'en' ? 'Experience' : 'Pengalaman',
+    education: lang === 'en' ? 'Education' : 'Pendidikan',
+    skills: lang === 'en' ? 'Skills' : 'Keahlian',
+    format: 'Format & ATS',
+    jobMatch: lang === 'en' ? 'Job Match' : 'Kecocokan dengan Lowongan',
+  }
   const text = rawText ?? ''
   const lower = text.toLowerCase()
   const totalWords = countWords(text)
@@ -1921,7 +2019,7 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   // valid tetap bisa merusak kesan pertama bila alamatnya berkesan
   // panggilan/alay atau penuh deretan angka. Pemeriksaannya konservatif
   // (daftar kata kecil, per token utuh) — nama orang sungguhan lulus.
-  const emailProfessional = emailMatch ? assessEmailProfessional(emailMatch) : null
+  const emailProfessional = emailMatch ? assessEmailProfessional(emailMatch, lang) : null
   const emailProfessionalScore = emailProfessional?.ok ? 2 : 0
 
   const phone = findPhone(text)
@@ -1940,42 +2038,68 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
 
   const kontakChecks = [
     makeCheck(
-      'email', 'Kontak', 'Email valid', emailScore, 6,
+      'email', ASPECT.contact, lang === 'en' ? 'Valid email' : 'Email valid', emailScore, 6,
       emailMatch
-        ? `Email terbaca: ${emailMatch}`
-        : 'Alamat email tidak ditemukan atau formatnya tidak valid. Cantumkan email profesional yang aktif.',
+        ? lang === 'en'
+          ? `Email found: ${emailMatch}`
+          : `Email terbaca: ${emailMatch}`
+        : lang === 'en'
+          ? 'No email address found, or the format is invalid. Include a professional email address that you actively use.'
+          : 'Alamat email tidak ditemukan atau formatnya tidak valid. Cantumkan email profesional yang aktif.',
     ),
     makeCheck(
-      'email-profesional', 'Kontak', 'Profesionalitas email', emailProfessionalScore, 2,
+      'email-profesional', ASPECT.contact, lang === 'en' ? 'Email professionalism' : 'Profesionalitas email', emailProfessionalScore, 2,
       !emailMatch
-        ? 'Belum ada alamat email yang bisa dinilai profesionalitasnya. Cantumkan email dari nama aslimu (mis. nama.kamu@gmail.com) — alamat itulah yang dilihat rekruter pertama kali.'
+        ? lang === 'en'
+          ? 'There is no email address yet whose professionalism can be assessed. Use an email based on your real name (e.g. your.name@gmail.com) — that address is the first thing a recruiter sees.'
+          : 'Belum ada alamat email yang bisa dinilai profesionalitasnya. Cantumkan email dari nama aslimu (mis. nama.kamu@gmail.com) — alamat itulah yang dilihat rekruter pertama kali.'
         : emailProfessional?.ok
-          ? `Alamat email "${emailMatch}" terkesan profesional: berbasis nama, tanpa kata panggilan/alay atau deretan angka yang panjang.`
-          : `Alamat email "${emailMatch}" terbaca kurang profesional untuk lamaran — ditemukan ${emailProfessional?.reason}. Rekruter melihat alamat email sebelum membaca isi CV; buat alamat khusus melamar dari nama aslimu, mis. nama.kamu@gmail.com (sedikit angka tahun lahir masih wajar).`,
+          ? lang === 'en'
+            ? `The email address "${emailMatch}" looks professional: it is based on a name, with no nickname or slang words and no long run of numbers.`
+            : `Alamat email "${emailMatch}" terkesan profesional: berbasis nama, tanpa kata panggilan/alay atau deretan angka yang panjang.`
+          : lang === 'en'
+            ? `The email address "${emailMatch}" reads as less than professional for a job application — found ${emailProfessional?.reason}. Recruiters see your email address before they read your CV; create an application-only address from your real name, e.g. your.name@gmail.com (a few digits for your birth year are still reasonable).`
+            : `Alamat email "${emailMatch}" terbaca kurang profesional untuk lamaran — ditemukan ${emailProfessional?.reason}. Rekruter melihat alamat email sebelum membaca isi CV; buat alamat khusus melamar dari nama aslimu, mis. nama.kamu@gmail.com (sedikit angka tahun lahir masih wajar).`,
     ),
     makeCheck(
-      'hp', 'Kontak', 'Nomor HP Indonesia', phoneScore, 5,
+      'hp', ASPECT.contact, lang === 'en' ? 'Indonesian mobile number' : 'Nomor HP Indonesia', phoneScore, 5,
       phone
-        ? `Nomor HP terbaca: ${phone}`
-        : 'Nomor HP Indonesia tidak ditemukan. Cantumkan nomor aktif, misalnya 08xx atau +62 8xx.',
+        ? lang === 'en'
+          ? `Mobile number found: ${phone}`
+          : `Nomor HP terbaca: ${phone}`
+        : lang === 'en'
+          ? 'No Indonesian mobile number found. Include an active number, for example 08xx or +62 8xx.'
+          : 'Nomor HP Indonesia tidak ditemukan. Cantumkan nomor aktif, misalnya 08xx atau +62 8xx.',
     ),
     makeCheck(
-      'linkedin', 'Kontak', 'LinkedIn', linkedinScore, 4,
+      'linkedin', ASPECT.contact, 'LinkedIn', linkedinScore, 4,
       linkedinScore
-        ? 'Tautan LinkedIn tercantum.'
-        : 'Tautan LinkedIn tidak ditemukan. Cantumkan URL profil LinkedIn agar rekruter mudah memverifikasi profilmu.',
+        ? lang === 'en'
+          ? 'A LinkedIn link is included.'
+          : 'Tautan LinkedIn tercantum.'
+        : lang === 'en'
+          ? 'No LinkedIn link found. Include your LinkedIn profile URL so recruiters can easily verify your profile.'
+          : 'Tautan LinkedIn tidak ditemukan. Cantumkan URL profil LinkedIn agar rekruter mudah memverifikasi profilmu.',
     ),
     makeCheck(
-      'portofolio', 'Kontak', 'Link portofolio', portfolioScore, 2,
+      'portofolio', ASPECT.contact, lang === 'en' ? 'Portfolio link' : 'Link portofolio', portfolioScore, 2,
       portfolioUrl
-        ? `Portofolio terbaca: ${portfolioUrl}`
-        : 'Link portofolio tidak ditemukan. Cantumkan alamat GitHub, Behance, Kaggle, atau website portofolio pribadi (kata "portofolio" saja tanpa alamat tidak dihitung).',
+        ? lang === 'en'
+          ? `Portfolio found: ${portfolioUrl}`
+          : `Portofolio terbaca: ${portfolioUrl}`
+        : lang === 'en'
+          ? 'No portfolio link found. Include a GitHub, Behance, Kaggle, or personal portfolio website address (the word "portfolio" alone, without an address, does not count).'
+          : 'Link portofolio tidak ditemukan. Cantumkan alamat GitHub, Behance, Kaggle, atau website portofolio pribadi (kata "portofolio" saja tanpa alamat tidak dihitung).',
     ),
     makeCheck(
-      'lokasi', 'Kontak', 'Lokasi domisili', locationScore, 1,
+      'lokasi', ASPECT.contact, lang === 'en' ? 'Location / domicile' : 'Lokasi domisili', locationScore, 1,
       location
-        ? `Domisili terbaca: ${location}. Perekrut memang menyaring kandidat berdasarkan domisili, jadi keterangan ini membantu.`
-        : 'Kota domisili tidak ditemukan di area kontak. Cantumkan kota tempat tinggalmu saat ini (mis. "Jakarta" atau "Domisili: Bandung") — banyak rekruter menyaring kandidat berdasarkan domisili sebelum membaca isi CV.',
+        ? lang === 'en'
+          ? `Location found: ${location}. Recruiters do filter candidates by location, so this information helps.`
+          : `Domisili terbaca: ${location}. Perekrut memang menyaring kandidat berdasarkan domisili, jadi keterangan ini membantu.`
+        : lang === 'en'
+          ? 'No city of residence was found in the contact area. Include the city where you currently live (e.g. "Jakarta" or "Based in: Bandung") — many recruiters filter candidates by location before reading the rest of the CV.'
+          : 'Kota domisili tidak ditemukan di area kontak. Cantumkan kota tempat tinggalmu saat ini (mis. "Jakarta" atau "Domisili: Bandung") — banyak rekruter menyaring kandidat berdasarkan domisili sebelum membaca isi CV.',
     ),
   ]
 
@@ -1992,12 +2116,16 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
     summaryWords >= 40 ? 7 : summaryWords >= 20 ? 5 : summaryWords >= 8 ? 3 : summaryWords >= 1 ? 1 : 0
   const summaryMessage =
     summaryWords === 0
-      ? 'Bagian ringkasan/profil tidak ditemukan. Tambahkan ringkasan 40 kata atau lebih yang menjelaskan keahlian dan pencapaian utamamu.'
-      : `Ringkasan berisi ${summaryWords} kata. ${summaryWords >= 40 ? 'Panjangnya sudah ideal.' : 'Idealnya 40 kata atau lebih agar cukup menjelaskan nilai jualmu.'}`
+      ? lang === 'en'
+        ? 'No summary/profile section was found. Add a summary of 40 words or more that explains your main skills and achievements.'
+        : 'Bagian ringkasan/profil tidak ditemukan. Tambahkan ringkasan 40 kata atau lebih yang menjelaskan keahlian dan pencapaian utamamu.'
+      : lang === 'en'
+        ? `Your summary is ${summaryWords} words. ${summaryWords >= 40 ? 'Its length is already ideal.' : 'Ideally it should be 40 words or more, enough to explain what you offer.'}`
+        : `Ringkasan berisi ${summaryWords} kata. ${summaryWords >= 40 ? 'Panjangnya sudah ideal.' : 'Idealnya 40 kata atau lebih agar cukup menjelaskan nilai jualmu.'}`
 
   const ringkasanChecks: CheckItem[] = [
     makeCheck(
-      'ringkasan', 'Ringkasan', 'Ringkasan profesional',
+      'ringkasan', ASPECT.summary, lang === 'en' ? 'Professional summary' : 'Ringkasan profesional',
       hasRole ? summaryScoreSplit : summaryScoreFull, hasRole ? 7 : 10,
       summaryMessage,
     ),
@@ -2015,15 +2143,23 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
           : 0
     ringkasanChecks.push(
       makeCheck(
-        'relevansi-ringkasan', 'Ringkasan', 'Relevansi ringkasan dengan posisi target',
+        'relevansi-ringkasan', ASPECT.summary, lang === 'en' ? 'Summary relevance to the target role' : 'Relevansi ringkasan dengan posisi target',
         relevanceScore, 3,
         !summarySection
-          ? `Posisi target "${role}" belum bisa dinilai dari ringkasan karena bagian ringkasan belum ada. Tulis ringkasan yang menyebut bidang/posisi yang kamu tuju.`
+          ? lang === 'en'
+            ? `The target role "${role}" cannot be assessed from your summary because there is no summary section yet. Write a summary that mentions the field/role you are aiming for.`
+            : `Posisi target "${role}" belum bisa dinilai dari ringkasan karena bagian ringkasan belum ada. Tulis ringkasan yang menyebut bidang/posisi yang kamu tuju.`
           : relevanceScore === 3
-            ? `Ringkasan menyebut bidang/posisi yang dituju ("${headWord}") sesuai posisi target "${role}".`
+            ? lang === 'en'
+              ? `Your summary mentions the field/role you are aiming for ("${headWord}"), matching the target role "${role}".`
+              : `Ringkasan menyebut bidang/posisi yang dituju ("${headWord}") sesuai posisi target "${role}".`
             : relevanceScore === 2
-              ? `Ringkasan menyebut sebagian kata dari posisi target "${role}", tetapi kata utamanya ("${headWord}") belum muncul. Sebutkan posisi/bidang yang dituju secara eksplisit di ringkasan.`
-              : `Ringkasan sama sekali tidak menyebut posisi/bidang "${role}" yang kamu tuju. Sesuaikan kalimat pertama ringkasan dengan posisi target agar rekruter langsung melihat relevansinya.`,
+              ? lang === 'en'
+                ? `Your summary mentions some words from the target role "${role}", but its main word ("${headWord}") has not appeared yet. Mention the role/field you are aiming for explicitly in your summary.`
+                : `Ringkasan menyebut sebagian kata dari posisi target "${role}", tetapi kata utamanya ("${headWord}") belum muncul. Sebutkan posisi/bidang yang dituju secara eksplisit di ringkasan.`
+              : lang === 'en'
+                ? `Your summary does not mention the role/field "${role}" you are aiming for at all. Adjust the first sentence of your summary to the target role so recruiters see the relevance right away.`
+                : `Ringkasan sama sekali tidak menyebut posisi/bidang "${role}" yang kamu tuju. Sesuaikan kalimat pertama ringkasan dengan posisi target agar rekruter langsung melihat relevansinya.`,
       ),
     )
   }
@@ -2087,10 +2223,16 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
     depthScore = ratio >= 1 ? 3 : ratio >= 0.5 ? 2 : completeEntries >= 1 ? 1 : 0
   }
   const depthMessage = !experienceSection
-    ? 'Bagian pengalaman tidak ditemukan, jadi kedalaman entri belum bisa dinilai. Buat bagian "Pengalaman" dengan satu entri per pekerjaan.'
+    ? lang === 'en'
+      ? 'No experience section was found, so entry depth cannot be assessed yet. Create an "Experience" section with one entry per job.'
+      : 'Bagian pengalaman tidak ditemukan, jadi kedalaman entri belum bisa dinilai. Buat bagian "Pengalaman" dengan satu entri per pekerjaan.'
     : expBlocks.length === 0
-      ? 'Tidak ditemukan entri pengalaman yang terbaca strukturnya (baris jabatan/perusahaan yang memuat periode). Tulis tiap pekerjaan sebagai baris judul, misalnya "Kasir — Toko Berkah (2022–2024)", lalu uraikan isinya di bawahnya.'
-      : `Ditemukan ${expBlocks.length} entri pengalaman. ${completeEntries} entri lengkap (jabatan + perusahaan + periode + uraian isi)${shallowEntries > 0 ? `; ${shallowEntries} entri hanya berisi judul/periode tanpa uraian isi` : ''}. ${depthScore >= 5 ? 'Kedalaman entrinya sudah baik.' : 'Setiap entri idealnya memuat jabatan, nama perusahaan, periode, dan uraian pencapaian — entri yang hanya berisi judul terlihat kosong bagi rekruter.'}`
+      ? lang === 'en'
+        ? 'No experience entries with a readable structure were found (a job title/company line that includes a period). Write each job as a heading line, for example "Cashier — Toko Berkah (2022–2024)", then describe it underneath.'
+        : 'Tidak ditemukan entri pengalaman yang terbaca strukturnya (baris jabatan/perusahaan yang memuat periode). Tulis tiap pekerjaan sebagai baris judul, misalnya "Kasir — Toko Berkah (2022–2024)", lalu uraikan isinya di bawahnya.'
+      : lang === 'en'
+        ? `Found ${expBlocks.length} experience entries. ${completeEntries} complete entries (title + company + period + description)${shallowEntries > 0 ? `; ${shallowEntries} entries contain only a title/period with no description` : ''}. ${depthScore >= 5 ? 'The depth of the entries is already good.' : 'Each entry should ideally include a job title, company name, period, and a description of achievements — an entry with only a title looks empty to recruiters.'}`
+        : `Ditemukan ${expBlocks.length} entri pengalaman. ${completeEntries} entri lengkap (jabatan + perusahaan + periode + uraian isi)${shallowEntries > 0 ? `; ${shallowEntries} entri hanya berisi judul/periode tanpa uraian isi` : ''}. ${depthScore >= 5 ? 'Kedalaman entrinya sudah baik.' : 'Setiap entri idealnya memuat jabatan, nama perusahaan, periode, dan uraian pencapaian — entri yang hanya berisi judul terlihat kosong bagi rekruter.'}`
 
   // Frasa lemah & klise: hanya dinilai bila ada isi ringkasan/pengalaman;
   // CV tanpa kedua bagian itu tidak mendapat poin dari ketiadaan frasa.
@@ -2109,72 +2251,86 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   // (2026-11-24) dengan pola penskalaan yang sama seperti linimasa.
   const weakPhraseScore = Math.round((weakPhraseScore3 * 2) / 3)
   const weakPhraseMessage = !hasNarrative
-    ? 'Belum ada bagian ringkasan/pengalaman yang bisa dinilai frasanya. Tulis kedua bagian itu dengan kalimat konkret berbasis bukti.'
+    ? lang === 'en'
+      ? 'There is no summary/experience section yet whose phrasing can be assessed. Write both sections in concrete, evidence-based sentences.'
+      : 'Belum ada bagian ringkasan/pengalaman yang bisa dinilai frasanya. Tulis kedua bagian itu dengan kalimat konkret berbasis bukti.'
     : weakPhrases.length === 0
-      ? 'Tidak ditemukan frasa klise yang umum (mis. "pekerja keras", "bertanggung jawab atas") di dalam CV.'
-      : `Ditemukan ${weakPhrases.length} frasa generik tanpa bukti: ${weakPhrases.map((p) => `"${p}"`).join(', ')}. Frasa seperti ini diklaim hampir semua pelamar sehingga tidak membedakanmu — ganti dengan bukti konkret (angka, hasil, contoh pekerjaan).`
+      ? lang === 'en'
+        ? 'No common cliché phrases (e.g. "hard worker", "responsible for") were found in the CV.'
+        : 'Tidak ditemukan frasa klise yang umum (mis. "pekerja keras", "bertanggung jawab atas") di dalam CV.'
+      : lang === 'en'
+        ? `Found ${weakPhrases.length} generic phrases with no evidence behind them: ${weakPhrases.map((p) => `"${p}"`).join(', ')}. Phrases like these are claimed by almost every applicant, so they don't set you apart — replace them with concrete evidence (numbers, results, examples of work).`
+        : `Ditemukan ${weakPhrases.length} frasa generik tanpa bukti: ${weakPhrases.map((p) => `"${p}"`).join(', ')}. Frasa seperti ini diklaim hampir semua pelamar sehingga tidak membedakanmu — ganti dengan bukti konkret (angka, hasil, contoh pekerjaan).`
 
   // Linimasa pengalaman: kesenjangan panjang antar-entri dan kebaruan
   // peran terakhir, dinilai dari periode yang terbaca per entri.
   const currentYear = new Date().getFullYear()
-  const timeline = assessTimeline(expBlocks, currentYear)
+  const timeline = assessTimeline(expBlocks, currentYear, lang)
   const linimasaScore =
     linimasaMax === 3 ? timeline.score3 : Math.round((timeline.score3 * linimasaMax) / 3)
 
   // Kestabilan karier (2026-11-24): job hopping + tumpang tindih
   // periode dalam satu pemeriksaan, dari fakta linimasa yang sama.
-  const stability = assessCareerStability(expBlocks, currentYear)
+  const stability = assessCareerStability(expBlocks, currentYear, lang)
 
   // Konsistensi klaim lama pengalaman (2026-11-24): klaim "X tahun
   // pengalaman" di teks dicocokkan dengan total durasi nyata linimasa.
   // Penjaga teks kosong (pola audit 2026-11-24 yang sama seperti
   // panjang & kerapian): teks 0 kata tidak menerima poin netral —
   // belum ada CV apa pun yang bisa dinilai netral.
-  const claimConsistency = assessClaimConsistency(text, expBlocks, currentYear)
+  const claimConsistency = assessClaimConsistency(text, expBlocks, currentYear, lang)
   const claimScore = totalWords === 0 ? 0 : claimConsistency.score2
 
   // Proyek/magang/organisasi sebagai bukti pengalaman (fresh graduate).
-  const projectAssessment = assessProjects(text, expBlocks.length)
+  const projectAssessment = assessProjects(text, expBlocks.length, lang)
 
   const pengalamanChecks = [
     makeCheck(
-      'pengalaman-heading', 'Pengalaman', 'Bagian pengalaman kerja', experienceHeadingScore, 4,
+      'pengalaman-heading', ASPECT.experience, lang === 'en' ? 'Work experience section' : 'Bagian pengalaman kerja', experienceHeadingScore, 4,
       hasExperienceHeading
-        ? 'Bagian pengalaman kerja ditemukan.'
-        : 'Bagian pengalaman kerja tidak ditemukan. Buat bagian "Pengalaman" yang berisi riwayat pekerjaanmu.',
+        ? lang === 'en'
+          ? 'A work experience section was found.'
+          : 'Bagian pengalaman kerja ditemukan.'
+        : lang === 'en'
+          ? 'No work experience section was found. Create an "Experience" section containing your work history.'
+          : 'Bagian pengalaman kerja tidak ditemukan. Buat bagian "Pengalaman" yang berisi riwayat pekerjaanmu.',
     ),
     makeCheck(
-      'kata-kerja-aksi', 'Pengalaman', 'Kata kerja aksi', verbScore, verbMax,
-      `Ditemukan ${verbCount} kata kerja aksi berbeda (mis. meningkatkan, mengelola, membangun). ${verbCount >= 5 ? 'Sudah bervariasi.' : 'Gunakan minimal 5 kata kerja aksi berbeda untuk menunjukkan peran aktifmu.'}`,
+      'kata-kerja-aksi', ASPECT.experience, lang === 'en' ? 'Action verbs' : 'Kata kerja aksi', verbScore, verbMax,
+      lang === 'en'
+        ? `Found ${verbCount} different action verbs (e.g. increased, managed, built). ${verbCount >= 5 ? 'They are already varied.' : 'Use at least 5 different action verbs to show your active role.'}`
+        : `Ditemukan ${verbCount} kata kerja aksi berbeda (mis. meningkatkan, mengelola, membangun). ${verbCount >= 5 ? 'Sudah bervariasi.' : 'Gunakan minimal 5 kata kerja aksi berbeda untuk menunjukkan peran aktifmu.'}`,
     ),
     makeCheck(
-      'hasil-terukur', 'Pengalaman', 'Hasil terukur (angka pencapaian)', measurableScore, measurableMax,
-      `Ditemukan ${measurableCount} angka pencapaian (persen, jumlah, atau nominal — tahun dan nomor HP tidak dihitung). ${measurableCount >= 3 ? 'Sudah meyakinkan.' : 'Tambahkan hasil terukur, misalnya "meningkatkan penjualan 30%" atau "mengelola 15 orang".'}`,
+      'hasil-terukur', ASPECT.experience, lang === 'en' ? 'Measurable results (achievement numbers)' : 'Hasil terukur (angka pencapaian)', measurableScore, measurableMax,
+      lang === 'en'
+        ? `Found ${measurableCount} achievement numbers (percentages, counts, or amounts — years and phone numbers are not counted). ${measurableCount >= 3 ? 'Already convincing.' : 'Add measurable results, for example "increased sales by 30%" or "managed 15 people".'}`
+        : `Ditemukan ${measurableCount} angka pencapaian (persen, jumlah, atau nominal — tahun dan nomor HP tidak dihitung). ${measurableCount >= 3 ? 'Sudah meyakinkan.' : 'Tambahkan hasil terukur, misalnya "meningkatkan penjualan 30%" atau "mengelola 15 orang".'}`,
     ),
     makeCheck(
-      'kedalaman-entri', 'Pengalaman', 'Kedalaman entri pengalaman', depthScore, 3,
+      'kedalaman-entri', ASPECT.experience, lang === 'en' ? 'Experience entry depth' : 'Kedalaman entri pengalaman', depthScore, 3,
       depthMessage,
     ),
     makeCheck(
-      'frasa-lemah', 'Pengalaman', 'Frasa lemah & klise', weakPhraseScore, 2,
+      'frasa-lemah', ASPECT.experience, lang === 'en' ? 'Weak phrases & clichés' : 'Frasa lemah & klise', weakPhraseScore, 2,
       weakPhraseMessage,
     ),
     makeCheck(
-      'linimasa', 'Pengalaman', 'Linimasa pengalaman', linimasaScore, linimasaMax,
+      'linimasa', ASPECT.experience, lang === 'en' ? 'Experience timeline' : 'Linimasa pengalaman', linimasaScore, linimasaMax,
       timeline.message,
     ),
     makeCheck(
-      'kestabilan-karier', 'Pengalaman', 'Kestabilan karier (job hopping & tumpang tindih)',
+      'kestabilan-karier', ASPECT.experience, lang === 'en' ? 'Career stability (job hopping & overlaps)' : 'Kestabilan karier (job hopping & tumpang tindih)',
       stability.score2, 2,
       stability.message,
     ),
     makeCheck(
-      'konsistensi-klaim', 'Pengalaman', 'Konsistensi klaim pengalaman',
+      'konsistensi-klaim', ASPECT.experience, lang === 'en' ? 'Experience claim consistency' : 'Konsistensi klaim pengalaman',
       claimScore, 2,
       claimConsistency.message,
     ),
     makeCheck(
-      'proyek', 'Pengalaman', 'Proyek / magang sebagai bukti pengalaman', projectAssessment.score, 2,
+      'proyek', ASPECT.experience, lang === 'en' ? 'Projects / internships as proof of experience' : 'Proyek / magang sebagai bukti pengalaman', projectAssessment.score, 2,
       projectAssessment.message,
     ),
   ]
@@ -2203,17 +2359,27 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
             : 0
     pengalamanChecks.push(
       makeCheck(
-        'relevansi-pengalaman', 'Pengalaman', 'Relevansi pengalaman dengan posisi target',
+        'relevansi-pengalaman', ASPECT.experience, lang === 'en' ? 'Experience relevance to the target role' : 'Relevansi pengalaman dengan posisi target',
         relevanceExpScore, 3,
         !experienceSection
-          ? `Posisi target "${role}" belum bisa dinilai relevansinya karena bagian pengalaman belum ada. Pengalaman (termasuk magang dan proyek) yang berkaitan dengan bidang posisi yang dituju adalah bukti terkuat bagi rekruter.`
+          ? lang === 'en'
+            ? `The relevance of the target role "${role}" cannot be assessed because there is no experience section yet. Experience (including internships and projects) related to the field of the role you are aiming for is the strongest evidence for recruiters.`
+            : `Posisi target "${role}" belum bisa dinilai relevansinya karena bagian pengalaman belum ada. Pengalaman (termasuk magang dan proyek) yang berkaitan dengan bidang posisi yang dituju adalah bukti terkuat bagi rekruter.`
           : relevanceExpScore === 3
-            ? `Jabatan di pengalamanmu menyebut kata kunci posisi target "${role}" (${titleHits.map((w) => `"${w}"`).join(', ')}) — relevansinya langsung terlihat oleh rekruter.`
+            ? lang === 'en'
+              ? `Job titles in your experience mention keywords from the target role "${role}" (${titleHits.map((w) => `"${w}"`).join(', ')}) — the relevance is immediately visible to recruiters.`
+              : `Jabatan di pengalamanmu menyebut kata kunci posisi target "${role}" (${titleHits.map((w) => `"${w}"`).join(', ')}) — relevansinya langsung terlihat oleh rekruter.`
             : relevanceExpScore === 2
-              ? `Isi pengalamanmu menyebut semua kata kunci posisi target "${role}" (${sectionHits.map((w) => `"${w}"`).join(', ')}), tetapi belum muncul di judul jabatan. Bila memang sesuai, sebutkan bidang itu di judul entri pengalamanmu.`
+              ? lang === 'en'
+                ? `The content of your experience mentions all the keywords from the target role "${role}" (${sectionHits.map((w) => `"${w}"`).join(', ')}), but they have not appeared in a job title yet. If it fits, mention that field in the title of your experience entry.`
+                : `Isi pengalamanmu menyebut semua kata kunci posisi target "${role}" (${sectionHits.map((w) => `"${w}"`).join(', ')}), tetapi belum muncul di judul jabatan. Bila memang sesuai, sebutkan bidang itu di judul entri pengalamanmu.`
               : relevanceExpScore === 1
-                ? `Pengalamanmu baru menyebut sebagian kata kunci posisi target "${role}" (${sectionHits.map((w) => `"${w}"`).join(', ')}); yang belum terbaca: ${missingWords.map((w) => `"${w}"`).join(', ')}. Tonjolkan tugas dan hasil yang paling berkaitan dengan bidang yang dituju.`
-                : `Pengalamanmu tidak menyebut satu pun kata kunci posisi target "${role}" (${roleWords.map((w) => `"${w}"`).join(', ')}). Bila ada tugas/proyek yang berkaitan, tonjolkan; bila memang berpindah bidang, jelaskan jembatannya di ringkasan (kursus, proyek pribadi, magang).`,
+                ? lang === 'en'
+                  ? `Your experience only mentions some keywords from the target role "${role}" (${sectionHits.map((w) => `"${w}"`).join(', ')}); not yet found: ${missingWords.map((w) => `"${w}"`).join(', ')}. Highlight the tasks and results most related to the field you are aiming for.`
+                  : `Pengalamanmu baru menyebut sebagian kata kunci posisi target "${role}" (${sectionHits.map((w) => `"${w}"`).join(', ')}); yang belum terbaca: ${missingWords.map((w) => `"${w}"`).join(', ')}. Tonjolkan tugas dan hasil yang paling berkaitan dengan bidang yang dituju.`
+                : lang === 'en'
+                  ? `Your experience does not mention any keywords from the target role "${role}" (${roleWords.map((w) => `"${w}"`).join(', ')}). If you have related tasks or projects, highlight them; if you are changing fields, explain the bridge in your summary (courses, personal projects, internships).`
+                  : `Pengalamanmu tidak menyebut satu pun kata kunci posisi target "${role}" (${roleWords.map((w) => `"${w}"`).join(', ')}). Bila ada tugas/proyek yang berkaitan, tonjolkan; bila memang berpindah bidang, jelaskan jembatannya di ringkasan (kursus, proyek pribadi, magang).`,
       ),
     )
   }
@@ -2245,24 +2411,30 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
 
   const pendidikanChecks = [
     makeCheck(
-      'pendidikan', 'Pendidikan', 'Pendidikan tercantum', educationScore, 6,
+      'pendidikan', ASPECT.education, lang === 'en' ? 'Education listed' : 'Pendidikan tercantum', educationScore, 6,
       hasEducation
-        ? 'Informasi pendidikan ditemukan.'
-        : 'Informasi pendidikan tidak ditemukan. Cantumkan jenjang pendidikan terakhir dan nama institusinya.',
+        ? lang === 'en' ? 'Education information was found.' : 'Informasi pendidikan ditemukan.'
+        : lang === 'en' ? 'No education information found. Include your highest level of education and the name of the institution.' : 'Informasi pendidikan tidak ditemukan. Cantumkan jenjang pendidikan terakhir dan nama institusinya.',
     ),
     makeCheck(
-      'ipk', 'Pendidikan', 'IPK / GPA', gpaScore, 3,
+      'ipk', ASPECT.education, 'IPK / GPA', gpaScore, 3,
       hasGpa
-        ? 'IPK/GPA tercantum.'
-        : 'IPK/GPA tidak tercantum. Jika IPK-mu baik (mis. di atas 3,00), cantumkan untuk memperkuat profil.',
+        ? lang === 'en' ? 'Your GPA is included.' : 'IPK/GPA tercantum.'
+        : lang === 'en' ? 'No GPA is included. If your GPA is good (e.g. above 3.00), include it to strengthen your profile.' : 'IPK/GPA tidak tercantum. Jika IPK-mu baik (mis. di atas 3,00), cantumkan untuk memperkuat profil.',
     ),
     makeCheck(
-      'sertifikasi', 'Pendidikan', 'Sertifikasi & pelatihan', certScore, 3,
+      'sertifikasi', ASPECT.education, lang === 'en' ? 'Certifications & training' : 'Sertifikasi & pelatihan', certScore, 3,
       certItems.length >= 1
-        ? `Bagian sertifikasi/pelatihan ditemukan dengan ${certItems.length} item. Sertifikasi yang relevan memperkuat kredibilitas di luar pendidikan formal.`
+        ? lang === 'en'
+          ? `A certifications/training section was found with ${certItems.length} items. Relevant certifications strengthen your credibility beyond formal education.`
+          : `Bagian sertifikasi/pelatihan ditemukan dengan ${certItems.length} item. Sertifikasi yang relevan memperkuat kredibilitas di luar pendidikan formal.`
         : certMentioned
-          ? 'Ada sebutan sertifikat/sertifikasi di dalam CV, tetapi belum menjadi bagian tersendiri. Buat bagian "Sertifikasi & Pelatihan" agar mudah ditemukan rekruter dan ATS.'
-          : 'Bagian sertifikasi/pelatihan tidak ditemukan. Bila kamu punya sertifikat kursus, pelatihan, atau lisensi yang relevan, cantumkan dalam bagian tersendiri — ini nilai tambah di luar pendidikan formal.',
+          ? lang === 'en'
+            ? 'Certificates/certifications are mentioned in the CV, but they are not a separate section yet. Create a "Certifications & Training" section so recruiters and ATS systems can find them easily.'
+            : 'Ada sebutan sertifikat/sertifikasi di dalam CV, tetapi belum menjadi bagian tersendiri. Buat bagian "Sertifikasi & Pelatihan" agar mudah ditemukan rekruter dan ATS.'
+          : lang === 'en'
+            ? 'No certifications/training section was found. If you have relevant course certificates, training, or licences, list them in their own section — they add value beyond formal education.'
+            : 'Bagian sertifikasi/pelatihan tidak ditemukan. Bila kamu punya sertifikat kursus, pelatihan, atau lisensi yang relevan, cantumkan dalam bagian tersendiri — ini nilai tambah di luar pendidikan formal.',
     ),
   ]
 
@@ -2279,18 +2451,28 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
 
   const keahlianChecks = [
     makeCheck(
-      'keahlian', 'Keahlian', 'Daftar keahlian / skill', skillScore, 8,
+      'keahlian', ASPECT.skills, lang === 'en' ? 'Skills list' : 'Daftar keahlian / skill', skillScore, 8,
       skillCount === 0
-        ? 'Bagian keahlian tidak ditemukan. Buat bagian "Keahlian" dan daftarkan minimal 8 skill yang relevan, pisahkan dengan koma.'
-        : `Ditemukan ${skillCount} item keahlian. ${skillCount >= 8 ? 'Jumlahnya sudah cukup.' : 'Idealnya cantumkan minimal 8 skill yang relevan dengan posisi yang dilamar.'}`,
+        ? lang === 'en'
+          ? 'No skills section was found. Create a "Skills" section and list at least 8 relevant skills, separated by commas.'
+          : 'Bagian keahlian tidak ditemukan. Buat bagian "Keahlian" dan daftarkan minimal 8 skill yang relevan, pisahkan dengan koma.'
+        : lang === 'en'
+          ? `Found ${skillCount} skill items. ${skillCount >= 8 ? 'That is enough.' : 'Ideally list at least 8 skills relevant to the role you are applying for.'}`
+          : `Ditemukan ${skillCount} item keahlian. ${skillCount >= 8 ? 'Jumlahnya sudah cukup.' : 'Idealnya cantumkan minimal 8 skill yang relevan dengan posisi yang dilamar.'}`,
     ),
     makeCheck(
-      'bahasa', 'Keahlian', 'Bahasa asing', langScore, 2,
+      'bahasa', ASPECT.skills, lang === 'en' ? 'Foreign languages' : 'Bahasa asing', langScore, 2,
       langItems.length >= 1
-        ? `Bagian bahasa ditemukan (${langItems.slice(0, 3).join(', ')}${langItems.length > 3 ? ', …' : ''}). Kemampuan bahasa asing adalah nilai tambah yang sering dicari perusahaan.`
+        ? lang === 'en'
+          ? `A languages section was found (${langItems.slice(0, 3).join(', ')}${langItems.length > 3 ? ', …' : ''}). Foreign language skills are a plus that companies often look for.`
+          : `Bagian bahasa ditemukan (${langItems.slice(0, 3).join(', ')}${langItems.length > 3 ? ', …' : ''}). Kemampuan bahasa asing adalah nilai tambah yang sering dicari perusahaan.`
         : langMentioned
-          ? 'Kemampuan bahasa asing disebut di dalam CV, tetapi belum menjadi bagian/keterangan tersendiri. Tulis di bagian "Bahasa" beserta tingkat kemahirannya (mis. Bahasa Inggris — aktif, TOEFL 550).'
-          : 'Kemampuan bahasa asing tidak tercantum. Bila kamu menguasai bahasa asing (mis. Bahasa Inggris), cantumkan beserta tingkat kemahirannya — banyak lowongan menjadikannya nilai tambah atau syarat.',
+          ? lang === 'en'
+            ? 'Foreign language skills are mentioned in the CV, but they are not a separate section or note yet. Put them in a "Languages" section with your proficiency level (e.g. English — fluent, TOEFL 550).'
+            : 'Kemampuan bahasa asing disebut di dalam CV, tetapi belum menjadi bagian/keterangan tersendiri. Tulis di bagian "Bahasa" beserta tingkat kemahirannya (mis. Bahasa Inggris — aktif, TOEFL 550).'
+          : lang === 'en'
+            ? 'No foreign language skills are listed. If you speak a foreign language (e.g. English), include it with your proficiency level — many vacancies treat it as a plus or a requirement.'
+            : 'Kemampuan bahasa asing tidak tercantum. Bila kamu menguasai bahasa asing (mis. Bahasa Inggris), cantumkan beserta tingkat kemahirannya — banyak lowongan menjadikannya nilai tambah atau syarat.',
     ),
   ]
 
@@ -2339,7 +2521,7 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   // berkas (options.fileName terisi); teks tempel → netral penuh.
   // Penjaga teks kosong yang sama seperti pemeriksaan netral lainnya:
   // teks 0 kata tidak menerima poin netral.
-  const fileNameAssessment = assessFileName(options.fileName ?? '')
+  const fileNameAssessment = assessFileName(options.fileName ?? '', lang)
   const fileNameScore = totalWords === 0 ? 0 : fileNameAssessment.score2
   const bulletCount = text
     .split('\n')
@@ -2356,13 +2538,19 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   const isReverseChrono = entryYears.every((y, i) => i === 0 || y <= entryYears[i - 1])
   let consistencyScore = 0
   let consistencyMessage = ''
+  const PERIOD_LABEL = lang === 'en' ? PERIOD_FAMILY_LABEL_EN : PERIOD_FAMILY_LABEL
   if (periodExprs.length === 0) {
     consistencyScore = 0
     consistencyMessage =
-      'Belum ada periode yang terbaca formatnya (rentang tahun, bulan–tahun, atau angka), jadi konsistensi format belum bisa dinilai. Tulis periode tiap entri dengan satu format yang sama.'
+      lang === 'en'
+        ? 'No period with a readable format (year range, month–year, or numeric) was found yet, so format consistency cannot be assessed. Write each entry\'s period in one consistent format.'
+        : 'Belum ada periode yang terbaca formatnya (rentang tahun, bulan–tahun, atau angka), jadi konsistensi format belum bisa dinilai. Tulis periode tiap entri dengan satu format yang sama.'
   } else if (periodExprs.length === 1) {
     consistencyScore = 2
-    consistencyMessage = `Baru satu periode terbaca ("${periodExprs[0].raw}"), jadi konsistensi format dan urutan kronologis belum bisa dinilai penuh. Pastikan semua entri memakai format periode yang sama dan diurutkan dari yang terbaru.`
+    consistencyMessage =
+      lang === 'en'
+        ? `Only one period was found ("${periodExprs[0].raw}"), so format consistency and chronological order cannot be fully assessed yet. Make sure all entries use the same period format and are ordered from the most recent.`
+        : `Baru satu periode terbaca ("${periodExprs[0].raw}"), jadi konsistensi format dan urutan kronologis belum bisa dinilai penuh. Pastikan semua entri memakai format periode yang sama dan diurutkan dari yang terbaru.`
   } else {
     const familyScore = families.size === 1 ? 2 : 0
     const chronoScore = entryYears.length < 2 || isReverseChrono ? 1 : 0
@@ -2370,24 +2558,32 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
     const parts: string[] = []
     if (families.size === 1) {
       parts.push(
-        `Format periode konsisten memakai gaya ${PERIOD_FAMILY_LABEL[periodExprs[0].family]} di seluruh CV.`,
+        lang === 'en'
+          ? `The period format is consistent, using the ${PERIOD_LABEL[periodExprs[0].family]} style throughout the CV.`
+          : `Format periode konsisten memakai gaya ${PERIOD_LABEL[periodExprs[0].family]} di seluruh CV.`,
       )
     } else {
       const examples = [...families]
         .map((f) => {
           const ex = periodExprs.find((e) => e.family === f)
-          return `${PERIOD_FAMILY_LABEL[f]} ("${ex?.raw}")`
+          return `${PERIOD_LABEL[f]} ("${ex?.raw}")`
         })
-        .join(' dan ')
+        .join(lang === 'en' ? ' and ' : ' dan ')
       parts.push(
-        `Format penulisan periode campur aduk: ditemukan gaya ${examples}. Pilih SATU format untuk semua entri agar CV terlihat rapi dan profesional.`,
+        lang === 'en'
+          ? `Period formats are mixed: found the ${examples} styles. Pick ONE format for all entries so your CV looks tidy and professional.`
+          : `Format penulisan periode campur aduk: ditemukan gaya ${examples}. Pilih SATU format untuk semua entri agar CV terlihat rapi dan profesional.`,
       )
     }
     if (entryYears.length >= 2) {
       parts.push(
         isReverseChrono
-          ? 'Urutan entri pengalaman sudah dari yang terbaru.'
-          : `Urutan entri pengalaman belum dari yang terbaru (tahun mulai yang terbaca: ${entryYears.join(', ')}). Rekruter membaca dari pengalaman terakhir — urutkan entri dari tahun mulai paling baru.`,
+          ? lang === 'en'
+            ? 'Experience entries are already ordered from the most recent.'
+            : 'Urutan entri pengalaman sudah dari yang terbaru.'
+          : lang === 'en'
+            ? `Experience entries are not yet ordered from the most recent (start years found: ${entryYears.join(', ')}). Recruiters read from your latest experience — order entries by the newest start year first.`
+            : `Urutan entri pengalaman belum dari yang terbaru (tahun mulai yang terbaca: ${entryYears.join(', ')}). Rekruter membaca dari pengalaman terakhir — urutkan entri dari tahun mulai paling baru.`,
       )
     }
     consistencyMessage = parts.join(' ')
@@ -2427,73 +2623,94 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   const neatnessParts: string[] = []
   if (typos.length > 0) {
     neatnessParts.push(
-      `Ditemukan kata yang sering salah eja: ${typos
-        .slice(0, 4)
-        .map((t) => `"${t.wrong}" (baku: "${t.right}")`)
-        .join(', ')}. Periksa kembali ejaan sebelum mengirim CV.`,
+      lang === 'en'
+        ? `Found commonly misspelled words: ${typos
+            .slice(0, 4)
+            .map((t) => `"${t.wrong}" (correct: "${t.right}")`)
+            .join(', ')}. Check your spelling again before sending your CV.`
+        : `Ditemukan kata yang sering salah eja: ${typos
+            .slice(0, 4)
+            .map((t) => `"${t.wrong}" (baku: "${t.right}")`)
+            .join(', ')}. Periksa kembali ejaan sebelum mengirim CV.`,
     )
   }
   if (sayaOverused) {
     neatnessParts.push(
-      `Kata "saya" muncul ${sayaCount} kali di bagian pengalaman. Poin pengalaman yang profesional biasanya langsung diawali kata kerja tanpa kata ganti orang pertama.`,
+      lang === 'en'
+        ? `The word "saya" appears ${sayaCount} times in the experience section. Professional experience bullet points usually start directly with a verb, without a first-person pronoun.`
+        : `Kata "saya" muncul ${sayaCount} kali di bagian pengalaman. Poin pengalaman yang profesional biasanya langsung diawali kata kerja tanpa kata ganti orang pertama.`,
     )
   }
   if (iOverused) {
     neatnessParts.push(
-      `Kata ganti orang pertama "I" muncul ${iCount} kali di bagian pengalaman. Poin pengalaman yang profesional biasanya langsung diawali kata kerja tanpa kata ganti orang pertama.`,
+      lang === 'en'
+        ? `The first-person pronoun "I" appears ${iCount} times in the experience section. Professional experience bullet points usually start directly with a verb, without a first-person pronoun.`
+        : `Kata ganti orang pertama "I" muncul ${iCount} kali di bagian pengalaman. Poin pengalaman yang profesional biasanya langsung diawali kata kerja tanpa kata ganti orang pertama.`,
     )
   }
   const neatnessMessage =
     totalWords === 0
-      ? 'Belum ada teks yang bisa dinilai kerapiannya. Tulis isi CV dulu — kerapian bahasa dinilai dari teks tersebut.'
+      ? lang === 'en'
+        ? 'There is no text yet whose tidiness can be assessed. Write your CV content first — language tidiness is assessed from that text.'
+        : 'Belum ada teks yang bisa dinilai kerapiannya. Tulis isi CV dulu — kerapian bahasa dinilai dari teks tersebut.'
       : !hasAnySection
         ? [
-            'CV ini tidak memiliki satu pun bagian terstruktur, sehingga pemakaian kata ganti "saya" di bagian pengalaman tidak bisa dinilai dan poin kerapian penuh tidak diberikan untuk teks tanpa bagian. Susun CV ke dalam bagian Ringkasan, Pengalaman, Pendidikan, dan Keahlian agar kerapiannya bisa dinilai sepenuhnya.',
+            lang === 'en'
+              ? 'This CV has no structured sections at all, so the use of the pronoun "saya" in an experience section cannot be assessed and full tidiness points are not given for text without sections. Organise your CV into Summary, Experience, Education, and Skills sections so its tidiness can be fully assessed.'
+              : 'CV ini tidak memiliki satu pun bagian terstruktur, sehingga pemakaian kata ganti "saya" di bagian pengalaman tidak bisa dinilai dan poin kerapian penuh tidak diberikan untuk teks tanpa bagian. Susun CV ke dalam bagian Ringkasan, Pengalaman, Pendidikan, dan Keahlian agar kerapiannya bisa dinilai sepenuhnya.',
             ...neatnessParts,
           ].join(' ')
         : neatnessParts.length > 0
           ? neatnessParts.join(' ')
-          : 'Tidak ditemukan kata yang sering salah eja dari daftar periksa dasar, dan pemakaian kata ganti "saya" di bagian pengalaman masih wajar. (Pemeriksaan ini hanya menandai contoh dari daftar kecil kata yang sering salah eja — bukan pemeriksaan tata bahasa menyeluruh.)'
+          : lang === 'en'
+            ? 'No commonly misspelled words from the basic checklist were found, and the use of the pronoun "saya" in the experience section is still reasonable. (This check only flags examples from a small list of commonly misspelled words — it is not a full grammar check.)'
+            : 'Tidak ditemukan kata yang sering salah eja dari daftar periksa dasar, dan pemakaian kata ganti "saya" di bagian pengalaman masih wajar. (Pemeriksaan ini hanya menandai contoh dari daftar kecil kata yang sering salah eja — bukan pemeriksaan tata bahasa menyeluruh.)'
 
   const formatChecks = [
     makeCheck(
-      'panjang', 'Format & ATS', 'Panjang CV', lengthScore, 7,
+      'panjang', ASPECT.format, lang === 'en' ? 'CV length' : 'Panjang CV', lengthScore, 7,
       totalWords > 0 && !hasAnySection
-        ? `CV berisi ${totalWords} kata, tetapi tidak memiliki satu pun bagian terstruktur (Ringkasan, Pengalaman, Pendidikan, Keahlian), sehingga panjangnya belum dinilai sebagai dokumen CV. Susun isi CV ke dalam bagian-bagian itu terlebih dahulu — rentang ideal CV terstruktur adalah 220–900 kata (sekitar 1–2 halaman).`
-        : `CV berisi ${totalWords} kata. Rentang ideal 220–900 kata (sekitar 1–2 halaman).`,
+        ? lang === 'en'
+          ? `Your CV is ${totalWords} words, but it has no structured sections at all (Summary, Experience, Education, Skills), so its length is not yet assessed as a CV document. Organise your CV into those sections first — the ideal range for a structured CV is 220–900 words (about 1–2 pages).`
+          : `CV berisi ${totalWords} kata, tetapi tidak memiliki satu pun bagian terstruktur (Ringkasan, Pengalaman, Pendidikan, Keahlian), sehingga panjangnya belum dinilai sebagai dokumen CV. Susun isi CV ke dalam bagian-bagian itu terlebih dahulu — rentang ideal CV terstruktur adalah 220–900 kata (sekitar 1–2 halaman).`
+        : lang === 'en'
+          ? `Your CV is ${totalWords} words. The ideal range is 220–900 words (about 1–2 pages).`
+          : `CV berisi ${totalWords} kata. Rentang ideal 220–900 kata (sekitar 1–2 halaman).`,
     ),
     makeCheck(
-      'periode', 'Format & ATS', 'Tahun / periode kerja', yearsScore, 3,
+      'periode', ASPECT.format, lang === 'en' ? 'Years / work periods' : 'Tahun / periode kerja', yearsScore, 3,
       hasYears
-        ? 'Tahun/periode tercantum pada riwayatmu.'
-        : 'Tidak ada tahun/periode yang tercantum. Tulis periode kerja dan pendidikan, misalnya 2021–2024.',
+        ? lang === 'en' ? 'Years/periods are included in your history.' : 'Tahun/periode tercantum pada riwayatmu.'
+        : lang === 'en' ? 'No years/periods are included. Write your work and education periods, for example 2021–2024.' : 'Tidak ada tahun/periode yang tercantum. Tulis periode kerja dan pendidikan, misalnya 2021–2024.',
     ),
     makeCheck(
-      'nama-file', 'Format & ATS', 'Nama file CV', fileNameScore, 2,
+      'nama-file', ASPECT.format, lang === 'en' ? 'CV file name' : 'Nama file CV', fileNameScore, 2,
       fileNameAssessment.message,
     ),
     makeCheck(
-      'bullet', 'Format & ATS', 'Struktur bullet', bulletScore, 3,
-      `Ditemukan ${bulletCount} baris bullet. ${bulletCount >= 6 ? 'Struktur poin-poinnya sudah rapi.' : 'Bullet artinya uraian tugas dan pencapaian ditulis sebagai poin-poin terpisah — satu poin untuk satu tugas/pencapaian, satu poin per baris, diawali tanda • atau - — bukan ditulis menyatu dalam satu paragraf panjang. Susun pencapaianmu dalam poin-poin seperti itu agar mudah dipindai rekruter dan sistem ATS.'}`,
+      'bullet', ASPECT.format, lang === 'en' ? 'Bullet structure' : 'Struktur bullet', bulletScore, 3,
+      lang === 'en'
+        ? `Found ${bulletCount} bullet lines. ${bulletCount >= 6 ? 'The bullet structure is already tidy.' : 'Bullets mean your tasks and achievements are written as separate points — one point per task/achievement, one point per line, starting with • or - — not merged into one long paragraph. Arrange your achievements in points like that so recruiters and ATS systems can scan them easily.'}`
+        : `Ditemukan ${bulletCount} baris bullet. ${bulletCount >= 6 ? 'Struktur poin-poinnya sudah rapi.' : 'Bullet artinya uraian tugas dan pencapaian ditulis sebagai poin-poin terpisah — satu poin untuk satu tugas/pencapaian, satu poin per baris, diawali tanda • atau - — bukan ditulis menyatu dalam satu paragraf panjang. Susun pencapaianmu dalam poin-poin seperti itu agar mudah dipindai rekruter dan sistem ATS.'}`,
     ),
     makeCheck(
-      'konsistensi-format', 'Format & ATS', 'Konsistensi format & urutan', consistencyScore, 3,
+      'konsistensi-format', ASPECT.format, lang === 'en' ? 'Format consistency & ordering' : 'Konsistensi format & urutan', consistencyScore, 3,
       consistencyMessage,
     ),
     makeCheck(
-      'kerapian-bahasa', 'Format & ATS', 'Kerapian bahasa', neatnessScore, 2,
+      'kerapian-bahasa', ASPECT.format, lang === 'en' ? 'Language tidiness' : 'Kerapian bahasa', neatnessScore, 2,
       neatnessMessage,
     ),
   ]
 
   // ===== Agregasi =====
   const aspectDefs: { name: string; max: number; checks: CheckItem[] }[] = [
-    { name: 'Kontak', max: 20, checks: kontakChecks },
-    { name: 'Ringkasan', max: 10, checks: ringkasanChecks },
-    { name: 'Pengalaman', max: 28, checks: pengalamanChecks },
-    { name: 'Pendidikan', max: 12, checks: pendidikanChecks },
-    { name: 'Keahlian', max: 10, checks: keahlianChecks },
-    { name: 'Format & ATS', max: 20, checks: formatChecks },
+    { name: ASPECT.contact, max: 20, checks: kontakChecks },
+    { name: ASPECT.summary, max: 10, checks: ringkasanChecks },
+    { name: ASPECT.experience, max: 28, checks: pengalamanChecks },
+    { name: ASPECT.education, max: 12, checks: pendidikanChecks },
+    { name: ASPECT.skills, max: 10, checks: keahlianChecks },
+    { name: ASPECT.format, max: 20, checks: formatChecks },
   ]
 
   const baseAspects: AspectResult[] = aspectDefs.map((a) => ({
@@ -2521,29 +2738,39 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
     aspects = [
       ...aspects,
       {
-        name: 'Kecocokan dengan Lowongan',
+        name: ASPECT.jobMatch,
         max: 20,
         score: jobScore,
         checks: [
           makeCheck(
-            'kecocokan-lowongan', 'Kecocokan dengan Lowongan', 'Kecocokan kata kunci lowongan',
+            'kecocokan-lowongan', ASPECT.jobMatch, lang === 'en' ? 'Job keyword match' : 'Kecocokan kata kunci lowongan',
             jobScore, 20,
-            `Ditemukan ${keywords.found.length} dari ${keywords.total} kata kunci teratas lowongan di CV-mu (${keywords.percent}%). Skor keseluruhanmu kini mencakup kecocokan dengan lowongan ini — aspek ini khusus untuk lowongan yang kamu tempel dan berubah bila lowongannya berganti.${
-              keywords.missing.length > 0
-                ? ` Kata kunci penting yang belum ada: ${missingPreview}${keywords.missing.length > 5 ? ', …' : ''}. Tambahkan hanya kata kunci yang benar-benar sesuai pengalamanmu.`
-                : ' Semua kata kunci teratas lowongan sudah ada di CV-mu.'
-            }${
-              // Peringatan informatif saja (keputusan pengguna
-              // 2026-11-24): skor kecocokan TIDAK diubah — ambang
-              // minimum kata kunci adalah aturan kuota yang ditolak
-              // pengguna. Teks lowongan yang sangat singkat hanya
-              // menghasilkan sedikit kata kunci, jadi persen
-              // kecocokannya mudah berayun jauh; pengguna berhak tahu
-              // bahwa angka ini dihitung dari yang terbaca saja.
-              keywords.total <= 2
-                ? ` Peringatan: teks lowongan yang kamu tempel sangat singkat — hanya ${keywords.total} kata kunci yang terbaca — sehingga kecocokan di atas dihitung hanya dari yang terbaca dan bisa jauh dari gambaran sebenarnya. Tempel deskripsi lowongan yang lebih lengkap agar penilaian kecocokannya lebih akurat.`
-                : ''
-            }`,
+            lang === 'en'
+              ? `Found ${keywords.found.length} of the top ${keywords.total} job keywords in your CV (${keywords.percent}%). Your overall score now includes your match with this vacancy — this aspect is specific to the vacancy you pasted and changes if the vacancy changes.${
+                  keywords.missing.length > 0
+                    ? ` Important keywords not yet present: ${missingPreview}${keywords.missing.length > 5 ? ', …' : ''}. Only add keywords that genuinely match your experience.`
+                    : ' All of the top job keywords are already in your CV.'
+                }${
+                  keywords.total <= 2
+                    ? ` Warning: the vacancy text you pasted is very short — only ${keywords.total} keywords were found — so the match above is calculated only from what was found and may be far from the full picture. Paste a more complete job description for a more accurate match assessment.`
+                    : ''
+                }`
+              : `Ditemukan ${keywords.found.length} dari ${keywords.total} kata kunci teratas lowongan di CV-mu (${keywords.percent}%). Skor keseluruhanmu kini mencakup kecocokan dengan lowongan ini — aspek ini khusus untuk lowongan yang kamu tempel dan berubah bila lowongannya berganti.${
+                  keywords.missing.length > 0
+                    ? ` Kata kunci penting yang belum ada: ${missingPreview}${keywords.missing.length > 5 ? ', …' : ''}. Tambahkan hanya kata kunci yang benar-benar sesuai pengalamanmu.`
+                    : ' Semua kata kunci teratas lowongan sudah ada di CV-mu.'
+                }${
+                  // Peringatan informatif saja (keputusan pengguna
+                  // 2026-11-24): skor kecocokan TIDAK diubah — ambang
+                  // minimum kata kunci adalah aturan kuota yang ditolak
+                  // pengguna. Teks lowongan yang sangat singkat hanya
+                  // menghasilkan sedikit kata kunci, jadi persen
+                  // kecocokannya mudah berayun jauh; pengguna berhak tahu
+                  // bahwa angka ini dihitung dari yang terbaca saja.
+                  keywords.total <= 2
+                    ? ` Peringatan: teks lowongan yang kamu tempel sangat singkat — hanya ${keywords.total} kata kunci yang terbaca — sehingga kecocokan di atas dihitung hanya dari yang terbaca dan bisa jauh dari gambaran sebenarnya. Tempel deskripsi lowongan yang lebih lengkap agar penilaian kecocokannya lebih akurat.`
+                    : ''
+                }`,
           ),
         ],
       },
@@ -2554,12 +2781,12 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   const total = aspects.reduce((sum, a) => sum + a.score, 0)
   const label =
     total >= 85
-      ? 'Sangat Siap Dilamar'
+      ? lang === 'en' ? 'Ready to Apply' : 'Sangat Siap Dilamar'
       : total >= 70
-        ? 'Sudah Bagus'
+        ? lang === 'en' ? 'Looking Good' : 'Sudah Bagus'
         : total >= 50
-          ? 'Perlu Perbaikan'
-          : 'Perlu Dirombak Dulu'
+          ? lang === 'en' ? 'Needs Improvement' : 'Perlu Perbaikan'
+          : lang === 'en' ? 'Needs a Major Rework' : 'Perlu Dirombak Dulu'
 
   const strengths = allChecks.filter((c) => c.status === 'baik')
   const priorities = selectPriorities(allChecks, aspects)
@@ -2569,7 +2796,10 @@ export function analyzeCv(rawText: string, options: AnalyzeOptions = {}): Analys
   if (role) {
     const firstWord = role.toLowerCase().match(/[a-z]+/)?.[0] ?? ''
     if (firstWord && !lower.includes(firstWord)) {
-      roleWarning = `Posisi target "${role}" tidak disebut di dalam CV. Sebutkan posisi atau bidang ini di ringkasan atau pengalamanmu agar CV terlihat relevan.`
+      roleWarning =
+        lang === 'en'
+          ? `The target role "${role}" is not mentioned in your CV. Mention this role or field in your summary or experience so your CV looks relevant.`
+          : `Posisi target "${role}" tidak disebut di dalam CV. Sebutkan posisi atau bidang ini di ringkasan atau pengalamanmu agar CV terlihat relevan.`
     }
   }
 

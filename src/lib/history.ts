@@ -6,6 +6,7 @@
 
 import type { AnalysisResult } from './analyze'
 import { getRoleSkills } from './examples'
+import type { Lang } from './lang'
 
 export interface AspectScore {
   name: string
@@ -157,14 +158,26 @@ export interface DeltaInfo {
   word: string // "Naik" | "Turun" | "Tetap"
 }
 
-export function scoreDelta(previousTotal: number, currentTotal: number): DeltaInfo {
+export function scoreDelta(previousTotal: number, currentTotal: number, lang: Lang = 'id'): DeltaInfo {
   const delta = currentTotal - previousTotal
   const direction: DeltaDirection = delta > 0 ? 'naik' : delta < 0 ? 'turun' : 'tetap'
+  const word =
+    lang === 'en'
+      ? direction === 'naik'
+        ? 'Up'
+        : direction === 'turun'
+          ? 'Down'
+          : 'Unchanged'
+      : direction === 'naik'
+        ? 'Naik'
+        : direction === 'turun'
+          ? 'Turun'
+          : 'Tetap'
   return {
     delta,
     direction,
     text: delta > 0 ? `+${delta}` : `${delta}`,
-    word: direction === 'naik' ? 'Naik' : direction === 'turun' ? 'Turun' : 'Tetap',
+    word,
   }
 }
 
@@ -174,13 +187,40 @@ export interface AspectDelta extends AspectScore {
   direction: DeltaDirection | null
 }
 
+// Nama aspek kanonik dwibahasa: entri riwayat menyimpan nama aspek dalam
+// bahasa yang aktif saat analisis dibuat, jadi entri mode 'id' dan mode
+// 'en' harus disamakan lewat nama kanonik yang sama agar tetap bisa
+// dibandingkan. Pasangan id↔en: Kontak↔Contact, Ringkasan↔Summary,
+// Pengalaman↔Experience, Pendidikan↔Education, Keahlian↔Skills,
+// 'Format & ATS' sama di kedua bahasa, Kecocokan dengan Lowongan↔Job Match.
+// Nama di luar peta ini dipakai apa adanya (perilaku lama).
+const ASPECT_CANONICAL_NAME: Record<string, string> = {
+  Kontak: 'Kontak',
+  Contact: 'Kontak',
+  Ringkasan: 'Ringkasan',
+  Summary: 'Ringkasan',
+  Pengalaman: 'Pengalaman',
+  Experience: 'Pengalaman',
+  Pendidikan: 'Pendidikan',
+  Education: 'Pendidikan',
+  Keahlian: 'Keahlian',
+  Skills: 'Keahlian',
+  'Format & ATS': 'Format & ATS',
+  'Kecocokan dengan Lowongan': 'Kecocokan dengan Lowongan',
+  'Job Match': 'Kecocokan dengan Lowongan',
+}
+
+function canonicalAspectName(name: string): string {
+  return ASPECT_CANONICAL_NAME[name] ?? name
+}
+
 export function aspectDeltas(
   previous: ScoreHistoryEntry,
   current: ScoreHistoryEntry,
 ): AspectDelta[] {
-  const prevByName = new Map(previous.aspects.map((a) => [a.name, a.score]))
+  const prevByName = new Map(previous.aspects.map((a) => [canonicalAspectName(a.name), a.score]))
   return current.aspects.map((a) => {
-    const prev = prevByName.get(a.name)
+    const prev = prevByName.get(canonicalAspectName(a.name))
     if (prev === undefined) {
       return { ...a, previous: null, delta: null, direction: null }
     }
@@ -203,8 +243,8 @@ export function compositionDiffers(
   a: ScoreHistoryEntry,
   b: ScoreHistoryEntry,
 ): boolean {
-  const ma = new Map(a.aspects.map((x) => [x.name, x.max]))
-  const mb = new Map(b.aspects.map((x) => [x.name, x.max]))
+  const ma = new Map(a.aspects.map((x) => [canonicalAspectName(x.name), x.max]))
+  const mb = new Map(b.aspects.map((x) => [canonicalAspectName(x.name), x.max]))
   if (ma.size !== mb.size) return true
   for (const [name, max] of ma) {
     if (mb.get(name) !== max) return true
@@ -219,10 +259,10 @@ export function compositionDiffers(
 // Daftar Skill (kamus peran + perluasan glosarium), agar entri lama dan
 // baru tampil konsisten: "fullstack" → "Full Stack Developer",
 // "data analyst" → "Data Analyst", "QC" → "Quality Control".
-export function historyRoleLabel(rawRole: string): string {
+export function historyRoleLabel(rawRole: string, lang: Lang = 'id'): string {
   const raw = rawRole.trim()
   if (!raw) return ''
-  const resolved = getRoleSkills(raw)
+  const resolved = getRoleSkills(raw, lang)
   if (!resolved.posisiKustom) return resolved.label
   // Posisi tak dikenal: label resolusi adalah teks pengguna sendiri
   // (atau perluasan glosariumnya) — tampilkan apa adanya. Satu-satunya
@@ -244,10 +284,10 @@ export function historyRolesMatch(roleA: string, roleB: string): boolean {
   return historyRoleLabel(roleA).toLowerCase() === historyRoleLabel(roleB).toLowerCase()
 }
 
-export function formatHistoryDate(iso: string): string {
+export function formatHistoryDate(iso: string, lang: Lang = 'id'): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return new Intl.DateTimeFormat('id-ID', {
+  return new Intl.DateTimeFormat(lang === 'en' ? 'en-US' : 'id-ID', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',

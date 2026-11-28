@@ -9,6 +9,8 @@
 
 // ---------- Contoh sebelum → sesudah per id pemeriksaan ----------
 
+import type { Lang } from './lang'
+
 export interface CheckExample {
   sebelum: string
   sesudah: string
@@ -229,7 +231,225 @@ export const CHECK_EXAMPLES: Record<string, CheckExample> = {
   },
 }
 
-export function getCheckExample(checkId: string): CheckExample | null {
+// Terjemahan bahasa Inggris PENUH dari CHECK_EXAMPLES: fakta, angka, dan
+// placeholder [kurung siku] dipertahankan persis; nama contoh (Andi, Budi,
+// Toko Berkah, PT Logistik Jaya, SMK Negeri 1 Jakarta) tidak diubah.
+export const CHECK_EXAMPLES_EN: Record<string, CheckExample> = {
+  'hasil-terukur': {
+    sebelum: 'Responsible for sales at the store and serving customers every day.',
+    sesudah:
+      'Increased store sales by [30%] in [6 months] by rearranging product displays and serving [50+] customers per day.',
+    catatan:
+      'The numbers in [square brackets] are just example patterns — replace them with your real numbers, or remove them if you do not have the data. Never invent numbers.',
+  },
+  'kata-kerja-aksi': {
+    sebelum: 'In charge of data entry and preparing reports for the team.',
+    sesudah: 'Managed daily data entry and prepared weekly reports for a team of [10] people.',
+    catatan:
+      'Start every bullet with an action verb: increased, managed, built, analyzed, led, designed, automated, achieved, reduced.',
+  },
+  bullet: {
+    sebelum:
+      'My duties included data entry, preparing monthly reports, archiving documents, and answering phone calls from customers.',
+    sesudah:
+      '• Entered daily transaction data into Microsoft Excel\n• Prepared monthly reports for the manager\n• Archived [200+] documents per month\n• Answered phone calls and customer questions',
+    catatan:
+      'One bullet = one task/achievement. A bullet structure makes your CV easy for recruiters to scan and keeps it readable for ATS systems.',
+  },
+  ringkasan: {
+    sebelum:
+      'I am a hardworking, honest person who can work under pressure. I am looking for new experience.',
+    sesudah:
+      'Administrative Staff member with [2 years] of experience in office administration. Skilled in using Microsoft Excel and Google Workspace for data entry and report preparation. Currently seeking an Administration position at a well-structured company.',
+    catatan:
+      'A strong summary states: profession + years of experience + 2–3 main skills + the position you are seeking. Clichés without evidence ("hardworking, honest") add no value.',
+  },
+  email: {
+    sebelum: 'Contact: andi.ganteng99 (email address to follow)',
+    sesudah: 'Email: andi.pratama@gmail.com',
+    catatan:
+      'Use a professional, active email address — ideally based on your real name — because recruiter replies will go to this address.',
+  },
+  hp: {
+    sebelum: 'Phone: (021) 555-1234 (office phone)',
+    sesudah: 'Mobile/WhatsApp: +62 812-3456-7890',
+    catatan:
+      'List a personal mobile number that is active and reachable via WhatsApp, not an office number. Both the 08xx and +62 formats are readable.',
+  },
+  linkedin: {
+    sebelum: '(no LinkedIn link on the CV yet)',
+    sesudah: 'LinkedIn: linkedin.com/in/andi-pratama',
+    catatan:
+      'Keep your LinkedIn content consistent with your CV (job title, company, period) so recruiters can easily verify your profile.',
+  },
+  portofolio: {
+    sebelum: 'Portfolio: available, can be asked about during the interview.',
+    sesudah:
+      'Portfolio: github.com/andipratama (for design: behance.net/andipratama; for data: kaggle.com/andipratama)',
+    catatan:
+      'The word "portfolio" alone is not read as a link — write the full address. For non-technical roles, a link containing samples of your work also helps.',
+  },
+  keahlian: {
+    sebelum: 'Skills: computers, internet.',
+    sesudah:
+      'Skills: Microsoft Excel (PivotTable, VLOOKUP), Microsoft Word, Google Workspace, Canva, Data Entry, Digital Filing, Communication, Teamwork',
+    catatan:
+      'List at least 8 specific skills and separate them with commas. Tool names are far stronger than general words like "computers".',
+  },
+  panjang: {
+    sebelum: 'The CV only contains a name, one introductory sentence, and school history (under 60 words).',
+    sesudah:
+      'A 1–2 page CV (220–900 words): a 3–4 sentence summary, experience written as achievement bullets, education, and a skills list.',
+    catatan:
+      'Too short looks empty; too long is tiring. If yours is still short, add content from internships, organizations, projects, or certifications.',
+  },
+  'kedalaman-entri': {
+    sebelum:
+      'Experience\nCashier — Toko Berkah (2022–2023)\nWarehouse Staff — PT Logistik Jaya (2021–2022)',
+    sesudah:
+      'Experience\nCashier — Toko Berkah (2022–2023)\n• Served [100+] transactions per day (cash and QRIS)\n• Recorded daily cash discrepancies with zero discrepancy for [6 months]\nWarehouse Staff — PT Logistik Jaya (2021–2022)\n• Recorded [500+] stock items moving in and out per week\n• Rearranged warehouse shelving so item retrieval time dropped by [20%]',
+    catatan:
+      'Every experience entry must be complete: job title + company + period + a description of the work. An entry that only contains a title looks like an empty history — recruiters cannot judge what you actually did.',
+  },
+  'frasa-lemah': {
+    sebelum:
+      'I am a hard worker, able to work under pressure, able to work in a team or individually, and responsible for the cleanliness of the store.',
+    sesudah:
+      'Kept the store area clean and tidy every day, passing the branch cleanliness audit with a score of [95]. Trained [2] new cashiers until they could work independently within [2 weeks].',
+    catatan:
+      'Cliché phrases ("hard worker", "responsible for", "willing to be placed anywhere") are claimed by almost every applicant, so they do not set you apart. Replace them with evidence: work results, numbers, or real examples.',
+  },
+  sertifikasi: {
+    sebelum: '(no certifications/training section on the CV)',
+    sesudah:
+      'Certifications & Training\n• Certificate in [certification name] — [issuing institution] ([year])\n• Training in [training topic] — [organizer] ([year])',
+    catatan:
+      'Only list certificates you genuinely hold and that are relevant to the position you are applying for. A dedicated section makes certifications easy for recruiters and ATS systems to find.',
+  },
+  bahasa: {
+    sebelum: '(foreign language skills are not mentioned at all on the CV)',
+    sesudah:
+      'Languages\n• English — fluent (spoken and written)\n• Mandarin — basic (everyday conversation)',
+    catatan:
+      'Write the languages you speak together with your proficiency level, honestly. If you have an official test score (e.g. TOEFL/IELTS), include it — that is verifiable evidence.',
+  },
+  'konsistensi-format': {
+    sebelum:
+      'Experience\nCashier — Toko Berkah (Jan 2021 - Dec 2022)\nWarehouse Staff — PT Logistik (2023–2024)',
+    sesudah:
+      'Experience\nWarehouse Staff — PT Logistik (2023–2024)\nCashier — Toko Berkah (2021–2022)',
+    catatan:
+      'Two things are checked: (1) a consistent period format — pick ONE style (e.g. always "2021–2024" or always "Jan 2021 – Dec 2022"), do not mix them; (2) entries ordered from the most recent, because recruiters read from your latest experience.',
+  },
+  'kerapian-bahasa': {
+    sebelum:
+      'I performed cashier activities every day. I changed the duty schedule and I checked stock in the warehouse.',
+    sesudah:
+      'Performed cashier duties every day, updated the duty schedule, and checked warehouse stock.',
+    catatan:
+      'Two habits are assessed: avoid starting experience bullets with "I …" over and over (go straight to the verb), and use correct spelling — aktifitas → aktivitas, merubah → mengubah, praktek → praktik, ijin → izin.',
+  },
+  'relevansi-ringkasan': {
+    sebelum:
+      'A fresh graduate who is looking for a job and wants to develop themselves at a good company.',
+    sesudah:
+      'Graduate of SMK Office Administration with internship experience in data entry and filing. Skilled in Microsoft Excel and Google Workspace. Seeking a Staff Administration position to contribute to the tidiness of company data and documents.',
+    catatan:
+      'Explicitly state the position/field you are aiming for in your summary (matching the target position you entered). A generic summary forces recruiters to guess what you are applying as.',
+  },
+  periode: {
+    sebelum: 'Experience: Cashier at Toko Berkah (no years given).',
+    sesudah: 'Cashier — Toko Berkah, Jakarta (Jan 2022 – Dec 2023)',
+    catatan:
+      'Write the start and end month/year for every job and education entry so the order of your journey is clear to recruiters.',
+  },
+  lokasi: {
+    sebelum: 'Contact: andi.pratama@gmail.com | 0812-3456-7890 (no city of residence)',
+    sesudah: 'Contact: andi.pratama@gmail.com | 0812-3456-7890 | Based in: Bandung',
+    catatan:
+      'Many recruiters filter candidates by place of residence before reading the CV content. Just write your current city in the contact line — there is no need for a full address.',
+  },
+  linimasa: {
+    sebelum:
+      'Experience\nCashier — Toko Berkah (2015–2016)\nWarehouse Staff — PT Logistik Jaya (2021–2022)\n(there is an unexplained gap in 2017–2020, and no role after 2022)',
+    sesudah:
+      'Experience\nWarehouse Staff — PT Logistik Jaya (2021–2022)\nCashier — Toko Berkah (2015–2016)\n2017–2020: Ran the family online store and took computer training',
+    catatan:
+      'A gap is not automatically bad — what makes recruiters hesitate is a gap WITHOUT an explanation. One line describing what filled it (study, a business, family, courses) closes that question. Also include your current role if it is still ongoing ("2023–Present").',
+  },
+  proyek: {
+    sebelum: '(no projects/internships section — the fresh graduate CV only contains education and skills)',
+    sesudah:
+      'Projects & Internships\n• Data entry internship at [place name] ([year]): entered [500+] customer records into Excel\n• School project: built a digital library archive system with Google Drive, used by [300] students',
+    catatan:
+      'For fresh graduates, projects, internships, work placements, and organizational experience described with tasks + results are your main evidence of experience. Write them like work experience entries: place, period, tasks, and results.',
+  },
+  'relevansi-pengalaman': {
+    sebelum:
+      'Experience (for applying to a Data Analyst position)\nCashier — Toko Berkah (2022–2023)\n• Handled payments and recorded daily cash',
+    sesudah:
+      'Experience (for applying to a Data Analyst position)\nCashier — Toko Berkah (2022–2023)\n• Compiled daily sales data into Excel and created weekly trend reports for the store owner\n• Analyzed best-selling products from transaction data to determine stock',
+    catatan:
+      'Recruiters assess whether your experience relates to the field you are targeting. Highlight tasks that use the target field\'s keywords (in this example: data, reports, analysis) — only ones you actually did.',
+  },
+  'kecocokan-lowongan': {
+    sebelum:
+      'Skills: Microsoft Excel, communication, teamwork. (The vacancy asks for: SQL, Python, dashboards, data visualization — none of them appear on the CV)',
+    sesudah:
+      'Skills: Microsoft Excel (PivotTable, VLOOKUP), basic SQL, Python for data processing, Power BI for dashboards and data visualization.',
+    catatan:
+      'Read the job description, find its main skill/task keywords, then mirror the SAME words in your CV — only for things you genuinely master. ATS systems and recruiters both look for those exact keywords; including keywords you do not master will be exposed during the interview.',
+  },
+  'pengalaman-heading': {
+    sebelum: '(work history written merged into a single paragraph without section headings)',
+    sesudah: 'Experience\nCashier — Toko Berkah (2022–2023)\n• Handled cash and QRIS payments…',
+    catatan:
+      'Standard section headings ("Experience", "Education", "Skills") help recruiters and ATS systems find the content of your CV.',
+  },
+  pendidikan: {
+    sebelum: '(education section empty / not written)',
+    sesudah: 'Education\nSMK Negeri 1 Jakarta — Office Administration major (2020–2023)',
+    catatan:
+      'State your highest level of education and the name of the institution, even if it is only high school/vocational school — recruiters still assess this section.',
+  },
+  ipk: {
+    sebelum: 'Education: Bachelor\'s in Management — Example University',
+    sesudah: 'Education: Bachelor\'s in Management — Example University (GPA 3.45/4.00)',
+    catatan:
+      'Include your GPA if it is 3.00 or above. If it is below that, skip it and highlight your experience and skills instead.',
+  },
+  'email-profesional': {
+    sebelum: 'Email: budi.cakepz123@gmail.com',
+    sesudah: 'Email: budi.santoso@gmail.com',
+    catatan:
+      'Your email address is the first impression before your CV is even opened. Create a dedicated job-application address from your real name (your.name@…, yourname@…); a few numbers such as a birth year are still reasonable, but avoid nicknames/slang and long strings of numbers. Do not forget to use this new address on all your applications.',
+  },
+  'kestabilan-karier': {
+    sebelum:
+      'Experience\nCashier — Store A (2023)\nStore Staff — Store B (2023)\nAdmin — PT C (2024)\n(3 formal roles ended in the same year they started, with no explanation)',
+    sesudah:
+      'Experience\nCashier — Store A (contract, Jan–Jun 2023)\nStore Staff — Store B (freelance, 2023)\nAdmin — PT C (2024–Present)\n(short roles are explicitly labeled by type — the dates are not changed)',
+    catatan:
+      'Never falsify or extend dates to look stable — that is exposed during verification. If your short role really was a contract/project/freelance role, state its type explicitly in the entry title; if two roles ran at the same time and one of them was part-time, write "part-time". What recruiters assess is the honesty of your history pattern.',
+  },
+  'konsistensi-klaim': {
+    sebelum:
+      'Summary: "Administrative staff with 8 years of experience in office work." (the written experience timeline: Admin — PT C (2022–2024) only, totaling about 2 years)',
+    sesudah:
+      'Summary: "Administrative staff with [2 years] of experience in office work." — OR add the older experience entries that are not yet written, with their periods, until your timeline truly adds up to the number you claim.',
+    catatan:
+      'Recruiters add up your dates. An "X years of experience" claim must be verifiable from the periods of your own experience entries: adjust the claim to the real total duration, or add older jobs that simply have not been written yet (with the correct periods). Replace the number in [square brackets] with the number from actually adding up your timeline.',
+  },
+  'nama-file': {
+    sebelum: 'File name sent: document(1).pdf — or: CV final bangettt.pdf',
+    sesudah: 'File name sent: CV_Budi_Santoso.pdf — or: BudiSantoso_DataAnalyst.pdf',
+    catatan:
+      'Recruiters and ATS systems see the file name before opening your CV, and dozens of files named "document(1)" are easily mixed up. A safe pattern: CV_Name_Position.pdf — without draft words like "final/revision/fix", and without downloaded or scanned file names.',
+  },
+}
+
+export function getCheckExample(checkId: string, lang: Lang = 'id'): CheckExample | null {
+  if (lang === 'en') return CHECK_EXAMPLES_EN[checkId] ?? null
   return CHECK_EXAMPLES[checkId] ?? null
 }
 
@@ -238,8 +458,16 @@ export function getCheckExample(checkId: string): CheckExample | null {
 // Template isi-titik-titik. Posisi target pengguna disisipkan otomatis bila
 // diisi; semua bagian lain tetap placeholder [kurung siku] untuk diganti
 // dengan data asli pengguna.
-export function buildSummaryTemplate(targetRole: string): string {
+export function buildSummaryTemplate(targetRole: string, lang: Lang = 'id'): string {
   const role = targetRole.trim()
+  if (lang === 'en') {
+    const roleText = role ? role : '[the position you are applying for]'
+    return (
+      `[Your profession or field of study] with [X years] of experience in [your main field]. ` +
+      `Skilled in [skill 1], [skill 2], and [skill 3], with a track record that includes [your strongest achievement — use numbers where you can]. ` +
+      `Currently seeking a ${roleText} position where I can contribute to [the kind of company or team you want to join].`
+    )
+  }
   const roleText = role ? role : '[posisi yang dilamar]'
   return (
     `[Profesi atau jurusanmu] dengan pengalaman [X tahun] di bidang [bidang utama]. ` +
@@ -463,6 +691,197 @@ export const ROLE_SKILLS: RoleSkills[] = [
   },
 ]
 
+// Label peran dalam bahasa Inggris, per id peran di ROLE_SKILLS
+// (ditambah 'umum' untuk FALLBACK_ROLE_SKILLS). Hanya dipakai untuk
+// label tampilan saat mode 'en' — data pencocokan tidak berubah.
+export const ROLE_LABEL_EN: Record<string, string> = {
+  'data-analyst': 'Data Analyst',
+  'administrasi': 'Administration / Office Admin',
+  'marketing': 'Marketing / Digital Marketing',
+  'customer-service': 'Customer Service',
+  'akuntansi': 'Accounting / Finance',
+  'it-support': 'IT Support',
+  'sales': 'Sales',
+  'desain-grafis': 'Graphic Design',
+  'kasir': 'Cashier',
+  'operator-produksi': 'Production Operator',
+  'guru': 'Teacher / Educator',
+  'perawat': 'Nurse / Healthcare Worker',
+  'teknisi': 'Technician / Mechanic',
+  'barista-fnb': 'Barista / F&B Service',
+  'security': 'Security Guard',
+  'driver': 'Driver',
+  'content-creator': 'Content Creator / Social Media',
+  'full-stack': 'Full Stack Developer',
+  'mobile-developer': 'Mobile Developer',
+  'developer': 'Software Developer / Programmer',
+  'umum': 'General / Fresh Graduate',
+}
+
+// Padanan bahasa Inggris untuk SETIAP string skill yang muncul di
+// ROLE_SKILLS dan FALLBACK_ROLE_SKILLS. Nama alat/proper noun yang
+// sudah berbahasa Inggris (SQL, Canva, Figma, dst.) dipetakan ke
+// dirinya sendiri agar kamusnya exhaustif. Ini HANYA nama tampilan:
+// checkSkills tetap mencocokkan string skill aslinya ke teks CV.
+export const SKILL_DISPLAY_EN: Record<string, string> = {
+  '5S': '5S',
+  'Accurate': 'Accurate',
+  'Administrasi Perkantoran': 'Office Administration',
+  'Adobe Illustrator': 'Adobe Illustrator',
+  'Adobe Photoshop': 'Adobe Photoshop',
+  'Analisis Data': 'Data Analysis',
+  'Analisis Insight': 'Insight Analysis',
+  'Android Studio': 'Android Studio',
+  'Asuhan Keperawatan': 'Nursing Care',
+  'Backup Data': 'Data Backup',
+  'Bahasa Inggris': 'English',
+  'Bela Diri Dasar': 'Basic Self-Defense',
+  'Branding': 'Branding',
+  'CRM': 'CRM',
+  'Canva': 'Canva',
+  'Content Planning': 'Content Planning',
+  'Copywriting': 'Copywriting',
+  'CorelDRAW': 'CorelDRAW',
+  'Defensive Driving': 'Defensive Driving',
+  'Dokumen Pengiriman': 'Shipping Documents',
+  'Editing Video': 'Video Editing',
+  'Email Marketing': 'Email Marketing',
+  'Empati & Kesabaran': 'Empathy & Patience',
+  'Faktur': 'Invoicing',
+  'Figma': 'Figma',
+  'Firebase': 'Firebase',
+  'Flutter & Dart': 'Flutter & Dart',
+  'Follow-up': 'Follow-up',
+  'Food Safety & Hygiene': 'Food Safety & Hygiene',
+  'Fotografi': 'Photography',
+  'Git & GitHub': 'Git & GitHub',
+  'Google Ads': 'Google Ads',
+  'Google Classroom': 'Google Classroom',
+  'Google Maps & Navigasi': 'Google Maps & Navigation',
+  'Google Sheets': 'Google Sheets',
+  'Google Workspace': 'Google Workspace',
+  'HTML & CSS': 'HTML & CSS',
+  'Hardware PC': 'Hardware PC',
+  'Helpdesk': 'Helpdesk',
+  'Input Data': 'Data Entry',
+  'Instagram Reels': 'Instagram Reels',
+  'Instalasi Windows': 'Windows Installation',
+  'Internet': 'Internet',
+  'Jaringan LAN': 'LAN Networking',
+  'JavaScript': 'JavaScript',
+  'Jurnal Umum': 'General Journal',
+  'K3 (Keselamatan Kerja)': 'Occupational Health & Safety',
+  'Kas Kecil': 'Petty Cash',
+  'Kedisiplinan': 'Discipline',
+  'Kelistrikan': 'Electrical Systems',
+  'Kerja Shift': 'Shift Work',
+  'Kerja Tim': 'Teamwork',
+  'Keselamatan Berkendara': 'Safe Driving',
+  'Ketelitian': 'Attention to Detail',
+  'Ketepatan Waktu': 'Punctuality',
+  'Komunikasi': 'Communication',
+  'Komunikasi Tertulis': 'Written Communication',
+  'Komunikasi Verbal': 'Verbal Communication',
+  'Komunikasi dengan Orang Tua': 'Communication with Parents',
+  'Kondisi Fisik Prima': 'Excellent Physical Condition',
+  'Korespondensi': 'Business Correspondence',
+  'Kotlin': 'Kotlin',
+  'Kurikulum Merdeka': 'Merdeka Curriculum',
+  'Laporan Kejadian': 'Incident Reports',
+  'Laporan Keuangan': 'Financial Reporting',
+  'Laporan Penjualan Harian': 'Daily Sales Reports',
+  'Laporan Perawatan': 'Maintenance Reports',
+  'Latte Art': 'Latte Art',
+  'Layout': 'Layout',
+  'Linux': 'Linux',
+  'Live Chat': 'Live Chat',
+  'Looker Studio': 'Looker Studio',
+  'MYOB': 'MYOB',
+  'Manajemen Jadwal': 'Schedule Management',
+  'Manajemen Kelas': 'Classroom Management',
+  'Manajemen Waktu': 'Time Management',
+  'Media Pembelajaran Digital': 'Digital Learning Media',
+  'Media Sosial': 'Social Media',
+  'Membaca Gambar Teknik': 'Reading Technical Drawings',
+  'Membaca Instruksi Kerja': 'Reading Work Instructions',
+  'Mengetik Cepat': 'Fast Typing',
+  'Meracik Kopi (Espresso)': 'Coffee Brewing (Espresso)',
+  'Mesin Kasir (POS)': 'POS Cash Register',
+  'Meta Ads': 'Meta Ads',
+  'Microsoft Excel': 'Microsoft Excel',
+  'Microsoft Office': 'Microsoft Office',
+  'Microsoft PowerPoint': 'Microsoft PowerPoint',
+  'Microsoft Word': 'Microsoft Word',
+  'MongoDB': 'MongoDB',
+  'Negosiasi': 'Negosiasi',
+  'Node.js': 'Node.js',
+  'Node.js & Express': 'Node.js & Express',
+  'Patroli Keamanan': 'Security Patrols',
+  'Pelayanan Pelanggan': 'Customer Service',
+  'Pemberian Obat': 'Medication Administration',
+  'Pembukuan': 'Bookkeeping',
+  'Penanganan Gawat Darurat': 'Emergency Care',
+  'Penanganan Keadaan Darurat': 'Emergency Response',
+  'Penanganan Komplain': 'Complaint Handling',
+  'Pencarian Prospek': 'Prospecting',
+  'Pengamanan Area': 'Area Security',
+  'Pengarsipan': 'Filing & Archiving',
+  'Pengawasan CCTV': 'CCTV Monitoring',
+  'Pengelasan Dasar': 'Basic Welding',
+  'Pengetahuan Produk': 'Product Knowledge',
+  'Penggunaan Alat Ukur': 'Use of Measuring Instruments',
+  'Pengoperasian Mesin Produksi': 'Production Machine Operation',
+  'Pengukuran Tanda Vital': 'Vital Signs Measurement',
+  'Penilaian & Evaluasi Siswa': 'Student Assessment & Evaluation',
+  'Perawatan Kendaraan Dasar': 'Basic Vehicle Maintenance',
+  'Perawatan Mesin & Kendaraan': 'Machine & Vehicle Maintenance',
+  'Perhitungan Uang Tunai': 'Cash Counting',
+  'Perpajakan': 'Taxation',
+  'PivotTable': 'PivotTable',
+  'Power BI': 'Power BI',
+  'Presentasi': 'Presentation Skills',
+  'Preventive Maintenance': 'Preventive Maintenance',
+  'Public Speaking': 'Public Speaking',
+  'Python': 'Python',
+  'QRIS & E-Wallet': 'QRIS & E-Wallet',
+  'Quality Control': 'Quality Control',
+  'REST API': 'REST API',
+  'React': 'React',
+  'React Native': 'React Native',
+  'Rekam Medis': 'Medical Records',
+  'Rekonsiliasi Bank': 'Bank Reconciliation',
+  'Remote Desktop': 'Remote Desktop',
+  'Rencana Pembelajaran (RPP)': 'Lesson Planning (RPP)',
+  'SEO': 'SEO',
+  'SEO Media Sosial': 'Social Media SEO',
+  'SIM A': 'SIM A',
+  'SIM B': 'SIM B',
+  'SQL': 'SQL',
+  'Statistik': 'Statistics',
+  'Stok Bahan': 'Ingredient Inventory',
+  'Stok Opname': 'Stock Taking',
+  'Swift': 'Swift',
+  'Tableau': 'Tableau',
+  'Target Penjualan': 'Sales Targets',
+  'Target Produksi': 'Production Targets',
+  'Telepon': 'Phone Communication',
+  'Teori Warna': 'Color Theory',
+  'Testing & Debugging': 'Testing & Debugging',
+  'TikTok': 'TikTok',
+  'Tipografi': 'Typography',
+  'Troubleshooting': 'Troubleshooting',
+  'TypeScript': 'TypeScript',
+  'UI/UX Mobile': 'UI/UX Mobile',
+  'Upselling': 'Upselling',
+  'Videografi': 'Videography',
+  'Visualisasi Data': 'Data Visualization',
+  'WhatsApp Business': 'WhatsApp Business',
+}
+
+export function skillDisplayName(skill: string, lang: Lang): string {
+  return lang === 'en' ? (SKILL_DISPLAY_EN[skill] ?? skill) : skill
+}
+
 export const FALLBACK_ROLE_SKILLS: RoleSkills = {
   id: 'umum',
   label: 'Umum / Fresh Graduate',
@@ -526,18 +945,30 @@ function matchRoleDictionary(roleText: string): RoleSkills | null {
 //   informatif daripada singkatan mentah).
 // - Posisi terisi tapi tidak ada di kamus → entri kustom berlabel nama
 //   posisi pengguna sendiri, dengan daftar skill umum (posisiKustom).
-export function getRoleSkills(targetRole: string): RoleSkills {
+export function getRoleSkills(targetRole: string, lang: Lang = 'id'): RoleSkills {
   const raw = targetRole.trim()
-  if (!raw) return FALLBACK_ROLE_SKILLS
+  if (!raw) {
+    return lang === 'en'
+      ? { ...FALLBACK_ROLE_SKILLS, label: ROLE_LABEL_EN[FALLBACK_ROLE_SKILLS.id] ?? FALLBACK_ROLE_SKILLS.label }
+      : FALLBACK_ROLE_SKILLS
+  }
   const direct = matchRoleDictionary(raw)
-  if (direct) return direct
+  if (direct) {
+    return lang === 'en'
+      ? { ...direct, label: ROLE_LABEL_EN[direct.id] ?? direct.label }
+      : direct
+  }
+  // Pencocokan ulang SELALU memakai perluasan bahasa Indonesia (data
+  // pencocokan tidak berubah); yang berbeda saat mode 'en' hanyalah
+  // label tampilannya, dari perluasan glosarium bahasa Inggris.
   const expanded = expandJobTitle(raw)
+  const expandedLabel = lang === 'en' ? expandJobTitle(raw, 'en') : expanded
   if (expanded.toLowerCase() !== raw.toLowerCase()) {
     const viaGlossary = matchRoleDictionary(expanded)
-    if (viaGlossary) return { ...viaGlossary, label: expanded }
+    if (viaGlossary) return { ...viaGlossary, label: expandedLabel }
     return {
       id: 'kustom',
-      label: expanded,
+      label: expandedLabel,
       keywords: [],
       skills: FALLBACK_ROLE_SKILLS.skills,
       posisiKustom: true,

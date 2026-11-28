@@ -28,6 +28,7 @@ import {
   clearHistory,
   compositionDiffers,
   entryFromResult,
+  formatHistoryDate,
   historyRoleLabel,
   historyRolesMatch,
   loadHistory,
@@ -81,11 +82,16 @@ import {
   verifyNotificationSignature,
 } from '../api/_midtrans.js'
 import {
+  CHECK_EXAMPLES,
+  CHECK_EXAMPLES_EN,
+  FALLBACK_ROLE_SKILLS,
   ROLE_SKILLS,
+  SKILL_DISPLAY_EN,
   buildSummaryTemplate,
   checkSkills,
   getCheckExample,
   getRoleSkills,
+  skillDisplayName,
 } from '../src/lib/examples'
 import { ROLE_OPTIONS, filterRoleOptions } from '../src/lib/roleOptions'
 import {
@@ -4109,6 +4115,203 @@ check(
       filterRoleOptions('mobiledeveloper')[0]?.value === 'Mobile Developer' &&
       filterRoleOptions('android')[0]?.value === 'Mobile Developer',
     `jumlah: ${ROLE_OPTIONS.length}; android: ${filterRoleOptions('android').map((o) => o.value).join(', ')}`,
+  )
+}
+
+// ---------- Saklar bahasa antarmuka (i18n) — 2026-11-28 ----------
+// Invarian: mode 'id' byte-identical (seluruh uji lama di atas), mode
+// 'en' hanya mengganti teks — skor & rincian per aspek identik.
+{
+  const parityFixtures: { name: string; cv: string; opts?: object }[] = [
+    { name: 'kuat', cv: SAMPLE_CV },
+    { name: 'menengah', cv: MEDIUM_CV },
+    { name: 'lemah', cv: WEAK_CV },
+    { name: 'demo lemah', cv: DEMO_WEAK_CV },
+    { name: 'klise', cv: CLICHE_CV },
+    { name: 'dangkal', cv: SHALLOW_CV },
+    { name: 'format campur', cv: MIXED_FORMAT_CV },
+    { name: 'bahasa berantakan', cv: MESSY_LANG_CV },
+    { name: 'sertifikasi+bahasa', cv: CERT_LANG_CV },
+    { name: 'saya berlebihan', cv: SAYA_CV },
+    { name: 'bullet naratif', cv: BULLET_CV },
+    { name: 'panjang berlebih', cv: LONG_CV },
+    { name: 'inggris kuat', cv: EN_STRONG_CV },
+    { name: 'kuat + peran', cv: SAMPLE_CV, opts: { targetRole: 'Data Analyst' } },
+    { name: 'demo + peran', cv: DEMO_WEAK_CV, opts: { targetRole: 'Kasir' } },
+    {
+      name: 'kuat + lowongan',
+      cv: SAMPLE_CV,
+      opts: {
+        targetRole: 'Data Analyst',
+        jobDesc:
+          'Dicari Data Analyst: menguasai SQL, Python, Excel, dashboard, visualisasi data, dan analisis statistik untuk kebutuhan bisnis.',
+      },
+    },
+  ]
+  const parityBreaks: string[] = []
+  for (const f of parityFixtures) {
+    const idR = analyzeCv(f.cv, f.opts)
+    const enR = analyzeCv(f.cv, { ...f.opts, lang: 'en' })
+    const sameShape =
+      idR.total === enR.total &&
+      idR.wordCount === enR.wordCount &&
+      idR.jobMatchApplied === enR.jobMatchApplied &&
+      idR.aspects.length === enR.aspects.length &&
+      idR.aspects.every(
+        (a, i) =>
+          a.score === enR.aspects[i].score &&
+          a.max === enR.aspects[i].max &&
+          a.checks.length === enR.aspects[i].checks.length &&
+          a.checks.every(
+            (c, j) =>
+              c.id === enR.aspects[i].checks[j].id &&
+              c.score === enR.aspects[i].checks[j].score &&
+              c.max === enR.aspects[i].checks[j].max &&
+              c.status === enR.aspects[i].checks[j].status,
+          ),
+      )
+    if (!sameShape) parityBreaks.push(f.name)
+  }
+  check(
+    'i18n: paritas skor id/en untuk semua CV fixture (total, per aspek, per pemeriksaan identik)',
+    parityBreaks.length === 0,
+    parityBreaks.length ? `berbeda: ${parityBreaks.join(', ')}` : `${parityFixtures.length} fixture identik`,
+  )
+
+  const enStrong = analyzeCv(EN_STRONG_CV, { lang: 'en' })
+  const enAspects = enStrong.aspects.map((a) => a.name)
+  check(
+    'i18n: mode en menghasilkan nama aspek & label putusan bahasa Inggris',
+    JSON.stringify(enAspects) ===
+      JSON.stringify(['Contact', 'Summary', 'Experience', 'Education', 'Skills', 'Format & ATS']) &&
+      enStrong.label === 'Ready to Apply' &&
+      enStrong.aspects[0].checks[0].title === 'Valid email',
+    `aspek: ${enAspects.join(' | ')}; label: ${enStrong.label}`,
+  )
+
+  const ID_MARKERS = [
+    'tidak ditemukan', 'Ditemukan', 'Cantumkan', 'Ringkasan', 'Pengalaman',
+    'Keahlian', 'Pendidikan', 'Kecocokan', 'Sangat Siap', 'Perlu Perbaikan',
+    'Sudah Bagus', 'Dirombak', 'Belum ada', 'Bagian pengalaman', 'rekruter',
+    'Idealnya', 'Gunakan minimal', 'poin penuh', 'Bahasa Inggris —',
+  ]
+  const enBlob = [
+    enStrong.label,
+    enStrong.roleWarning ?? '',
+    ...enStrong.aspects.flatMap((a) => [
+      a.name,
+      ...a.checks.flatMap((c) => [c.title, c.message]),
+    ]),
+  ].join('\n')
+  const leaked = ID_MARKERS.filter((m) => enBlob.includes(m))
+  check(
+    'i18n: keluaran en untuk CV Inggris bersih dari frasa penanda Indonesia (di luar kutipan CV)',
+    leaked.length === 0,
+    leaked.length ? `bocor: ${leaked.join(' | ')}` : 'tidak ada frasa Indonesia pada label/aspek/judul/pesan',
+  )
+
+  const enSample = analyzeCv(SAMPLE_CV, { lang: 'en', targetRole: 'Data Analyst' })
+  const enSampleBlob = enSample.aspects
+    .flatMap((a) => a.checks.map((c) => `${c.title}: ${c.message}`))
+    .join('\n')
+  check(
+    'i18n: mode en untuk CV Indonesia — judul & pesan pemeriksaan lintas aspek berbahasa Inggris',
+    enSample.aspects.map((a) => a.name).join('|') ===
+      'Contact|Summary|Experience|Education|Skills|Format & ATS' &&
+      enSampleBlob.includes('Valid email') &&
+      !enSampleBlob.includes('Email terbaca') &&
+      !enSampleBlob.includes('Bagian pengalaman kerja ditemukan'),
+    `label: ${enSample.label}; aspek pertama: ${enSample.aspects[0].name}`,
+  )
+
+  check(
+    'i18n: contoh generik & template ringkasan mengikuti bahasa',
+    getCheckExample('hasil-terukur', 'en') !== null &&
+      getCheckExample('hasil-terukur', 'en')!.catatan.includes('square brackets') &&
+      getCheckExample('hasil-terukur')!.catatan.includes('kurung siku') &&
+      buildSummaryTemplate('', 'en').includes('Currently seeking') &&
+      buildSummaryTemplate('').includes('Saat ini mencari posisi') &&
+      Object.keys(CHECK_EXAMPLES_EN).length === Object.keys(CHECK_EXAMPLES).length,
+    `contoh en: ${Object.keys(CHECK_EXAMPLES_EN).length}/${Object.keys(CHECK_EXAMPLES).length} entri`,
+  )
+
+  const allSkills = [...ROLE_SKILLS, FALLBACK_ROLE_SKILLS].flatMap((r) => r.skills)
+  const untranslated = [...new Set(allSkills)].filter((s) => !(s in SKILL_DISPLAY_EN))
+  check(
+    'i18n: label peran & nama skill tampilan Inggris tersedia tanpa mengubah data pencocokan',
+    getRoleSkills('Staff Administrasi', 'en').label === 'Administration / Office Admin' &&
+      getRoleSkills('', 'en').label === 'General / Fresh Graduate' &&
+      getRoleSkills('QC', 'en').label === 'Quality Control' &&
+      JSON.stringify(getRoleSkills('Data Analyst', 'en').skills) ===
+        JSON.stringify(getRoleSkills('Data Analyst').skills) &&
+      skillDisplayName('Visualisasi Data', 'en') === 'Data Visualization' &&
+      skillDisplayName('Visualisasi Data', 'id') === 'Visualisasi Data' &&
+      untranslated.length === 0,
+    untranslated.length ? `skill tanpa padanan: ${untranslated.join(', ')}` : `${new Set(allSkills).size} skill punya padanan tampilan`,
+  )
+
+  check(
+    'i18n: glosarium — perluasan Inggris hanya untuk tampilan, mode id tidak berubah',
+    expandJobTitle('K3', 'en') === 'Occupational Health and Safety' &&
+      expandJobTitle('WH', 'en') === 'Warehouse Staff' &&
+      expandJobTitle('K3') === 'Keselamatan dan Kesehatan Kerja' &&
+      historyRoleLabel('WH', 'en') === 'Warehouse Staff' &&
+      historyRoleLabel('WH') === 'Staf Gudang',
+    `K3 en: ${expandJobTitle('K3', 'en')}; WH en: ${expandJobTitle('WH', 'en')}`,
+  )
+
+  const demoEnResult = analyzeCv(DEMO_WEAK_CV, { lang: 'en' })
+  const pEn = buildPersonalExamples(demoEnResult, DEMO_WEAK_CV, '', 'en')
+  const pId = buildPersonalExamples(demoResult, DEMO_WEAK_CV, '')
+  const sharedIds = Object.keys(pId).filter((id) => id in pEn)
+  check(
+    'i18n: contoh personal mode en — catatan Inggris, kutipan CV tetap apa adanya',
+    sharedIds.length > 0 &&
+      sharedIds.every((id) => pEn[id]!.kutipanAsli === pId[id]!.kutipanAsli) &&
+      Object.values(pEn).every((e) => !e.catatan.includes('kurung siku')) &&
+      Object.values(pEn).some((e) => e.catatan.includes('square brackets')),
+    `${sharedIds.length} contoh personal dibandingkan; kutipan identik`,
+  )
+
+  check(
+    'i18n: riwayat — kata delta, tanggal, dan perbandingan lintas bahasa',
+    scoreDelta(57, 73, 'en').word === 'Up' &&
+      scoreDelta(73, 57, 'en').word === 'Down' &&
+      scoreDelta(60, 60, 'en').word === 'Unchanged' &&
+      formatHistoryDate('2026-05-21T10:00:00', 'en').includes('May') &&
+      formatHistoryDate('2026-05-21T10:00:00').includes('Mei'),
+    `en: ${formatHistoryDate('2026-05-21T10:00:00', 'en')}; id: ${formatHistoryDate('2026-05-21T10:00:00')}`,
+  )
+
+  const idEntry = entryFromResult(strong, 'Data Analyst')
+  const enEntry = entryFromResult(analyzeCv(SAMPLE_CV, { lang: 'en' }), 'Data Analyst')
+  const crossDeltas = aspectDeltas(idEntry, enEntry)
+  check(
+    'i18n: entri riwayat lintas bahasa tetap terbandingkan (nama aspek kanonik)',
+    crossDeltas.every((a) => a.previous !== null && a.delta === 0) &&
+      !compositionDiffers(idEntry, enEntry),
+    `${crossDeltas.length} aspek terpasangkan lintas bahasa`,
+  )
+
+  check(
+    'i18n: teks WhatsApp & laporan mengikuti bahasa antarmuka, nominal tidak berubah',
+    decodeURIComponent(adminContactHref(7, 'en')).includes('I have paid Rp5.007') &&
+      decodeURIComponent(adminContactHref(7)).includes('saya sudah membayar') &&
+      decodeURIComponent(adminContactHref(7, 'en')).includes('token code') &&
+      buildReportText(enStrong, { lang: 'en' }).includes('CV SCREENING RESULTS') &&
+      buildReportText(enStrong, { lang: 'en' }).includes('TOP FIXES') &&
+      buildReportText(strong).includes('HASIL SCREENING CV') &&
+      buildReportText(strong).includes('PRIORITAS PERBAIKAN'),
+    'wa en memuat nominal Rp5.007 yang sama; heading laporan dwibahasa',
+  )
+
+  check(
+    'i18n: saklar bahasa terpasang di App (kunci penyimpanan + segmented control + judul dokumen)',
+    appTsxText.includes('screening-cv:ui-lang:v1') &&
+      appTsxText.includes('lang-switch') &&
+      appTsxText.includes('document.title') &&
+      appTsxText.includes('setLang'),
+    'saklar ID|EN persisten di localStorage screening-cv:ui-lang:v1',
   )
 }
 
