@@ -57,7 +57,6 @@ import {
 import { filterRoleOptions, type RoleOption } from './lib/roleOptions'
 import { SAMPLE_CV } from './lib/sampleCv'
 import { DEMO_WEAK_CV } from './lib/demoCv'
-import { extractTextFromFile } from './lib/readFile'
 
 
 // ---------- Ikon SVG inline ----------
@@ -598,6 +597,11 @@ export default function App() {
     setError('')
     setLoadingFile(true)
     try {
+      // Modul baca-berkas (pdf.js/mammoth, ±0,9 MB) dimuat dinamis HANYA
+      // saat pengguna benar-benar mengunggah berkas — pola yang sama
+      // seperti chunk jsPDF — agar bundle awal tetap ringan untuk HP
+      // kelas bawah (ulasan eksternal 2026-11-28).
+      const { extractTextFromFile } = await import('./lib/readFile')
       const text = await extractTextFromFile(file)
       if (!text.trim()) {
         setError('Teks dari file kosong. Jika PDF hasil scan/gambar, tempel teks CV secara manual.')
@@ -1077,6 +1081,12 @@ export default function App() {
         bukti yang kamu kirim — situs tidak dapat memeriksa pembayaran QRIS
         secara otomatis. Satu kode berlaku untuk 1 token (1 kali Analisis AI).
       </p>
+      <p className="pay-note">
+        Soal datamu: Analisis AI mengirim teks CV-mu ke OpenRouter untuk
+        diproses oleh penyedia model di belakangnya, dan teks itu tidak
+        disimpan oleh Screening CV. Baca{' '}
+        <a href="/privacy.html">Kebijakan Privasi</a> sebelum menukar token.
+      </p>
     </div>
   )
 
@@ -1210,7 +1220,7 @@ export default function App() {
             tabIndex={0}
           >
             <Icon d={I.upload} size={26} />
-            <p><strong>Tarik &amp; letakkan file CV di sini</strong><br />atau klik untuk memilih file (PDF, DOCX, TXT)</p>
+            <p><strong>Tarik &amp; letakkan file CV di sini</strong><br />atau klik untuk memilih file (PDF, DOCX, TXT, maks 10 MB)</p>
             {fileName && <span className="file-name">{fileName}</span>}
             {loadingFile && <span className="file-name">Membaca file…</span>}
           </div>
@@ -1338,6 +1348,24 @@ export default function App() {
                   <div className="alert alert-warn"><Icon d={I.alert} size={16} /> {result.roleWarning}</div>
                 )}
               </div>
+
+              {result.priorities.length > 0 && (
+                <div className="card top3-card">
+                  <h3><Icon d={I.trendUp} size={18} /> 3 Hal Terpenting</h3>
+                  <p className="card-hint">
+                    Kalau waktumu terbatas, mulai dari tiga ini — dampaknya
+                    paling besar ke skormu. Rincian lengkapnya ada di bagian
+                    Prioritas Perbaikan di bawah.
+                  </p>
+                  <ol className="top3-list">
+                    {result.priorities.slice(0, 3).map((c) => (
+                      <li key={c.id}>
+                        <strong>{c.title}</strong> — {c.score}/{c.max} poin
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
 
               {history.length > 0 && (
                 <div className="card history-card">
