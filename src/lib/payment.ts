@@ -49,11 +49,11 @@ export function adminContactHref(code?: number | null, lang: Lang = 'id'): strin
   const text =
     lang === 'en'
       ? validCode !== null
-        ? `Hello, I have paid ${formatRupiah(amountForCode(validCode))} for the AI Analysis on the Screening CV website. Please send me my token code.`
-        : 'Hello, I have paid for the AI Analysis on the Screening CV website. Please send me my token code.'
+        ? `Hello Admin 👋\nI have paid ${formatRupiah(amountForCode(validCode))} for the AI Analysis. I have attached my payment proof in this chat.\nPlease send me my token code. Thank you 🙏`
+        : 'Hello Admin 👋\nI have paid for the AI Analysis on the Screening CV website. I have attached my payment proof in this chat.\nPlease send me my token code. Thank you 🙏'
       : validCode !== null
-        ? `Halo, saya sudah membayar Analisis AI sebesar ${formatRupiah(amountForCode(validCode))} di situs Screening CV. Mohon kode token saya.`
-        : 'Halo, saya sudah membayar Analisis AI di situs Screening CV. Mohon kode token saya.'
+        ? `Halo Admin 👋\nSaya sudah membayar Analisis AI sebesar ${formatRupiah(amountForCode(validCode))}. Bukti pembayaran saya lampirkan di chat ini.\nMohon kode token saya. Terima kasih 🙏`
+        : 'Halo Admin 👋\nSaya sudah membayar Analisis AI di situs Screening CV. Bukti pembayaran saya lampirkan di chat ini.\nMohon kode token saya. Terima kasih 🙏'
   const sep = ADMIN_CONTACT_URL.includes('?') ? '&' : '?'
   return `${ADMIN_CONTACT_URL}${sep}text=${encodeURIComponent(text)}`
 }

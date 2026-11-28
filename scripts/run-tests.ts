@@ -4296,7 +4296,7 @@ check(
   check(
     'i18n: teks WhatsApp & laporan mengikuti bahasa antarmuka, nominal tidak berubah',
     decodeURIComponent(adminContactHref(7, 'en')).includes('I have paid Rp5.007') &&
-      decodeURIComponent(adminContactHref(7)).includes('saya sudah membayar') &&
+      decodeURIComponent(adminContactHref(7)).includes('Saya sudah membayar') &&
       decodeURIComponent(adminContactHref(7, 'en')).includes('token code') &&
       buildReportText(enStrong, { lang: 'en' }).includes('CV SCREENING RESULTS') &&
       buildReportText(enStrong, { lang: 'en' }).includes('TOP FIXES') &&
